@@ -13,10 +13,7 @@ CONFIG = {
     # "account": "cis250223",  # diamond
     "account": "cis250461",  # garden
     # "qos": "gpu",
-    "worker_init": """true;
-pip install uv;
-GROUNDHOG_UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
-""",
+    "worker_init": "pip show -qq uv || pip install uv",  # install uv in the worker environment
 }
 
 # Available endpoints
@@ -33,7 +30,7 @@ def run_code(contents: str, endpoint: str, config: dict = CONFIG) -> str:
 cat > /tmp/temp_script.py << 'EOF'
 {contents}
 EOF
-"$GROUNDHOG_UV_BIN" run /tmp/temp_script.py
+$(python -c 'import uv; print(uv.find_uv_bin())') run /tmp/temp_script.py
 """
     shell_fn = gc.ShellFunction(cmd=cmd, walltime=60)
     with gc.Executor(endpoint, user_endpoint_config=config) as executor:
@@ -77,7 +74,7 @@ def run(
     try:
         t0 = time.time()
         result = run_code(contents, endpoint_id, config)
-        print(result)
+        typer.echo(result)
         typer.echo(f"Time taken: {time.time() - t0:.2f} seconds")
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
