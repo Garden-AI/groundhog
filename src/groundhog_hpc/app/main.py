@@ -14,7 +14,9 @@ CONFIG = {
     "account": "cis250461",  # garden
     # "qos": "gpu",
     "worker_init": """true;
-module load conda && conda activate /home/x-oprice/.conda/envs/uv-env""",
+pip install uv;
+GROUNDHOG_UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
+""",
 }
 
 # Available endpoints
@@ -31,7 +33,7 @@ def run_code(contents: str, endpoint: str, config: dict = CONFIG) -> str:
 cat > /tmp/temp_script.py << 'EOF'
 {contents}
 EOF
-/home/x-oprice/.conda/envs/uv-env/bin/uv run /tmp/temp_script.py
+"$GROUNDHOG_UV_BIN" run /tmp/temp_script.py
 """
     shell_fn = gc.ShellFunction(cmd=cmd, walltime=60)
     with gc.Executor(endpoint, user_endpoint_config=config) as executor:
@@ -75,7 +77,7 @@ def run(
     try:
         t0 = time.time()
         result = run_code(contents, endpoint_id, config)
-        typer.echo(result)
+        print(result)
         typer.echo(f"Time taken: {time.time() - t0:.2f} seconds")
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
