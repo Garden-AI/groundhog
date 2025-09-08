@@ -13,8 +13,7 @@ CONFIG = {
     # "account": "cis250223",  # diamond
     "account": "cis250461",  # garden
     # "qos": "gpu",
-    "worker_init": """true;
-module load conda && conda activate /home/x-oprice/.conda/envs/uv-env""",
+    "worker_init": "pip show -qq uv || pip install uv",  # install uv in the worker environment
 }
 
 # Available endpoints
@@ -31,7 +30,7 @@ def run_code(contents: str, endpoint: str, config: dict = CONFIG) -> str:
 cat > /tmp/temp_script.py << 'EOF'
 {contents}
 EOF
-/home/x-oprice/.conda/envs/uv-env/bin/uv run /tmp/temp_script.py
+$(python -c 'import uv; print(uv.find_uv_bin())') run /tmp/temp_script.py
 """
     shell_fn = gc.ShellFunction(cmd=cmd, walltime=60)
     with gc.Executor(endpoint, user_endpoint_config=config) as executor:
