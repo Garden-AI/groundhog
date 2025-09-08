@@ -1,0 +1,16 @@
+Bootstrap: docker
+From: astral/uv:bookworm
+
+%environment
+    export UV_MANAGED_PYTHON=1
+    export PATH="/.venv/bin:$PATH"
+    export UV_CACHE_DIR="/root/.cache/uv"
+
+%post
+    uv venv
+    uv pip install globus-compute-endpoint
+    mkdir -p /root/.cache/uv
+    chmod 755 /root/.cache/uv
+
+%runscript
+    exec "$@"
