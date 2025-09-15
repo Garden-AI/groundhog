@@ -80,16 +80,10 @@ def script_to_callable(
                 print(f"{shell_result.stderr=}")
                 print(f"{shell_result.exception_name=}")
 
-            try:
-                if not shell_result.stdout:
-                    return None
-                return deserialize(shell_result.stdout)
-            except Exception:
-                print(shell_result.cmd)
-                print(shell_result.stdout)
-                print(shell_result.stderr)
-                print(shell_result.exception_name)
-                raise
+            if not shell_result.stdout:
+                return None
+
+            return deserialize(shell_result.stdout)
 
     return run
 
