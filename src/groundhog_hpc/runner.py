@@ -9,17 +9,16 @@ from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
 SHELL_COMMAND_TEMPLATE = """
-mkdir -p /tmp/groundhog/{script_hash}
-cat > /tmp/groundhog/{script_hash}/script.py << 'EOF'
+cat > ./groundhog-{script_hash}.py << 'EOF'
 {contents}
 EOF
-cat > /tmp/groundhog/{script_hash}/payload << 'END'
+cat > ./groundhog-{script_hash}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run /tmp/groundhog/{script_hash}/script.py {function_name} < /tmp/groundhog/{script_hash}/payload > /tmp/groundhog/{script_hash}/run.stdout 2> /tmp/groundhog/{script_hash}/run.stderr
-touch /tmp/groundhog/{script_hash}/results.out
-cat /tmp/groundhog/{script_hash}/results.out
+$(python -c 'import uv; print(uv.find_uv_bin())') run ./groundhog-{script_hash}.py {function_name} ./groundhog-{script_hash}.in > ./groundhog-{script_hash}-run.stdout 2> ./groundhog-{script_hash}-run.stderr
+cat ./groundhog-{script_hash}.out
 """
+# note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
 
 def script_to_callable(
@@ -35,7 +34,7 @@ def script_to_callable(
     The created function accepts the same arguments as the original named function, but
     dispatches to a shell function on the remote endpoint.
 
-    The function must expect json-serializable input and return json-serializable output.
+    NOTE: The function must expect json-serializable input and return json-serializable output.
     """
 
     config = DEFAULT_USER_CONFIG.copy()
@@ -43,7 +42,7 @@ def script_to_callable(
 
     script_hash = _script_hash_prefix(user_script)
     contents = _inject_script_boilerplate(
-        user_script, function_name, f"/tmp/groundhog/{script_hash}/results.out"
+        user_script, function_name, f"./groundhog-{script_hash}.out"
     )
 
     if verbose:
@@ -69,13 +68,18 @@ def script_to_callable(
                 while not future.done():
                     i += 1
                     print(".", end="", flush=True)
-                    if i % 30 == 0:
-                        print("\n")
                     time.sleep(1)
                 elapsed = time.time() - t0
                 print(f"\nRan in {elapsed:.4f} seconds")
 
             shell_result: gc.ShellResult = future.result()
+            if verbose:
+                print("Shell Results:")
+                print("\n" + shell_result.cmd + "\n")
+                print(f"{shell_result.stdout=}")
+                print(f"{shell_result.stderr=}")
+                print(f"{shell_result.exception_name=}")
+
             try:
                 if not shell_result.stdout:
                     return None
@@ -102,6 +106,7 @@ def _inject_script_boilerplate(
     )
     # TODO better validation errors
     # or see if we can use runpy to explicitly set __name__ (i.e. "__groundhog_main__")
+    # TODO validate existence of PEP 723 script metadata
 
     script = f"""
 {user_script}
@@ -114,7 +119,7 @@ if __name__ == "__main__":
         args, kwargs = json.load(f_in)
 
     results = {function_name}(*args, **kwargs)
-    with open({outfile_path}, 'w+') as f_out:
+    with open('{outfile_path}', 'w+') as f_out:
         json.dump(results, f_out)
 """
     return script

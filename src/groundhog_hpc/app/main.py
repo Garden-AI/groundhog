@@ -32,7 +32,9 @@ def run(
         "anvil",
         help="Target globus compute multi-user endpoint (default 'anvil')",
     ),
-    quiet: bool = typer.Option(False, "--verbose", help="Disable verbose output"),
+    verbose: bool = typer.Option(
+        False, "-v", "--verbose", help="Enable verbose output"
+    ),
 ):
     """Run a Python script on a Globus Compute endpoint."""
 
@@ -52,15 +54,18 @@ def run(
         try:
             args, kwargs = json.loads(datapath.read_text())
         except json.JSONDecodeError:
-            typer.echo(f"Error: failed to load data at {datapath}.")
-            typer.echo(
-                "Note: data should be json array with two elements: a positonal args array and a kwargs object."
-            )
+            typer.echo(f"Error: failed to load json data at {datapath}.")
+            raise typer.Exit(1)
+        except ValueError as e:
+            if "unpack" in str(e):
+                typer.echo(
+                    "Note: data should be json array with two elements: a positonal args array and a kwargs object."
+                )
             raise typer.Exit(1)
 
     contents = script.read_text()
 
-    if not quiet:
+    if verbose:
         typer.echo(f"Running script on endpoint: {endpoint}")
         typer.echo(f"Script contents:\n{contents}\n")
 
@@ -71,7 +76,7 @@ def run(
             endpoint=endpoint,
             user_endpoint_config=CONFIG,
             walltime=DEFAULT_WALLTIME_SEC,
-            verbose=not quiet,
+            verbose=verbose,
         )
         result = run(*args, **kwargs)
         typer.echo(result)
