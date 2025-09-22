@@ -2,8 +2,6 @@ from hashlib import sha1
 from typing import Callable
 from uuid import UUID
 
-import globus_compute_sdk as gc
-
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
@@ -34,6 +32,7 @@ def script_to_callable(
 
     NOTE: The function must expect json-serializable input and return json-serializable output.
     """
+    import globus_compute_sdk as gc  # lazy import so cryptography bindings don't break remote endpoint
 
     config = DEFAULT_USER_CONFIG.copy()
     config.update(user_endpoint_config or {})
