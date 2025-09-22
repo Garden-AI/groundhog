@@ -20,7 +20,6 @@ class _Function:
         self.user_endpoint_config = user_endpoint_config
 
         self._local_func = func
-        print(f"{self._local_func.__qualname__=}")
         self._remote_func = None
 
     def __call__(self, *args, **kwargs):
