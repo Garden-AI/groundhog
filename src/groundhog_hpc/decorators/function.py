@@ -45,7 +45,7 @@ def _function(endpoint=None, walltime=None, **user_endpoint_config):
     def decorator(func):
         wrapper = _Function(func, endpoint, walltime, **user_endpoint_config)
         functools.update_wrapper(wrapper, func)
-        functools.update_wrapper(wrapper.remote, func)
+        # TODO functools.update_wrapper(wrapper.remote, func)
         return wrapper
 
     return decorator
