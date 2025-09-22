@@ -11,3 +11,4 @@ wheels/
 /.envrc
 /.python-version
 /CLAUDE.md
+/.DS_Store
