@@ -1,12 +1,11 @@
-import functools
 import os
 from typing import Callable
 
 from groundhog_hpc.runner import script_to_callable
-from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_USER_CONFIG
+from groundhog_hpc.settings import DEFAULT_ENDPOINTS
 
 
-class _Function:
+class Function:
     def __init__(
         self,
         func: Callable,
@@ -57,19 +56,3 @@ class _Function:
             self.walltime,
             self.user_endpoint_config,
         )
-
-
-def _function(endpoint=None, walltime=None, **user_endpoint_config):
-    if not user_endpoint_config:
-        user_endpoint_config = DEFAULT_USER_CONFIG
-    elif "worker_init" in user_endpoint_config:
-        # ensure uv install command is part of worker init
-        user_endpoint_config["worker_init"] += f"\n{DEFAULT_USER_CONFIG['worker_init']}"
-
-    def decorator(func):
-        wrapper = _Function(func, endpoint, walltime, **user_endpoint_config)
-        functools.update_wrapper(wrapper, func)
-        # TODO functools.update_wrapper(wrapper.remote, func)
-        return wrapper
-
-    return decorator
