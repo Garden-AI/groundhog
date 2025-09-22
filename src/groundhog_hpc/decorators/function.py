@@ -35,7 +35,7 @@ class _Function:
         return self._remote_func(*args, **kwargs)
 
 
-def function(endpoint=None, walltime=None, **user_endpoint_config):
+def _function(endpoint=None, walltime=None, **user_endpoint_config):
     if not user_endpoint_config:
         user_endpoint_config = DEFAULT_USER_CONFIG
     elif "worker_init" in user_endpoint_config:
