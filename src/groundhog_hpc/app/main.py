@@ -26,6 +26,33 @@ def run(
     script: Path = typer.Argument(
         ..., help="Python script with dependencies to deploy to the endpoint"
     ),
+    function: str = typer.Argument(
+        "main", help="Name of harness to run from script (default 'main')."
+    ),
+):
+    """Run a Python script on a Globus Compute endpoint."""
+
+    script = script.resolve()
+    if not script.exists():
+        typer.echo(f"Error: Script '{script}' not found", err=True)
+        raise typer.Exit(1)
+
+    contents = script.read_text()
+
+    try:
+        exec(contents, globals(), locals())
+        result = locals()[function]()
+        typer.echo(result)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(no_args_is_help=True)
+def go(
+    script: Path = typer.Argument(
+        ..., help="Python script with dependencies to deploy to the endpoint"
+    ),
     function: str = typer.Argument(..., help="Name of function in script to run"),
     datapath: Path = typer.Argument(None, help="Local path to input data"),
     endpoint: str = typer.Option(
@@ -59,7 +86,7 @@ def run(
         except ValueError as e:
             if "unpack" in str(e):
                 typer.echo(
-                    "Note: data should be json array with two elements: a positonal args array and a kwargs object."
+                    "Note: data should be json array with two elements: a positional args array and a kwargs object."
                 )
             raise typer.Exit(1)
 
