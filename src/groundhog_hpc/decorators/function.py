@@ -1,5 +1,6 @@
 import functools
 import inspect
+import os
 from typing import Callable
 
 from groundhog_hpc.runner import script_to_callable
@@ -32,7 +33,14 @@ class _Function:
         return self._local_func(*args, **kwargs)
 
     def remote(self, *args, **kwargs):
+        if not self._is_remote():
+            raise Exception(
+                "Error: can't invoke a remote function outside of a @hog.harness function"
+            )
         return self._remote_func(*args, **kwargs)
+
+    def _is_remote(self):
+        return bool(os.environ.get("GROUNDHOG_HARNESS"))
 
 
 def _function(endpoint=None, walltime=None, **user_endpoint_config):
