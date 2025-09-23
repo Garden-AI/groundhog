@@ -1,9 +1,6 @@
-import time
 from hashlib import sha1
 from typing import Callable
 from uuid import UUID
-
-import globus_compute_sdk as gc
 
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
@@ -25,9 +22,8 @@ def script_to_callable(
     user_script: str,
     function_name: str,
     endpoint: str,
-    walltime: int,
+    walltime: int | None = None,
     user_endpoint_config: dict | None = None,
-    verbose=True,
 ) -> Callable:
     """Create callable corresponding to the named function from a user's script.
 
@@ -36,6 +32,7 @@ def script_to_callable(
 
     NOTE: The function must expect json-serializable input and return json-serializable output.
     """
+    import globus_compute_sdk as gc  # lazy import so cryptography bindings don't break remote endpoint
 
     config = DEFAULT_USER_CONFIG.copy()
     config.update(user_endpoint_config or {})
@@ -45,15 +42,11 @@ def script_to_callable(
         user_script, function_name, f"./groundhog-{script_hash}.out"
     )
 
-    if verbose:
-        print(f"{script_hash=}")
-
     def run(*args, **kwargs):
         shell_fn = gc.ShellFunction(cmd=SHELL_COMMAND_TEMPLATE, walltime=walltime)
         payload = serialize((args, kwargs))
 
         with gc.Executor(UUID(endpoint), user_endpoint_config=config) as executor:
-            t0 = time.time()
             future = executor.submit(
                 shell_fn,
                 script_hash=script_hash,
@@ -62,23 +55,7 @@ def script_to_callable(
                 payload=payload,
             )
 
-            if verbose:
-                # show progress
-                i = 0
-                while not future.done():
-                    i += 1
-                    print(".", end="", flush=True)
-                    time.sleep(1)
-                elapsed = time.time() - t0
-                print(f"\nRan in {elapsed:.4f} seconds")
-
             shell_result: gc.ShellResult = future.result()
-            if verbose:
-                print("Shell Results:")
-                print("\n" + shell_result.cmd + "\n")
-                print(f"{shell_result.stdout=}")
-                print(f"{shell_result.stderr=}")
-                print(f"{shell_result.exception_name=}")
 
             if not shell_result.stdout:
                 return None
