@@ -3,16 +3,9 @@ from pathlib import Path
 
 import typer
 
-app = typer.Typer()
+from groundhog_hpc.errors import RemoteExecutionError
 
-CONFIG = {
-    # "container_type": "singularity",
-    # "container_uri": "file:///users/x-oprice/groundhog/singularity/groundhog.sif",
-    # "container_cmd_options": "-B /home/x-oprice/.uv:/root/.uv",
-    # "account": "cis250223",  # diamond
-    "account": "cis250461",  # garden
-    # "qos": "gpu",
-}
+app = typer.Typer()
 
 
 @app.command(no_args_is_help=True)
@@ -49,6 +42,10 @@ def run(
 
         result = script_namespace[function]()
         typer.echo(result)
+    except RemoteExecutionError as e:
+        typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)
+        typer.echo(e.stderr, err=True)
+        raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

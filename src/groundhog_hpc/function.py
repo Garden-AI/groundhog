@@ -55,4 +55,5 @@ class Function:
             self.endpoint,
             self.walltime,
             self.user_endpoint_config,
+            self.script_path,
         )

@@ -1,19 +1,29 @@
+import warnings
 from hashlib import sha1
+from pathlib import Path
 from typing import Callable
 from uuid import UUID
 
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="globus_compute_sdk",
+)
+
 SHELL_COMMAND_TEMPLATE = """
-cat > ./groundhog-{script_hash}.py << 'EOF'
+cat > {script_basename}-{script_hash}.py << 'EOF'
 {contents}
 EOF
-cat > ./groundhog-{script_hash}.in << 'END'
+cat > {script_basename}-{script_hash}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run ./groundhog-{script_hash}.py {function_name} ./groundhog-{script_hash}.in > ./groundhog-{script_hash}-run.stdout 2> ./groundhog-{script_hash}-run.stderr
-cat ./groundhog-{script_hash}.out
+$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python \\
+  {script_basename}-{script_hash}.py {function_name} {script_basename}-{script_hash}.in > {script_basename}-{script_hash}-run.stdout \\
+  && cat {script_basename}-{script_hash}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
@@ -24,6 +34,7 @@ def script_to_callable(
     endpoint: str,
     walltime: int | None = None,
     user_endpoint_config: dict | None = None,
+    script_path: str | None = None,
 ) -> Callable:
     """Create callable corresponding to the named function from a user's script.
 
@@ -38,8 +49,11 @@ def script_to_callable(
     config.update(user_endpoint_config or {})
 
     script_hash = _script_hash_prefix(user_script)
+    script_basename = (
+        _extract_script_basename(script_path) if script_path else "groundhog"
+    )
     contents = _inject_script_boilerplate(
-        user_script, function_name, f"./groundhog-{script_hash}.out"
+        user_script, function_name, script_hash, script_basename
     )
 
     def run(*args, **kwargs):
@@ -50,6 +64,7 @@ def script_to_callable(
             future = executor.submit(
                 shell_fn,
                 script_hash=script_hash,
+                script_basename=script_basename,
                 contents=contents,
                 function_name=function_name,
                 payload=payload,
@@ -57,8 +72,12 @@ def script_to_callable(
 
             shell_result: gc.ShellResult = future.result()
 
-            if not shell_result.stdout:
-                return None
+            if shell_result.returncode != 0:
+                raise RemoteExecutionError(
+                    message=f"Remote execution failed with exit code {shell_result.returncode}",
+                    stderr=shell_result.stderr,
+                    returncode=shell_result.returncode,
+                )
 
             return deserialize(shell_result.stdout)
 
@@ -69,8 +88,12 @@ def _script_hash_prefix(contents: str, length=8) -> str:
     return str(sha1(bytes(contents, "utf-8")).hexdigest()[:length])
 
 
+def _extract_script_basename(script_path: str) -> str:
+    return Path(script_path).stem
+
+
 def _inject_script_boilerplate(
-    user_script: str, function_name: str, outfile_path: str
+    user_script: str, function_name: str, script_hash: str, script_basename: str
 ) -> str:
     assert "__main__" not in user_script, (
         "invalid user script: can't define custom `__main__` logic"
@@ -78,19 +101,23 @@ def _inject_script_boilerplate(
     # TODO better validation errors
     # or see if we can use runpy to explicitly set __name__ (i.e. "__groundhog_main__")
     # TODO validate existence of PEP 723 script metadata
+    #
+    payload_path = f"{script_basename}-{script_hash}.in"
+    outfile_path = f"{script_basename}-{script_hash}.out"
 
-    script = f"""
-{user_script}
+    script = f"""{user_script}
 if __name__ == "__main__":
-    import json
     import sys
 
-    _, function_name, payload_path = sys.argv
-    with open(payload_path, 'r') as f_in:
-        args, kwargs = json.load(f_in)
+    from groundhog_hpc.serialization import serialize, deserialize
+
+    with open('{payload_path}', 'r') as f_in:
+        payload = f_in.read()
+        args, kwargs = deserialize(payload)
 
     results = {function_name}(*args, **kwargs)
     with open('{outfile_path}', 'w+') as f_out:
-        json.dump(results, f_out)
+        contents = serialize(results)
+        f_out.write(contents)
 """
     return script
