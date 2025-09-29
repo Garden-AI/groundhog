@@ -57,8 +57,12 @@ def script_to_callable(
 
             shell_result: gc.ShellResult = future.result()
 
-            if not shell_result.stdout:
-                return None
+            if shell_result.returncode != 0:
+                raise RemoteExecutionError(
+                    message=f"Remote execution failed with exit code {shell_result.returncode}",
+                    stderr=shell_result.stderr,
+                    returncode=shell_result.returncode,
+                )
 
             return deserialize(shell_result.stdout)
 
