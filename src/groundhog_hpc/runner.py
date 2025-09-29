@@ -1,19 +1,28 @@
+import warnings
 from hashlib import sha1
 from typing import Callable
 from uuid import UUID
 
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="globus_compute_sdk",
+)
+
 SHELL_COMMAND_TEMPLATE = """
-cat > ./groundhog-{script_hash}.py << 'EOF'
+cat > groundhog-{script_hash}.py << 'EOF'
 {contents}
 EOF
-cat > ./groundhog-{script_hash}.in << 'END'
+cat > groundhog-{script_hash}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run ./groundhog-{script_hash}.py {function_name} ./groundhog-{script_hash}.in > ./groundhog-{script_hash}-run.stdout 2> ./groundhog-{script_hash}-run.stderr
-cat ./groundhog-{script_hash}.out
+$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python \\
+  groundhog-{script_hash}.py {function_name} groundhog-{script_hash}.in > groundhog-{script_hash}-run.stdout \\
+  && cat groundhog-{script_hash}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
@@ -38,9 +47,7 @@ def script_to_callable(
     config.update(user_endpoint_config or {})
 
     script_hash = _script_hash_prefix(user_script)
-    contents = _inject_script_boilerplate(
-        user_script, function_name, f"./groundhog-{script_hash}.out"
-    )
+    contents = _inject_script_boilerplate(user_script, function_name, script_hash)
 
     def run(*args, **kwargs):
         shell_fn = gc.ShellFunction(cmd=SHELL_COMMAND_TEMPLATE, walltime=walltime)
@@ -74,7 +81,7 @@ def _script_hash_prefix(contents: str, length=8) -> str:
 
 
 def _inject_script_boilerplate(
-    user_script: str, function_name: str, outfile_path: str
+    user_script: str, function_name: str, script_hash: str
 ) -> str:
     assert "__main__" not in user_script, (
         "invalid user script: can't define custom `__main__` logic"
@@ -82,19 +89,23 @@ def _inject_script_boilerplate(
     # TODO better validation errors
     # or see if we can use runpy to explicitly set __name__ (i.e. "__groundhog_main__")
     # TODO validate existence of PEP 723 script metadata
+    #
+    payload_path = f"groundhog-{script_hash}.in"
+    outfile_path = f"groundhog-{script_hash}.out"
 
-    script = f"""
-{user_script}
+    script = f"""{user_script}
 if __name__ == "__main__":
-    import json
     import sys
 
-    _, function_name, payload_path = sys.argv
-    with open(payload_path, 'r') as f_in:
-        args, kwargs = json.load(f_in)
+    from groundhog_hpc.serialization import serialize, deserialize
+
+    with open('{payload_path}', 'r') as f_in:
+        payload = f_in.read()
+        args, kwargs = deserialize(payload)
 
     results = {function_name}(*args, **kwargs)
     with open('{outfile_path}', 'w+') as f_out:
-        json.dump(results, f_out)
+        contents = serialize(results)
+        f_out.write(contents)
 """
     return script

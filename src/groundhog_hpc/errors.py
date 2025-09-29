@@ -1,4 +1,4 @@
-"""Custom exceptions for Groundhog HPC."""
+"""Custom exceptions for Groundhog."""
 
 
 class RemoteExecutionError(Exception):
