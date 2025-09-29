@@ -1,5 +1,6 @@
 import warnings
 from hashlib import sha1
+from pathlib import Path
 from typing import Callable
 from uuid import UUID
 
@@ -14,15 +15,15 @@ warnings.filterwarnings(
 )
 
 SHELL_COMMAND_TEMPLATE = """
-cat > groundhog-{script_hash}.py << 'EOF'
+cat > {script_basename}-{script_hash}.py << 'EOF'
 {contents}
 EOF
-cat > groundhog-{script_hash}.in << 'END'
+cat > {script_basename}-{script_hash}.in << 'END'
 {payload}
 END
 $(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python \\
-  groundhog-{script_hash}.py {function_name} groundhog-{script_hash}.in > groundhog-{script_hash}-run.stdout \\
-  && cat groundhog-{script_hash}.out
+  {script_basename}-{script_hash}.py {function_name} {script_basename}-{script_hash}.in > {script_basename}-{script_hash}-run.stdout \\
+  && cat {script_basename}-{script_hash}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
@@ -33,6 +34,7 @@ def script_to_callable(
     endpoint: str,
     walltime: int | None = None,
     user_endpoint_config: dict | None = None,
+    script_path: str | None = None,
 ) -> Callable:
     """Create callable corresponding to the named function from a user's script.
 
@@ -47,7 +49,12 @@ def script_to_callable(
     config.update(user_endpoint_config or {})
 
     script_hash = _script_hash_prefix(user_script)
-    contents = _inject_script_boilerplate(user_script, function_name, script_hash)
+    script_basename = (
+        _extract_script_basename(script_path) if script_path else "groundhog"
+    )
+    contents = _inject_script_boilerplate(
+        user_script, function_name, script_hash, script_basename
+    )
 
     def run(*args, **kwargs):
         shell_fn = gc.ShellFunction(cmd=SHELL_COMMAND_TEMPLATE, walltime=walltime)
@@ -57,6 +64,7 @@ def script_to_callable(
             future = executor.submit(
                 shell_fn,
                 script_hash=script_hash,
+                script_basename=script_basename,
                 contents=contents,
                 function_name=function_name,
                 payload=payload,
@@ -80,8 +88,12 @@ def _script_hash_prefix(contents: str, length=8) -> str:
     return str(sha1(bytes(contents, "utf-8")).hexdigest()[:length])
 
 
+def _extract_script_basename(script_path: str) -> str:
+    return Path(script_path).stem
+
+
 def _inject_script_boilerplate(
-    user_script: str, function_name: str, script_hash: str
+    user_script: str, function_name: str, script_hash: str, script_basename: str
 ) -> str:
     assert "__main__" not in user_script, (
         "invalid user script: can't define custom `__main__` logic"
@@ -90,8 +102,8 @@ def _inject_script_boilerplate(
     # or see if we can use runpy to explicitly set __name__ (i.e. "__groundhog_main__")
     # TODO validate existence of PEP 723 script metadata
     #
-    payload_path = f"groundhog-{script_hash}.in"
-    outfile_path = f"groundhog-{script_hash}.out"
+    payload_path = f"{script_basename}-{script_hash}.in"
+    outfile_path = f"{script_basename}-{script_hash}.out"
 
     script = f"""{user_script}
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from groundhog_hpc.errors import RemoteExecutionError
 
 app = typer.Typer()
 
+
 @app.command(no_args_is_help=True)
 def run(
     script: Path = typer.Argument(
