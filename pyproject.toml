@@ -3,11 +3,10 @@ name = "groundhog-hpc"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "globus-compute-sdk>=3.12.0",
     "typer>=0.16.1",
-    "uv>=0.8.15",
 ]
 
 [project.scripts]
