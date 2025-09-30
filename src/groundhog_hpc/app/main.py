@@ -49,14 +49,15 @@ def run(
         typer.echo(e.stderr, err=True)
         raise typer.Exit(1)
     except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
+        if not isinstance(e, RemoteExecutionError):
+            typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
 
 def _version_callback(show):
     if show:
         typer.echo(f"{groundhog_hpc.__version__}")
-    raise typer.Exit()
+        raise typer.Exit()
 
 
 @app.callback(no_args_is_help=True)

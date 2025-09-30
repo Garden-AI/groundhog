@@ -2,7 +2,7 @@ import os
 from typing import Callable
 
 from groundhog_hpc.runner import script_to_callable
-from groundhog_hpc.settings import DEFAULT_ENDPOINTS
+from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
 
 
 class Function:
@@ -15,7 +15,7 @@ class Function:
     ):
         self.script_path = os.environ.get("GROUNDHOG_SCRIPT_PATH")  # set by cli
         self.endpoint = endpoint or DEFAULT_ENDPOINTS["anvil"]
-        self.walltime = walltime
+        self.walltime = walltime or DEFAULT_WALLTIME_SEC
         self.user_endpoint_config = user_endpoint_config
 
         self._local_func = func
