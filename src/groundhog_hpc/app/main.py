@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
+from typing import Optional
 
 import typer
 
+import groundhog_hpc
 from groundhog_hpc.errors import RemoteExecutionError
 
 app = typer.Typer()
@@ -51,6 +53,19 @@ def run(
         raise typer.Exit(1)
 
 
-@app.command(no_args_is_help=True)
-def build(user_code: str):
-    print("[watch this space]🐷🐽")
+def _version_callback(show):
+    if show:
+        typer.echo(f"{groundhog_hpc.__version__}")
+    raise typer.Exit()
+
+
+@app.callback(no_args_is_help=True)
+def main_info(
+    version: Optional[bool] = typer.Option(
+        None, "--version", callback=_version_callback, is_eager=True
+    ),
+):
+    """
+    Hello, Groundhog ☀️🦫🕳️
+    """
+    pass
