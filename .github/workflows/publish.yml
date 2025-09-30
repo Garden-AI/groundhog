@@ -11,9 +11,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
 
       - name: Fetch tags
         run: git fetch --force --tags
+
+      - name: Debug git info
+        run: |
+          echo "github.ref: ${{ github.ref }}"
+          echo "github.ref_name: ${{ github.ref_name }}"
+          git describe --tags --always
+          git tag --list
 
       - name: Setup Python
         uses: actions/setup-python@v5
