@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable
 from uuid import UUID
 
+import groundhog_hpc
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
@@ -21,7 +22,7 @@ EOF
 cat > {script_basename}-{script_hash}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python \\
+$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python --with {version_spec} \\
   {script_basename}-{script_hash}.py {function_name} {script_basename}-{script_hash}.in > {script_basename}-{script_hash}-run.stdout \\
   && cat {script_basename}-{script_hash}.out
 """
@@ -56,6 +57,8 @@ def script_to_callable(
         user_script, function_name, script_hash, script_basename
     )
 
+    version_spec = _get_version_spec()
+
     def run(*args, **kwargs):
         shell_fn = gc.ShellFunction(cmd=SHELL_COMMAND_TEMPLATE, walltime=walltime)
         payload = serialize((args, kwargs))
@@ -68,6 +71,7 @@ def script_to_callable(
                 contents=contents,
                 function_name=function_name,
                 payload=payload,
+                version_spec=version_spec,
             )
 
             shell_result: gc.ShellResult = future.result()
@@ -90,6 +94,18 @@ def _script_hash_prefix(contents: str, length=8) -> str:
 
 def _extract_script_basename(script_path: str) -> str:
     return Path(script_path).stem
+
+
+def _get_version_spec() -> str:
+    # Ensure matching version is installed on endpoint
+    if "dev" not in groundhog_hpc.__version__:
+        version_spec = f"groundhog-hpc=={groundhog_hpc.__version__}"
+    else:
+        # Get commit hash from e.g. "0.0.0.post11.dev0+71128ec"
+        commit_hash = groundhog_hpc.__version__.split("+")[-1]
+        version_spec = f"groundhog-hpc@git+https://github.com/Garden-AI/groundhog.git@{commit_hash}"
+
+    return version_spec
 
 
 def _inject_script_boilerplate(
