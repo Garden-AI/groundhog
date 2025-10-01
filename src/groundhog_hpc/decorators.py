@@ -1,19 +1,14 @@
 import functools
-import os
 
 from groundhog_hpc.function import Function
+from groundhog_hpc.harness import Harness
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
 
 def harness():
     def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            os.environ["GROUNDHOG_HARNESS"] = str(True)
-            results = func(*args, **kwargs)
-            del os.environ["GROUNDHOG_HARNESS"]
-            return results
-
+        wrapper = Harness(func)
+        functools.update_wrapper(wrapper, func)
         return wrapper
 
     return decorator
