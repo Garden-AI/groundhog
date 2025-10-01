@@ -26,8 +26,8 @@ class Function:
 
     def remote(self, *args, **kwargs):
         if not self._running_in_harness():
-            raise Exception(
-                "Error: can't invoke a remote function outside of a @hog.harness function"
+            raise RuntimeError(
+                "Can't invoke a remote function outside of a @hog.harness function"
             )
         if self._remote_func is None:
             # delay defining the remote function until we're already invoking
