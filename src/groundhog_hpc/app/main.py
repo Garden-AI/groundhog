@@ -41,12 +41,11 @@ def run(
         exec(contents, __main__.__dict__, __main__.__dict__)
 
         if harness not in __main__.__dict__:
-            typer.echo(f"Error: Function '{harness}' not found in script", err=True)
+            typer.echo(f"Error: Function '{harness}' not found in script")
             raise typer.Exit(1)
         elif not isinstance(__main__.__dict__[harness], Harness):
             typer.echo(
                 f"Error: Function '{harness}' must be decorated with `@hog.harness`",
-                err=True,
             )
             raise typer.Exit(1)
 
