@@ -32,17 +32,18 @@ def run(
     contents = script_path.read_text()
 
     try:
-        # Use the same dict for both globals and locals so harness functions
-        # can reference other top level functions
-        script_namespace = {}
+        # Execute in the actual __main__ module so that classes defined in the script
+        # can be properly pickled (pickle requires classes to be importable from their
+        # __module__, and for __main__.ClassName to work it must be in sys.modules["__main__"])
+        import __main__
 
-        exec(contents, script_namespace, script_namespace)
+        exec(contents, __main__.__dict__, __main__.__dict__)
 
-        if function not in script_namespace:
+        if function not in __main__.__dict__:
             typer.echo(f"Error: Function '{function}' not found in script", err=True)
             raise typer.Exit(1)
 
-        result = script_namespace[function]()
+        result = __main__.__dict__[function]()
         typer.echo(result)
     except RemoteExecutionError as e:
         typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)
