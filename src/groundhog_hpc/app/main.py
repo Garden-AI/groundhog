@@ -6,6 +6,7 @@ import typer
 
 import groundhog_hpc
 from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.harness import Harness
 
 app = typer.Typer()
 
@@ -15,7 +16,7 @@ def run(
     script: Path = typer.Argument(
         ..., help="Python script with dependencies to deploy to the endpoint"
     ),
-    function: str = typer.Argument(
+    harness: str = typer.Argument(
         "main", help="Name of harness to run from script (default 'main')."
     ),
 ):
@@ -26,7 +27,7 @@ def run(
         typer.echo(f"Error: Script '{script_path}' not found", err=True)
         raise typer.Exit(1)
     else:
-        # used by _Function to build callable
+        # used by Function to build callable
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
 
     contents = script_path.read_text()
@@ -39,11 +40,19 @@ def run(
 
         exec(contents, __main__.__dict__, __main__.__dict__)
 
-        if function not in __main__.__dict__:
-            typer.echo(f"Error: Function '{function}' not found in script", err=True)
+        if harness not in __main__.__dict__:
+            typer.echo(f"Error: Function '{harness}' not found in script", err=True)
+            raise typer.Exit(1)
+        elif not isinstance(__main__.__dict__[harness], Harness):
+            typer.echo(
+                f"Error: Function '{harness}' must be decorated with `@hog.harness`",
+                err=True,
+            )
             raise typer.Exit(1)
 
-        result = __main__.__dict__[function]()
+        # signal to harness obj that invocation is allowed
+        os.environ[f"GROUNDHOG_RUN_{harness}".upper()] = str(True)
+        result = __main__.__dict__[harness]()
         typer.echo(result)
     except RemoteExecutionError as e:
         typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)

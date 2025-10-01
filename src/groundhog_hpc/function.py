@@ -38,9 +38,9 @@ class Function:
 
         return self._remote_func(*args, **kwargs)
 
-    def _running_in_harness(self):
+    def _running_in_harness(self) -> bool:
         # set by @harness decorator
-        return bool(os.environ.get("GROUNDHOG_HARNESS"))
+        return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
     def _init_remote_func(self):
         if self.script_path is None:
