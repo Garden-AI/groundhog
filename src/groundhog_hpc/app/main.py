@@ -1,14 +1,24 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 import typer
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 import groundhog_hpc
+from groundhog_hpc.environment import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.harness import Harness
 
 app = typer.Typer()
+
+
+def _python_version_matches(current: str, spec: str) -> bool:
+    """Check if current Python version satisfies the PEP 440 version specifier."""
+    return Version(current) in SpecifierSet(spec)
 
 
 @app.command(no_args_is_help=True)
@@ -18,6 +28,9 @@ def run(
     ),
     harness: str = typer.Argument(
         "main", help="Name of harness to run from script (default 'main')."
+    ),
+    no_isolation: bool = typer.Option(
+        False, "--no-isolation", help="Disable Python version isolation"
     ),
 ):
     """Run a Python script on a Globus Compute endpoint."""
@@ -31,6 +44,32 @@ def run(
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
 
     contents = script_path.read_text()
+
+    # Check if we need to run in an isolated environment
+    if not no_isolation:
+        metadata = read_pep723(contents)
+        if metadata and "requires-python" in metadata:
+            requires_python = metadata["requires-python"]
+            current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
+            # Check if current Python version matches the requirement
+            if not _python_version_matches(current_version, requires_python):
+                # Re-exec with uv run in isolated environment
+                cmd = [
+                    "uv",
+                    "run",
+                    "--with",
+                    f"groundhog-hpc=={groundhog_hpc.__version__}",
+                    "--python",
+                    requires_python,
+                    "hog",
+                    "run",
+                    str(script_path),
+                    harness,
+                    "--no-isolation",
+                ]
+                result = subprocess.run(cmd)
+                raise typer.Exit(result.returncode)
 
     try:
         # Execute in the actual __main__ module so that classes defined in the script
