@@ -1,11 +1,12 @@
 import inspect
 import os
-from typing import Callable
+from typing import Any, Callable
 
 
 class Harness:
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable[..., Any]):
         self.func = func
+        assert hasattr(func, "__qualname__")
         self.name = func.__qualname__
         self._validate_signature()
 

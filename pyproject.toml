@@ -34,10 +34,15 @@ pattern = "default-unprefixed"
 dev = [
     "pre-commit>=4.3.0",
     "pytest>=8.4.1",
+    "pytest-cov>=7.0.0",
     "ruff>=0.12.11",
+    "ty>=0.0.1a21",
 ]
 
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501"]  # line length handled by pre-commit hook
+
+[tool.ty.src]
+exclude = ["examples", "scripts", "tests"]
