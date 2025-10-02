@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
+from uv import find_uv_bin
 
 import groundhog_hpc
 from groundhog_hpc.environment import read_pep723
@@ -15,11 +16,6 @@ from groundhog_hpc.harness import Harness
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
-
-
-def _python_version_matches(current: str, spec: str) -> bool:
-    """Check if current Python version satisfies the PEP 440 version specifier."""
-    return Version(current) in SpecifierSet(spec)
 
 
 @app.command(no_args_is_help=True)
@@ -93,13 +89,19 @@ def run(
         raise typer.Exit(1)
 
 
+def _python_version_matches(current: str, spec: str) -> bool:
+    """Check if current Python version satisfies the PEP 440 version specifier."""
+    return Version(current) in SpecifierSet(spec)
+
+
 def _re_run_with_version(
     requires_python: str, groundhog_spec: str, script_path: str, harness: str
 ) -> subprocess.CompletedProcess:
     # Re-exec with uv run in isolated environment
     cmd = [
-        "uv",
+        f"{find_uv_bin()}",
         "run",
+        "-qq",
         "--with",
         groundhog_spec,
         "--python",
