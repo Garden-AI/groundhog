@@ -12,6 +12,7 @@ import groundhog_hpc
 from groundhog_hpc.environment import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.harness import Harness
+from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
 
@@ -59,7 +60,7 @@ def run(
                     "uv",
                     "run",
                     "--with",
-                    f"groundhog-hpc=={groundhog_hpc.__version__}",
+                    get_groundhog_version_spec(),
                     "--python",
                     requires_python,
                     "hog",
