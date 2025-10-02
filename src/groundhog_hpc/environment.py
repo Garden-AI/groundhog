@@ -4,7 +4,7 @@ import sys
 if sys.version_info >= (3, 11):
     import tomllib
 else:
-    import tomlli as tomllib
+    import tomli as tomllib
 
 # see: https://peps.python.org/pep-0723/#reference-implementation
 INLINE_METADATA_REGEX = (
