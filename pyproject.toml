@@ -43,3 +43,6 @@ dev = [
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501"]  # line length handled by pre-commit hook
+
+[tool.ty.src]
+exclude = ["examples", "scripts", "tests"]
