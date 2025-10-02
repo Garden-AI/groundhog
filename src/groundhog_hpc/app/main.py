@@ -31,7 +31,7 @@ def run(
         "main", help="Name of harness to run from script (default 'main')."
     ),
     no_isolation: bool = typer.Option(
-        False, "--no-isolation", help="Disable Python version isolation"
+        False, "--no-isolation", help="Disable local python isolation", hidden=True
     ),
 ):
     """Run a Python script on a Globus Compute endpoint."""
@@ -53,23 +53,13 @@ def run(
             requires_python = metadata["requires-python"]
             current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
-            # Check if current Python version matches the requirement
             if not _python_version_matches(current_version, requires_python):
-                # Re-exec with uv run in isolated environment
-                cmd = [
-                    "uv",
-                    "run",
-                    "--with",
-                    get_groundhog_version_spec(),
-                    "--python",
+                result = _re_run_with_version(
                     requires_python,
-                    "hog",
-                    "run",
+                    get_groundhog_version_spec(),
                     str(script_path),
                     harness,
-                    "--no-isolation",
-                ]
-                result = subprocess.run(cmd)
+                )
                 raise typer.Exit(result.returncode)
 
     try:
@@ -101,6 +91,27 @@ def run(
         if not isinstance(e, RemoteExecutionError):
             typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
+
+
+def _re_run_with_version(
+    requires_python: str, groundhog_spec: str, script_path: str, harness: str
+) -> subprocess.CompletedProcess:
+    # Re-exec with uv run in isolated environment
+    cmd = [
+        "uv",
+        "run",
+        "--with",
+        groundhog_spec,
+        "--python",
+        requires_python,
+        "hog",
+        "run",
+        str(script_path),
+        harness,
+        "--no-isolation",
+    ]
+    result = subprocess.run(cmd)
+    return result
 
 
 def _version_callback(show):
