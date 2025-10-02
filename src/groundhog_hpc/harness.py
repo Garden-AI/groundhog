@@ -1,3 +1,4 @@
+import inspect
 import os
 from typing import Callable
 
@@ -6,6 +7,7 @@ class Harness:
     def __init__(self, func: Callable):
         self.func = func
         self.name = func.__qualname__
+        self._validate_signature()
 
     def __call__(self):
         if not self._invoked_by_cli():
@@ -27,3 +29,11 @@ class Harness:
 
     def _invoked_by_cli(self):
         return bool(os.environ.get(f"GROUNDHOG_RUN_{self.name}".upper()))
+
+    def _validate_signature(self):
+        sig = inspect.signature(self.func)
+        if len(sig.parameters) > 0:
+            raise TypeError(
+                f"Harness function '{self.name}' must not accept any arguments, "
+                f"but has parameters: {list(sig.parameters.keys())}"
+            )
