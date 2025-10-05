@@ -19,3 +19,20 @@ class RemoteExecutionError(Exception):
         self.stderr = "\n".join(lines)
         self.returncode = returncode
         super().__init__(message)
+
+
+class PayloadTooLargeError(Exception):
+    """Raised when a serialized payload exceeds Globus Compute's 10MB size limit.
+
+    Attributes:
+        size_mb: The size of the payload in megabytes
+        limit_mb: The size limit in megabytes (default: 10)
+    """
+
+    def __init__(self, size_mb: float, limit_mb: int = 10):
+        self.size_mb = size_mb
+        self.limit_mb = limit_mb
+        super().__init__(
+            f"Payload size ({size_mb:.2f} MB) exceeds Globus Compute's {limit_mb} MB limit. "
+            "Consider reducing the amount of data being passed or returned."
+        )
