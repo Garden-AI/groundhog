@@ -16,15 +16,15 @@ warnings.filterwarnings(
 )
 
 SHELL_COMMAND_TEMPLATE = """
-cat > {script_basename}-{script_hash}.py << 'EOF'
-{contents}
+cat > {script_name}.py << 'EOF'
+{script_contents}
 EOF
-cat > {script_basename}-{script_hash}.in << 'END'
+cat > {script_name}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python --with {version_spec} \\
-  {script_basename}-{script_hash}.py {function_name} {script_basename}-{script_hash}.in > {script_basename}-{script_hash}-run.stdout \\
-  && cat {script_basename}-{script_hash}.out
+$(python -c 'import uv; print(uv.find_uv_bin())') run -qq --managed-python --with {version_spec} \\
+  {script_name}.py {function_name} {script_name}.in > {script_name}.stdout \\
+  && cat {script_name}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
@@ -53,8 +53,9 @@ def script_to_callable(
     script_basename = (
         _extract_script_basename(script_path) if script_path else "groundhog"
     )
-    contents = _inject_script_boilerplate(
-        user_script, function_name, script_hash, script_basename
+    script_name = f"{script_basename}-{script_hash}"
+    script_contents = _inject_script_boilerplate(
+        user_script, function_name, script_name
     )
 
     version_spec = get_groundhog_version_spec()
@@ -66,9 +67,8 @@ def script_to_callable(
         with gc.Executor(UUID(endpoint), user_endpoint_config=config) as executor:
             future = executor.submit(
                 shell_fn,
-                script_hash=script_hash,
-                script_basename=script_basename,
-                contents=contents,
+                script_name=script_name,
+                script_contents=script_contents,
                 function_name=function_name,
                 payload=payload,
                 version_spec=version_spec,
@@ -97,17 +97,15 @@ def _extract_script_basename(script_path: str) -> str:
 
 
 def _inject_script_boilerplate(
-    user_script: str, function_name: str, script_hash: str, script_basename: str
+    user_script: str,
+    function_name: str,
+    script_name: str,
 ) -> str:
     assert "__main__" not in user_script, (
         "invalid user script: can't define custom `__main__` logic"
     )
-    # TODO better validation errors
-    # or see if we can use runpy to explicitly set __name__ (i.e. "__groundhog_main__")
-    # TODO validate existence of PEP 723 script metadata
-    #
-    payload_path = f"{script_basename}-{script_hash}.in"
-    outfile_path = f"{script_basename}-{script_hash}.out"
+    payload_path = f"{script_name}.in"
+    outfile_path = f"{script_name}.out"
 
     script = f"""{user_script}
 if __name__ == "__main__":
