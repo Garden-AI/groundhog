@@ -34,5 +34,5 @@ class PayloadTooLargeError(Exception):
         self.limit_mb = limit_mb
         super().__init__(
             f"Payload size ({size_mb:.2f} MB) exceeds Globus Compute's {limit_mb} MB limit. "
-            "Consider reducing the amount of data being passed or returned."
+            "See also: https://globus-compute.readthedocs.io/en/latest/limits.html#data-limits"
         )
