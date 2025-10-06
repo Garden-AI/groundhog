@@ -46,14 +46,10 @@ class Function:
         if self.script_path is None:
             raise ValueError("Could not locate source file")
 
-        with open(self.script_path, "r") as f_in:
-            self.contents = f_in.read()
-
         return script_to_callable(
-            self.contents,
+            self.script_path,
             self._local_func.__qualname__,
             self.endpoint,
             self.walltime,
             self.user_endpoint_config,
-            self.script_path,
         )
