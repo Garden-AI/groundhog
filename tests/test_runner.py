@@ -2,7 +2,7 @@
 
 import pytest
 
-from groundhog_hpc.runner import (
+from groundhog_hpc.templating import (
     _inject_script_boilerplate,
 )
 
@@ -57,3 +57,16 @@ if __name__ == "__main__":
         injected = _inject_script_boilerplate(script, "test", "my_script-hashyhash")
         assert "my_script-hashyhash.in" in injected
         assert "my_script-hashyhash.out" in injected
+
+    def test_escapes_curly_braces_in_user_code(self):
+        """Test that curly braces in user code are escaped for .format() compatibility."""
+        script = """import groundhog_hpc as hog
+
+@hog.function()
+def process_dict():
+    data = {"key": "value"}
+    return data
+"""
+        injected = _inject_script_boilerplate(script, "process_dict", "test-abc123")
+        # Curly braces should be doubled to escape them
+        assert '{{"key": "value"}}' in injected

@@ -131,7 +131,7 @@ def main():
             func._init_remote_func()
 
     def test_init_remote_func_reads_script_contents(self, tmp_path):
-        """Test that _init_remote_func reads the script file."""
+        """Test that _init_remote_func passes script path to script_to_callable."""
 
         script_path = tmp_path / "test_script.py"
         script_content = "# test script content"
@@ -146,10 +146,8 @@ def main():
             mock_script_to_callable.return_value = MagicMock()
             func._init_remote_func()
 
-        # Verify script contents were read
-        assert func.contents == script_content
         # Verify script_to_callable was called with correct arguments
         mock_script_to_callable.assert_called_once()
         call_args = mock_script_to_callable.call_args[0]
-        assert call_args[0] == script_content
+        assert call_args[0] == str(script_path)
         assert call_args[1] == "dummy_function"
