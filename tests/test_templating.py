@@ -3,65 +3,9 @@
 import pytest
 
 from groundhog_hpc.templating import (
-    _extract_script_basename,
     _inject_script_boilerplate,
-    _script_hash_prefix,
     template_shell_command,
 )
-
-
-class TestScriptHashPrefix:
-    """Test hash generation for script contents."""
-
-    def test_generates_8_character_hash_by_default(self):
-        """Test that default hash length is 8 characters."""
-        script = "import numpy as np"
-        hash_result = _script_hash_prefix(script)
-        assert len(hash_result) == 8
-
-    def test_same_content_produces_same_hash(self):
-        """Test that identical content produces identical hashes."""
-        script = "def foo(): return 42"
-        hash1 = _script_hash_prefix(script)
-        hash2 = _script_hash_prefix(script)
-        assert hash1 == hash2
-
-    def test_different_content_produces_different_hash(self):
-        """Test that different content produces different hashes."""
-        script1 = "def foo(): return 1"
-        script2 = "def foo(): return 2"
-        hash1 = _script_hash_prefix(script1)
-        hash2 = _script_hash_prefix(script2)
-        assert hash1 != hash2
-
-    def test_custom_hash_length(self):
-        """Test that custom length parameter works."""
-        script = "import numpy as np"
-        hash_result = _script_hash_prefix(script, length=16)
-        assert len(hash_result) == 16
-
-
-class TestExtractScriptBasename:
-    """Test script basename extraction."""
-
-    def test_extracts_basename_from_simple_path(self):
-        """Test extraction from simple filename."""
-        assert _extract_script_basename("script.py") == "script"
-
-    def test_extracts_basename_from_full_path(self):
-        """Test extraction from full file path."""
-        assert _extract_script_basename("/path/to/my_script.py") == "my_script"
-
-    def test_handles_nested_directories(self):
-        """Test extraction from deeply nested path."""
-        assert (
-            _extract_script_basename("/home/user/projects/deep/nested/test.py")
-            == "test"
-        )
-
-    def test_handles_relative_paths(self):
-        """Test extraction from relative path."""
-        assert _extract_script_basename("../scripts/hello.py") == "hello"
 
 
 class TestInjectScriptBoilerplate:
