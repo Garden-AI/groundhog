@@ -67,8 +67,6 @@ def _inject_script_boilerplate(
 
     script = f"""{user_script}
 if __name__ == "__main__":
-    import sys
-
     from groundhog_hpc.serialization import serialize, deserialize
 
     with open('{payload_path}', 'r') as f_in:
