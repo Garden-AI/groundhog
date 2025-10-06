@@ -32,6 +32,6 @@ class PayloadTooLargeError(Exception):
     def __init__(self, size_mb: float):
         self.size_mb = size_mb
         super().__init__(
-            f"Payload size ({size_mb:.2f} MB) exceeds Globus Compute's 10MB limit. "
+            f"Payload size ({size_mb:.2f} MB) exceeds Globus Compute's 10 MB limit. "
             "See also: https://globus-compute.readthedocs.io/en/latest/limits.html#data-limits"
         )

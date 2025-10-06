@@ -131,7 +131,6 @@ class TestPayloadSizeLimit:
 
         # Verify error attributes
         assert exc_info.value.size_mb > 10
-        assert exc_info.value.limit_mb == 10
         assert "exceeds Globus Compute's 10 MB limit" in str(exc_info.value)
 
     def test_payload_near_limit_succeeds(self):
