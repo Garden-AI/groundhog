@@ -12,7 +12,9 @@ from uv import find_uv_bin
 import groundhog_hpc
 from groundhog_hpc.environment import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
+from groundhog_hpc.runner import pre_register_shell_function
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
@@ -86,6 +88,74 @@ def run(
     except Exception as e:
         if not isinstance(e, RemoteExecutionError):
             typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(no_args_is_help=True)
+def register(
+    script: Path = typer.Argument(
+        ...,
+        help="Python script with decorated functions to pre-register with Globus Compute.",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Print detailed information about registered functions",
+    ),
+):
+    """Register all @hog.function decorated functions in a script and print their UUIDs."""
+
+    script_path = script.resolve()
+    if not script_path.exists():
+        typer.echo(f"Error: Script '{script_path}' not found", err=True)
+        raise typer.Exit(1)
+
+    # Set script path for Function instances
+    os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+
+    contents = script_path.read_text()
+
+    try:
+        # Execute in a temporary module namespace
+        import __main__
+
+        exec(contents, __main__.__dict__, __main__.__dict__)
+
+        # Find all Function instances
+        functions_found = []
+        for name, obj in __main__.__dict__.items():
+            if isinstance(obj, Function):
+                functions_found.append((name, obj))
+
+        if not functions_found:
+            typer.echo("No @hog.function decorated functions found in script", err=True)
+            raise typer.Exit(1)
+
+        # Register each function
+        typer.echo(f"Registering {len(functions_found)} function(s)...")
+
+        # Initialize client for verbose mode
+        client = None
+        if verbose:
+            import globus_compute_sdk as gc
+
+            client = gc.Client()
+
+        for name, func in functions_found:
+            function_id = pre_register_shell_function(
+                str(script_path), name, walltime=func.walltime
+            )
+            typer.echo(f"{name}: {function_id}")
+
+            if verbose:
+                from pprint import pprint
+
+                func_info = client.get_function(function_id)
+                pprint(func_info)
+
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
 
