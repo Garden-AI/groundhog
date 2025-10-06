@@ -80,4 +80,6 @@ if __name__ == "__main__":
         contents = serialize(results)
         f_out.write(contents)
 """
-    return script
+    # Escape curly braces so they're treated as literals when
+    # expanded with .format(payload=payload)
+    return script.replace("{", "{{").replace("}", "}}")
