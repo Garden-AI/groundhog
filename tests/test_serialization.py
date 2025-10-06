@@ -1,5 +1,8 @@
 """Tests for the serialization module."""
 
+import pytest
+
+from groundhog_hpc.errors import PayloadTooLargeError
 from groundhog_hpc.serialization import deserialize, serialize
 
 
@@ -104,3 +107,45 @@ class TestEdgeCases:
         serialized = serialize(payload)
         deserialized = deserialize(serialized)
         assert deserialized == payload
+
+
+class TestPayloadSizeLimit:
+    """Test that payloads exceeding 10MB are rejected."""
+
+    def test_small_payload_succeeds(self):
+        """Test that payloads under 10MB serialize successfully."""
+        # Create a ~1MB payload (well under the limit)
+        large_data = "x" * (1024 * 1024)
+        result = serialize(large_data)
+        assert result is not None
+        assert deserialize(result) == large_data
+
+    def test_large_payload_raises_error(self):
+        """Test that payloads over 10MB raise PayloadTooLargeError."""
+        # Create a payload larger than 10MB
+        # Using a list of strings to exceed the limit
+        large_data = "x" * (11 * 1024 * 1024)
+
+        with pytest.raises(PayloadTooLargeError) as exc_info:
+            serialize(large_data)
+
+        # Verify error attributes
+        assert exc_info.value.size_mb > 10
+        assert "exceeds Globus Compute's 10 MB limit" in str(exc_info.value)
+
+    def test_payload_near_limit_succeeds(self):
+        """Test that payloads just under 10MB succeed."""
+        # Create a payload just under 10MB (9.5 MB)
+        large_data = "x" * (9 * 1024 * 1024 + 512 * 1024)
+        result = serialize(large_data)
+        assert result is not None
+
+    def test_pickle_payload_size_checked(self):
+        """Test that pickle-encoded payloads are also size-checked."""
+        # Create a large non-JSON-serializable object (set)
+        large_set = {i for i in range(2 * 1024 * 1024)}  # Large set
+
+        with pytest.raises(PayloadTooLargeError) as exc_info:
+            serialize(large_set)
+
+        assert exc_info.value.size_mb > 10
