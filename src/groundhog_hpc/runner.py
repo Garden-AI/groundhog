@@ -1,6 +1,8 @@
 import warnings
-from typing import Callable
+from typing import TYPE_CHECKING, Callable, TypeVar
 from uuid import UUID
+
+import globus_compute_sdk
 
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize, serialize
@@ -12,6 +14,13 @@ warnings.filterwarnings(
     category=UserWarning,
     module="globus_compute_sdk",
 )
+
+if TYPE_CHECKING:
+    import globus_compute_sdk
+
+    ShellFunction = globus_compute_sdk.ShellFunction
+else:
+    ShellFunction = TypeVar("ShellFunction")
 
 
 def script_to_callable(
@@ -31,10 +40,7 @@ def script_to_callable(
     config = DEFAULT_USER_CONFIG.copy()
     config.update(user_endpoint_config or {})
 
-    shell_command = template_shell_command(script_path, function_name)
-    shell_function = gc.ShellFunction(
-        shell_command, walltime=walltime, name=function_name
-    )
+    shell_function = script_to_submittable(script_path, function_name, walltime)
 
     def run(*args, **kwargs):
         payload = serialize((args, kwargs))
@@ -72,10 +78,18 @@ def pre_register_shell_function(
     import globus_compute_sdk as gc
 
     client = gc.Client()
+    shell_function = script_to_submittable(script_path, function_name, walltime)
+    function_id = client.register_function(shell_function, public=True)
+    return function_id
+
+
+def script_to_submittable(
+    script_path: str, function_name: str, walltime: int | None = None
+) -> ShellFunction:
+    import globus_compute_sdk as gc
+
     shell_command = template_shell_command(script_path, function_name)
     shell_function = gc.ShellFunction(
         shell_command, walltime=walltime, name=function_name
     )
-
-    function_id = client.register_function(shell_function, public=True)
-    return function_id
+    return shell_function
