@@ -2,8 +2,6 @@ import warnings
 from typing import TYPE_CHECKING, Callable, TypeVar
 from uuid import UUID
 
-import globus_compute_sdk
-
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_USER_CONFIG
