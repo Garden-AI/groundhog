@@ -1,8 +1,10 @@
 import os
+import time
 from concurrent.futures import Future
 from typing import Callable
 from uuid import UUID
 
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.runner import script_to_callable, script_to_submittable
 from groundhog_hpc.serialization import deserialize, serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
@@ -34,14 +36,13 @@ class Function:
             raise RuntimeError(
                 "Can't invoke a remote function outside of a @hog.harness function"
             )
-        if self._remote_function is None:
-            # delay defining the remote function until we're already invoking
-            # the harness to avoid "No such file or directory: '<string>'" etc.
-            # also avoids redefining the shell function recursively when running
-            # on the remote endpoint
-            self._remote_function = self._init_remote_func()
 
-        return self._remote_function(*args, **kwargs)
+        fut = self.submit(*args, **kwargs)
+        while not fut.done():
+            time.sleep(1)
+            print(".", end="", flush=True)
+        print("\n")
+        return fut.result()
 
     def _running_in_harness(self) -> bool:
         # set by @harness decorator
@@ -83,8 +84,9 @@ class Function:
         payload = serialize((args, kwargs))
 
         with gc.Executor(UUID(endpoint), user_endpoint_config=config) as executor:
-            future = executor.submit(self._shell_function, payload)
-            return _create_deserializing_future(future)
+            future = executor.submit(self._shell_function, payload=payload)
+            deserializing_future = _create_deserializing_future(future)
+            return deserializing_future
 
 
 def _create_deserializing_future(original_future: Future) -> Future:
@@ -95,11 +97,22 @@ def _create_deserializing_future(original_future: Future) -> Future:
 
     def callback(fut):
         try:
-            serialized_data = fut.result()
-            deserialized_data = deserialize(serialized_data)
-            deserialized_future.set_result(deserialized_data)
+            serialized_result = fut.result()
+            deserialized_result = _process_shell_result(serialized_result)
+            deserialized_future.set_result(deserialized_result)
         except Exception as e:
             deserialized_future.set_exception(e)
 
     original_future.add_done_callback(callback)
     return deserialized_future
+
+
+def _process_shell_result(shell_result):
+    if shell_result.returncode != 0:
+        raise RemoteExecutionError(
+            message=f"Remote execution failed with exit code {shell_result.returncode}",
+            stderr=shell_result.stderr,
+            returncode=shell_result.returncode,
+        )
+
+    return deserialize(shell_result.stdout)
