@@ -135,13 +135,6 @@ def register(
         # Register each function
         typer.echo(f"Registering {len(functions_found)} function(s)...")
 
-        # Initialize client for verbose mode
-        client = None
-        if verbose:
-            import globus_compute_sdk as gc
-
-            client = gc.Client()
-
         for name, func in functions_found:
             function_id = pre_register_shell_function(
                 str(script_path), name, walltime=func.walltime
@@ -150,6 +143,10 @@ def register(
 
             if verbose:
                 from pprint import pprint
+
+                import globus_compute_sdk as gc
+
+                client = gc.Client()
 
                 func_info = client.get_function(function_id)
                 pprint(func_info)

@@ -5,7 +5,7 @@ from typing import Any
 
 from groundhog_hpc.errors import PayloadTooLargeError
 
-# Globus Compute's payload size limit in bytes (10 MB)
+# Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
 
 

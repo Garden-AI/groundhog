@@ -24,7 +24,7 @@ class TestFunctionDecorator:
         def my_function():
             return "result"
 
-        assert my_function.user_endpoint_config == DEFAULT_USER_CONFIG
+        assert my_function.default_user_endpoint_config == DEFAULT_USER_CONFIG
 
     def test_accepts_endpoint_parameter(self, mock_endpoint_uuid):
         """Test that endpoint parameter is accepted."""
@@ -51,9 +51,9 @@ class TestFunctionDecorator:
         def my_function():
             return "result"
 
-        assert "account" in my_function.user_endpoint_config
-        assert my_function.user_endpoint_config["account"] == "my_account"
-        assert my_function.user_endpoint_config["cores_per_node"] == 4
+        assert "account" in my_function.default_user_endpoint_config
+        assert my_function.default_user_endpoint_config["account"] == "my_account"
+        assert my_function.default_user_endpoint_config["cores_per_node"] == 4
 
     def test_merges_worker_init_with_default(self):
         """Test that custom worker_init is merged with default."""
@@ -64,8 +64,8 @@ class TestFunctionDecorator:
             return "result"
 
         # Should contain both custom and default worker_init
-        assert custom_init in my_function.user_endpoint_config["worker_init"]
+        assert custom_init in my_function.default_user_endpoint_config["worker_init"]
         assert (
             DEFAULT_USER_CONFIG["worker_init"]
-            in my_function.user_endpoint_config["worker_init"]
+            in my_function.default_user_endpoint_config["worker_init"]
         )

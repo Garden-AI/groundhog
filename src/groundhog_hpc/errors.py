@@ -1,6 +1,3 @@
-"""Custom exceptions for Groundhog."""
-
-
 class RemoteExecutionError(Exception):
     """Raised when a remote function execution fails on the Globus Compute endpoint.
 
@@ -26,7 +23,6 @@ class PayloadTooLargeError(Exception):
 
     Attributes:
         size_mb: The size of the payload in megabytes
-        limit_mb: The size limit in megabytes (default: 10)
     """
 
     def __init__(self, size_mb: float):

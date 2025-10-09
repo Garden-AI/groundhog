@@ -1,7 +1,19 @@
 """Tests for the runner module helper functions."""
 
+from concurrent.futures import Future
+from unittest.mock import MagicMock, Mock, patch
+from uuid import UUID
+
 import pytest
 
+from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.runner import (
+    _create_deserializing_future,
+    _process_shell_result,
+    pre_register_shell_function,
+    script_to_submittable,
+    submit_to_executor,
+)
 from groundhog_hpc.templating import (
     _inject_script_boilerplate,
 )
@@ -70,3 +82,283 @@ def process_dict():
         injected = _inject_script_boilerplate(script, "process_dict", "test-abc123")
         # Curly braces should be doubled to escape them
         assert '{{"key": "value"}}' in injected
+
+
+class TestScriptToSubmittable:
+    """Test the script_to_submittable function."""
+
+    def test_creates_shell_function(self, tmp_path):
+        """Test that script_to_submittable creates a ShellFunction."""
+        script_path = tmp_path / "test.py"
+        script_path.write_text("# test")
+
+        with patch("groundhog_hpc.runner.template_shell_command") as mock_template:
+            mock_template.return_value = "echo test"
+            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+                _result = script_to_submittable(str(script_path), "my_function")
+
+                # Verify template was called with correct args
+                mock_template.assert_called_once_with(str(script_path), "my_function")
+
+                # Verify ShellFunction was created with correct args
+                mock_shell_func.assert_called_once_with(
+                    "echo test", walltime=None, name="my_function"
+                )
+
+    def test_passes_walltime(self, tmp_path):
+        """Test that walltime parameter is passed to ShellFunction."""
+        script_path = tmp_path / "test.py"
+        script_path.write_text("# test")
+
+        with patch("groundhog_hpc.runner.template_shell_command"):
+            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+                script_to_submittable(str(script_path), "my_function", walltime=120)
+
+                # Verify walltime was passed
+                assert mock_shell_func.call_args[1]["walltime"] == 120
+
+    def test_uses_function_name_as_shell_function_name(self, tmp_path):
+        """Test that function name is used as the ShellFunction name."""
+        script_path = tmp_path / "test.py"
+        script_path.write_text("# test")
+
+        with patch("groundhog_hpc.runner.template_shell_command"):
+            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+                script_to_submittable(str(script_path), "custom_func_name")
+
+                # Verify name was passed
+                assert mock_shell_func.call_args[1]["name"] == "custom_func_name"
+
+
+class TestPreRegisterShellFunction:
+    """Test the pre_register_shell_function function."""
+
+    def test_registers_function_and_returns_uuid(self, tmp_path):
+        """Test that function is registered and UUID is returned."""
+        script_path = tmp_path / "test.py"
+        script_path.write_text("# test")
+
+        mock_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_client = MagicMock()
+        mock_client.register_function.return_value = mock_uuid
+
+        with patch("groundhog_hpc.runner.gc.Client", return_value=mock_client):
+            with patch("groundhog_hpc.runner.script_to_submittable") as mock_s2s:
+                mock_shell_func = MagicMock()
+                mock_s2s.return_value = mock_shell_func
+
+                result = pre_register_shell_function(
+                    str(script_path), "my_function", walltime=60
+                )
+
+                # Verify script_to_submittable was called correctly
+                mock_s2s.assert_called_once_with(str(script_path), "my_function", 60)
+
+                # Verify register_function was called with public=True
+                mock_client.register_function.assert_called_once_with(
+                    mock_shell_func, public=True
+                )
+
+                # Verify UUID was returned
+                assert result == mock_uuid
+
+
+class TestSubmitToExecutor:
+    """Test the submit_to_executor function."""
+
+    def test_creates_executor_and_submits(self, mock_endpoint_uuid):
+        """Test that Executor is created and submit is called."""
+        mock_shell_func = MagicMock()
+        mock_future = Future()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        user_config = {"account": "test"}
+
+        with patch("groundhog_hpc.runner.gc.Executor", return_value=mock_executor):
+            result = submit_to_executor(
+                UUID(mock_endpoint_uuid), user_config, mock_shell_func, "test_payload"
+            )
+
+            # Verify Executor was created with correct endpoint and config
+            from groundhog_hpc.runner import gc
+
+            gc.Executor.assert_called_once_with(
+                UUID(mock_endpoint_uuid), user_endpoint_config=user_config
+            )
+
+            # Verify submit was called with shell function and payload
+            mock_executor.submit.assert_called_once_with(
+                mock_shell_func, payload="test_payload"
+            )
+
+            # Result should be a Future (the deserializing one, not the original)
+            assert isinstance(result, Future)
+
+    def test_returns_deserializing_future(self, mock_endpoint_uuid):
+        """Test that a deserializing future is returned, not the original."""
+        mock_shell_func = MagicMock()
+        mock_future = Future()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        with patch("groundhog_hpc.runner.gc.Executor", return_value=mock_executor):
+            result = submit_to_executor(
+                UUID(mock_endpoint_uuid), {}, mock_shell_func, "payload"
+            )
+
+            # Should return a different future than the one from executor.submit
+            assert result is not mock_future
+            assert isinstance(result, Future)
+
+
+class TestCreateDeserializingFuture:
+    """Test the _create_deserializing_future function."""
+
+    def test_creates_future_of_same_type(self):
+        """Test that the deserializing future is the same type as the original."""
+        original = Future()
+        deserializing = _create_deserializing_future(original)
+
+        assert type(deserializing) is type(original)
+
+    def test_deserializes_successful_result(self):
+        """Test that successful results are deserialized."""
+        original = Future()
+        deserializing = _create_deserializing_future(original)
+
+        # Create a mock ShellResult
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 0
+        mock_shell_result.stdout = '{"result": "success"}'
+
+        # Complete the original future
+        original.set_result(mock_shell_result)
+
+        # Wait for callback to complete
+        import time
+
+        time.sleep(0.01)
+
+        # Deserializing future should have the deserialized result
+        result = deserializing.result()
+        assert result == {"result": "success"}
+
+    def test_propagates_exceptions(self):
+        """Test that exceptions are propagated to the deserializing future."""
+        original = Future()
+        deserializing = _create_deserializing_future(original)
+
+        # Set an exception on the original
+        original.set_exception(ValueError("test error"))
+
+        # Exception should propagate
+        import time
+
+        time.sleep(0.01)
+
+        with pytest.raises(ValueError, match="test error"):
+            deserializing.result()
+
+    def test_handles_shell_execution_errors(self):
+        """Test that shell execution errors are converted to RemoteExecutionError."""
+        original = Future()
+        deserializing = _create_deserializing_future(original)
+
+        # Create a mock ShellResult with error
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 1
+        mock_shell_result.stderr = "Error: something went wrong"
+
+        # Complete the original future
+        original.set_result(mock_shell_result)
+
+        # Wait for callback
+        import time
+
+        time.sleep(0.01)
+
+        # Should raise RemoteExecutionError
+        with pytest.raises(RemoteExecutionError) as exc_info:
+            deserializing.result()
+
+        assert exc_info.value.returncode == 1
+        assert "something went wrong" in exc_info.value.stderr
+
+    def test_preserves_task_id(self):
+        """Test that task_id attribute is preserved on the deserializing future."""
+        original = Future()
+        original.task_id = "test-task-123"
+        deserializing = _create_deserializing_future(original)
+
+        # Create a successful result
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 0
+        mock_shell_result.stdout = '"test"'
+
+        original.set_result(mock_shell_result)
+
+        # Wait for callback
+        import time
+
+        time.sleep(0.01)
+
+        # Task ID should be preserved
+        assert hasattr(deserializing, "task_id")
+        assert deserializing.task_id == "test-task-123"
+
+
+class TestProcessShellResult:
+    """Test the _process_shell_result function."""
+
+    def test_deserializes_successful_result(self):
+        """Test that successful results are deserialized."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"key": "value"}'
+
+        result = _process_shell_result(mock_result)
+        assert result == {"key": "value"}
+
+    def test_raises_on_nonzero_returncode(self):
+        """Test that non-zero return codes raise RemoteExecutionError."""
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Error occurred"
+
+        with pytest.raises(RemoteExecutionError) as exc_info:
+            _process_shell_result(mock_result)
+
+        assert exc_info.value.returncode == 1
+        assert "Error occurred" in exc_info.value.stderr
+        assert "exit code 1" in str(exc_info.value)
+
+    def test_includes_stderr_in_error(self):
+        """Test that stderr is included in the error."""
+        mock_result = MagicMock()
+        mock_result.returncode = 2
+        mock_result.stderr = "Traceback:\n  File test.py\nSyntaxError"
+
+        with pytest.raises(RemoteExecutionError) as exc_info:
+            _process_shell_result(mock_result)
+
+        assert "SyntaxError" in exc_info.value.stderr
+
+    def test_handles_pickle_serialized_results(self):
+        """Test that pickle-serialized results are deserialized."""
+        import base64
+        import pickle
+
+        test_object = {"complex": [1, 2, 3], "nested": {"data": True}}
+        pickled = base64.b64encode(pickle.dumps(test_object)).decode()
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = f"__PICKLE__:{pickled}"
+
+        result = _process_shell_result(mock_result)
+        assert result == test_object
