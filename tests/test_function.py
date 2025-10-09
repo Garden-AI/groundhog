@@ -20,8 +20,8 @@ class TestFunctionInitialization:
 
         func = Function(dummy_function)
 
-        assert func._local_func == dummy_function
-        assert func._remote_func is None
+        assert func._local_function == dummy_function
+        assert func._shell_function is None
         assert func.walltime is not None
 
     def test_initialization_with_custom_endpoint(self, mock_endpoint_uuid):
@@ -82,7 +82,7 @@ class TestRemoteExecution:
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_remote_call_lazy_initialization(self, tmp_path):
-        """Test that _remote_func is lazily initialized on first .remote() call."""
+        """Test that _shell_function is lazily initialized on first .remote() call."""
 
         # Create a temporary script file
         script_path = tmp_path / "test_script.py"
@@ -103,51 +103,208 @@ def main():
 
         func = Function(dummy_function)
 
-        # Initially, remote function is not initialized
-        assert func._remote_func is None
+        # Initially, shell function is not initialized
+        assert func._shell_function is None
 
-        # Mock script_to_callable to avoid actual Globus Compute calls
-        mock_remote_func = MagicMock(return_value="remote_result")
+        # Mock the new architecture
+        mock_shell_func = MagicMock()
+        mock_future = MagicMock()
+        mock_future.result.return_value = "remote_result"
+
         with patch(
-            "groundhog_hpc.function.script_to_callable", return_value=mock_remote_func
-        ):
-            result = func.remote()
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_func,
+        ) as mock_script_to_submittable:
+            with patch(
+                "groundhog_hpc.function.submit_to_executor",
+                return_value=mock_future,
+            ) as mock_submit:
+                result = func.remote()
 
-        # After calling .remote(), _remote_func should be initialized
-        assert func._remote_func is not None
+        # After calling .remote(), _shell_function should be initialized
+        assert func._shell_function is not None
+        mock_script_to_submittable.assert_called_once()
+        mock_submit.assert_called_once()
         assert result == "remote_result"
 
         # Clean up
         del os.environ["GROUNDHOG_SCRIPT_PATH"]
         del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_init_remote_func_raises_without_script_path(self):
-        """Test that _init_remote_func raises when script_path is None."""
+    def test_submit_raises_without_script_path(self):
+        """Test that submit raises when script_path is None."""
 
-        func = Function(dummy_function)
-        func.script_path = None
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+        try:
+            func = Function(dummy_function)
+            func.script_path = None
 
-        with pytest.raises(ValueError, match="Could not locate source file"):
-            func._init_remote_func()
+            with pytest.raises(ValueError, match="Could not locate source file"):
+                func.submit()
+        finally:
+            del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_init_remote_func_reads_script_contents(self, tmp_path):
-        """Test that _init_remote_func passes script path to script_to_callable."""
+    def test_submit_creates_shell_function(self, tmp_path):
+        """Test that submit creates a shell function using script_to_submittable."""
 
         script_path = tmp_path / "test_script.py"
         script_content = "# test script content"
         script_path.write_text(script_content)
 
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+        try:
+            func = Function(dummy_function)
+            func.script_path = str(script_path)
+
+            mock_shell_func = MagicMock()
+            mock_future = MagicMock()
+
+            with patch(
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_func,
+            ) as mock_script_to_submittable:
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ):
+                    func.submit()
+
+            # Verify script_to_submittable was called with correct arguments
+            mock_script_to_submittable.assert_called_once()
+            call_args = mock_script_to_submittable.call_args[0]
+            assert call_args[0] == str(script_path)
+            assert call_args[1] == "dummy_function"
+        finally:
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+
+class TestSubmitMethod:
+    """Test the submit() method."""
+
+    def test_submit_raises_outside_harness(self):
+        """Test that submit() raises when called outside a harness."""
+
         func = Function(dummy_function)
-        func.script_path = str(script_path)
 
-        with patch(
-            "groundhog_hpc.function.script_to_callable"
-        ) as mock_script_to_callable:
-            mock_script_to_callable.return_value = MagicMock()
-            func._init_remote_func()
+        with pytest.raises(RuntimeError, match="outside of a @hog.harness function"):
+            func.submit()
 
-        # Verify script_to_callable was called with correct arguments
-        mock_script_to_callable.assert_called_once()
-        call_args = mock_script_to_callable.call_args[0]
-        assert call_args[0] == str(script_path)
-        assert call_args[1] == "dummy_function"
+    def test_submit_returns_future(self, tmp_path):
+        """Test that submit() returns a Future object."""
+
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            func = Function(dummy_function)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ):
+                    result = func.submit()
+
+            assert result is mock_future
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_submit_serializes_arguments(self, tmp_path):
+        """Test that submit() properly serializes function arguments."""
+
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            func = Function(dummy_function)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    with patch("groundhog_hpc.function.serialize") as mock_serialize:
+                        mock_serialize.return_value = "serialized_payload"
+                        func.submit(1, 2, kwarg1="value1")
+
+            # Verify serialize was called with args and kwargs
+            mock_serialize.assert_called_once()
+            call_args = mock_serialize.call_args[0][0]
+            assert call_args == ((1, 2), {"kwarg1": "value1"})
+
+            # Verify submit_to_executor received the serialized payload
+            assert mock_submit.call_args[1]["payload"] == "serialized_payload"
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_submit_passes_endpoint_and_config(self, tmp_path, mock_endpoint_uuid):
+        """Test that submit() passes endpoint and user config to submit_to_executor."""
+
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid, account="test")
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    func.submit()
+
+            # Verify endpoint was passed
+            from uuid import UUID
+
+            assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
+
+            # Verify user config was passed
+            config = mock_submit.call_args[1]["user_endpoint_config"]
+            assert "account" in config
+            assert config["account"] == "test"
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_remote_uses_submit_internally(self, tmp_path):
+        """Test that remote() calls submit() and returns its result."""
+
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            func = Function(dummy_function)
+
+            mock_future = MagicMock()
+            mock_future.result.return_value = "final_result"
+
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ):
+                    result = func.remote()
+
+            # Verify that result() was called on the future
+            mock_future.result.assert_called_once()
+            assert result == "final_result"
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
