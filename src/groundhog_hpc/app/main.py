@@ -21,7 +21,7 @@ app = typer.Typer()
 @app.command(no_args_is_help=True)
 def run(
     script: Path = typer.Argument(
-        ..., help="Python script with dependencies to deploy to the endpoint"
+        ..., help="Python script with PEP 723 dependencies to deploy to the endpoint"
     ),
     harness: str = typer.Argument(
         "main", help="Name of harness to run from script (default 'main')."
@@ -94,7 +94,7 @@ def run(
         raise typer.Exit(1)
 
 
-@app.command(no_args_is_help=True)
+@app.command(no_args_is_help=True, hidden=True)
 def register(
     script: Path = typer.Argument(
         ...,
