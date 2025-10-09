@@ -308,3 +308,159 @@ class TestSubmitMethod:
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_callsite_endpoint_overrides_default(self, tmp_path, mock_endpoint_uuid):
+        """Test that endpoint provided at callsite overrides default endpoint."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            # Initialize with default endpoint
+            default_endpoint = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            func = Function(dummy_function, endpoint=default_endpoint)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    # Call with override endpoint
+                    func.submit(endpoint=mock_endpoint_uuid)
+
+            # Verify the override endpoint was used
+            from uuid import UUID
+
+            assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_callsite_walltime_overrides_default(self, tmp_path):
+        """Test that walltime provided at callsite overrides default walltime."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            # Initialize with default walltime
+            func = Function(dummy_function, walltime=60)
+
+            with patch("groundhog_hpc.function.script_to_submittable") as mock_s2s:
+                with patch("groundhog_hpc.function.submit_to_executor"):
+                    # Call with override walltime
+                    func.submit(walltime=120)
+
+            # Verify script_to_submittable was called with override walltime
+            # Called as: script_to_submittable(script_path, function_name, walltime)
+            assert mock_s2s.call_args[0][2] == 120
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_callsite_user_config_overrides_default(self, tmp_path):
+        """Test that user_endpoint_config at callsite overrides default config."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            # Initialize with default config
+            func = Function(dummy_function, account="default_account", cores_per_node=4)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    # Call with override config
+                    func.submit(
+                        user_endpoint_config={
+                            "account": "override_account",
+                            "queue": "gpu",
+                        }
+                    )
+
+            # Verify the override config was used
+            config = mock_submit.call_args[1]["user_endpoint_config"]
+            assert config["account"] == "override_account"
+            assert config["queue"] == "gpu"
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_worker_init_is_appended_not_overwritten(self, tmp_path):
+        """Test that worker_init from callsite is appended to default, not overwritten."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            # Initialize with default worker_init
+            default_worker_init = "module load default"
+            func = Function(dummy_function, worker_init=default_worker_init)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    # Call with custom worker_init
+                    custom_worker_init = "module load custom"
+                    func.submit(
+                        user_endpoint_config={"worker_init": custom_worker_init}
+                    )
+
+            # Verify both are present (custom + default)
+            config = mock_submit.call_args[1]["user_endpoint_config"]
+            assert "worker_init" in config
+            # Custom should come first, then newline, then default
+            assert custom_worker_init in config["worker_init"]
+            assert default_worker_init in config["worker_init"]
+            # Verify order: custom + "\n" + default
+            assert config["worker_init"].startswith(custom_worker_init)
+            assert config["worker_init"].endswith(default_worker_init)
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_default_worker_init_preserved_when_no_callsite_override(self, tmp_path):
+        """Test that default worker_init is used when no override provided."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
+
+        try:
+            # Initialize with default worker_init
+            default_worker_init = "module load default"
+            func = Function(dummy_function, worker_init=default_worker_init)
+
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    # Call without any override
+                    func.submit()
+
+            # Verify default worker_init is in the config
+            config = mock_submit.call_args[1]["user_endpoint_config"]
+            assert "worker_init" in config
+            assert config["worker_init"] == default_worker_init
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+            del os.environ["GROUNDHOG_IN_HARNESS"]
