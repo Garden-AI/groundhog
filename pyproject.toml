@@ -10,7 +10,6 @@ dependencies = [
     "packaging>=24.0",
     "tomli>=1.1.0 ; python_full_version < '3.11'",
     "typer>=0.16.1",
-    "uv>=0.8.22",
 ]
 
 [project.scripts]
