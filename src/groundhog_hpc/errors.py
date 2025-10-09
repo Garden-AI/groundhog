@@ -15,7 +15,7 @@ class RemoteExecutionError(Exception):
 
         self.stderr = "\n".join(lines)
         self.returncode = returncode
-        super().__init__(message)
+        super().__init__(message + f"\n[stderr]:\n{self.stderr}")
 
 
 class PayloadTooLargeError(Exception):

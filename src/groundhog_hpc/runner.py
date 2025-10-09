@@ -97,8 +97,10 @@ def _create_deserializing_future(original_future: Future) -> Future:
 
 def _process_shell_result(shell_result: ShellResult) -> Any:
     if shell_result.returncode != 0:
+        msg = f"Remote execution failed with exit code {shell_result.returncode}"
+        msg += f"\n{shell_result.cmd=}\n"
         raise RemoteExecutionError(
-            message=f"Remote execution failed with exit code {shell_result.returncode}",
+            message=msg,
             stderr=shell_result.stderr,
             returncode=shell_result.returncode,
         )
