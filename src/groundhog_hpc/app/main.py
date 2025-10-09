@@ -54,7 +54,7 @@ def run(
 
             typer.echo(
                 f"Warning: Script requires Python {requires_python}, "
-                f"but current version is {current_version}. This may ",
+                f"but current version is {current_version}. This may "
                 "cause issues with serialization.",
                 err=True,
             )
