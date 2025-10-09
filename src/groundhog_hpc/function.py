@@ -1,12 +1,18 @@
 import os
 from concurrent.futures import Future
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.runner import script_to_submittable
-from groundhog_hpc.serialization import deserialize, serialize
+from groundhog_hpc.runner import script_to_submittable, submit_to_executor
+from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
+
+if TYPE_CHECKING:
+    import globus_compute_sdk
+
+    ShellFunction = globus_compute_sdk.ShellFunction
+else:
+    ShellFunction = TypeVar("ShellFunction")
 
 
 class Function:
@@ -25,9 +31,9 @@ class Function:
         assert hasattr(func, "__qualname__")
         self._name = func.__qualname__
         self._local_function = func
-        self._shell_function = None
+        self._shell_function: ShellFunction | None = None
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Any:
         return self._local_function(*args, **kwargs)
 
     def _running_in_harness(self) -> bool:
@@ -37,8 +43,6 @@ class Function:
     def submit(
         self, *args, endpoint=None, walltime=None, user_endpoint_config=None, **kwargs
     ) -> Future:
-        import globus_compute_sdk as gc
-
         if not self._running_in_harness():
             raise RuntimeError(
                 "Can't invoke a remote function outside of a @hog.harness function"
@@ -50,7 +54,7 @@ class Function:
         config = self.default_user_endpoint_config.copy()
 
         # ensure uv install command is appended to 'worker_init', not overrwritten
-        if "worker_init" in user_endpoint_config:
+        if user_endpoint_config and "worker_init" in user_endpoint_config:
             user_endpoint_config["worker_init"] += f"\n{config.pop('worker_init')}"
         config.update(user_endpoint_config or {})
 
@@ -61,53 +65,23 @@ class Function:
                 self.script_path, self._name, walltime
             )
 
-        with gc.Executor(UUID(endpoint), user_endpoint_config=config) as executor:
-            payload = serialize((args, kwargs))
-            future = executor.submit(self._shell_function, payload=payload)
-            deserializing_future = _create_deserializing_future(future)
-            return deserializing_future
+        payload = serialize((args, kwargs))
+        future = submit_to_executor(
+            UUID(endpoint),
+            user_endpoint_config=config,
+            shell_function=self._shell_function,
+            payload=payload,
+        )
+        return future
 
     def remote(
         self, *args, endpoint=None, walltime=None, user_endpoint_config=None, **kwargs
-    ):
-        fut = self.submit(
-            self,
+    ) -> Any:
+        future = self.submit(
             *args,
             endpoint=endpoint,
             walltime=walltime,
             user_endpoint_config=user_endpoint_config,
             **kwargs,
         )
-        return fut.result()
-
-
-def _create_deserializing_future(original_future: Future) -> Future:
-    """Returns a new future that will contain the deserialized result"""
-    deserialized_future = type(original_future)()
-
-    def callback(fut):
-        try:
-            serialized_result = fut.result()
-            deserialized_result = _process_shell_result(serialized_result)
-            deserialized_future.set_result(deserialized_result)
-
-        except Exception as e:
-            deserialized_future.set_exception(e)
-
-        finally:
-            if hasattr(fut, "task_id"):
-                deserialized_future.task_id = fut.task_id  # ty: ignore[unresolved-attribute]
-
-    original_future.add_done_callback(callback)
-    return deserialized_future
-
-
-def _process_shell_result(shell_result):
-    if shell_result.returncode != 0:
-        raise RemoteExecutionError(
-            message=f"Remote execution failed with exit code {shell_result.returncode}",
-            stderr=shell_result.stderr,
-            returncode=shell_result.returncode,
-        )
-
-    return deserialize(shell_result.stdout)
+        return future.result()
