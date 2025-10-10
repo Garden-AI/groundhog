@@ -6,7 +6,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.future import GroundhogFuture, _process_shell_result
+from groundhog_hpc.future import (
+    GroundhogFuture,
+    _process_shell_result,
+    _truncate_payload_in_cmd,
+)
 
 
 class TestGroundhogFuture:
@@ -65,6 +69,7 @@ class TestGroundhogFuture:
         # Create a mock ShellResult with error
         mock_shell_result = MagicMock()
         mock_shell_result.returncode = 1
+        mock_shell_result.cmd = "test command"
         mock_shell_result.stdout = "Some output before error"
         mock_shell_result.stderr = "Error: something went wrong"
 
@@ -163,6 +168,7 @@ class TestGroundhogFuture:
         # Create a mock ShellResult with error
         mock_shell_result = MagicMock()
         mock_shell_result.returncode = 1
+        mock_shell_result.cmd = "test command"
         mock_shell_result.stderr = "Detailed error output"
         mock_shell_result.stdout = "Partial output"
 
@@ -201,6 +207,7 @@ class TestProcessShellResult:
         """Test that non-zero return codes raise RemoteExecutionError."""
         mock_result = MagicMock()
         mock_result.returncode = 1
+        mock_result.cmd = "test command"
         mock_result.stdout = "Some output"
         mock_result.stderr = "Error occurred"
 
@@ -215,6 +222,7 @@ class TestProcessShellResult:
         """Test that stderr is included in the error."""
         mock_result = MagicMock()
         mock_result.returncode = 2
+        mock_result.cmd = "test command"
         mock_result.stdout = "Partial output"
         mock_result.stderr = "Traceback:\n  File test.py\nSyntaxError"
 
@@ -237,3 +245,42 @@ class TestProcessShellResult:
 
         result = _process_shell_result(mock_result)
         assert result == test_object
+
+
+class TestTruncatePayloadInCmd:
+    """Test the _truncate_payload_in_cmd function."""
+
+    def test_truncates_long_payload(self):
+        """Test that long payloads are truncated."""
+        long_payload = "x" * 200
+        cmd = f"cat > script.in << 'END'\n{long_payload}\nEND\necho done"
+
+        truncated = _truncate_payload_in_cmd(cmd, max_length=100)
+
+        # Should contain truncation message
+        assert "truncated 100 chars" in truncated
+        # Should still have the heredoc structure
+        assert "cat > script.in << 'END'" in truncated
+        assert "\nEND\n" in truncated
+        # Full payload should not be present
+        assert long_payload not in truncated
+
+    def test_preserves_short_payload(self):
+        """Test that short payloads are not modified."""
+        short_payload = "short data"
+        cmd = f"cat > script.in << 'END'\n{short_payload}\nEND\necho done"
+
+        truncated = _truncate_payload_in_cmd(cmd, max_length=100)
+
+        # Should be unchanged
+        assert truncated == cmd
+        assert short_payload in truncated
+
+    def test_handles_missing_heredoc(self):
+        """Test that commands without heredoc are unchanged."""
+        cmd = "echo hello"
+
+        truncated = _truncate_payload_in_cmd(cmd, max_length=100)
+
+        # Should be unchanged
+        assert truncated == cmd
