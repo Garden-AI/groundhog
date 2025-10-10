@@ -7,9 +7,8 @@ from uuid import UUID
 import pytest
 
 from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.future import GroundhogFuture, _process_shell_result
 from groundhog_hpc.runner import (
-    _create_deserializing_future,
-    _process_shell_result,
     pre_register_shell_function,
     script_to_submittable,
     submit_to_executor,
@@ -216,20 +215,20 @@ class TestSubmitToExecutor:
             assert isinstance(result, Future)
 
 
-class TestCreateDeserializingFuture:
-    """Test the _create_deserializing_future function."""
+class TestDeserializingFuture:
+    """Test the GroundhogFuture class."""
 
-    def test_creates_future_of_same_type(self):
-        """Test that the deserializing future is the same type as the original."""
+    def test_is_a_future(self):
+        """Test that GroundhogFuture is an instance of Future."""
         original = Future()
-        deserializing = _create_deserializing_future(original)
+        deserializing = GroundhogFuture(original)
 
-        assert type(deserializing) is type(original)
+        assert isinstance(deserializing, Future)
 
     def test_deserializes_successful_result(self):
         """Test that successful results are deserialized."""
         original = Future()
-        deserializing = _create_deserializing_future(original)
+        deserializing = GroundhogFuture(original)
 
         # Create a mock ShellResult
         mock_shell_result = MagicMock()
@@ -251,7 +250,7 @@ class TestCreateDeserializingFuture:
     def test_propagates_exceptions(self):
         """Test that exceptions are propagated to the deserializing future."""
         original = Future()
-        deserializing = _create_deserializing_future(original)
+        deserializing = GroundhogFuture(original)
 
         # Set an exception on the original
         original.set_exception(ValueError("test error"))
@@ -267,11 +266,12 @@ class TestCreateDeserializingFuture:
     def test_handles_shell_execution_errors(self):
         """Test that shell execution errors are converted to RemoteExecutionError."""
         original = Future()
-        deserializing = _create_deserializing_future(original)
+        deserializing = GroundhogFuture(original)
 
         # Create a mock ShellResult with error
         mock_shell_result = MagicMock()
         mock_shell_result.returncode = 1
+        mock_shell_result.stdout = "Some output before error"
         mock_shell_result.stderr = "Error: something went wrong"
 
         # Complete the original future
@@ -293,7 +293,7 @@ class TestCreateDeserializingFuture:
         """Test that task_id attribute is preserved on the deserializing future."""
         original = Future()
         original.task_id = "test-task-123"
-        deserializing = _create_deserializing_future(original)
+        deserializing = GroundhogFuture(original)
 
         # Create a successful result
         mock_shell_result = MagicMock()
@@ -310,6 +310,85 @@ class TestCreateDeserializingFuture:
         # Task ID should be preserved
         assert hasattr(deserializing, "task_id")
         assert deserializing.task_id == "test-task-123"
+
+    def test_shell_result_property_returns_raw_result(self):
+        """Test that shell_result property provides access to raw ShellResult."""
+        original = Future()
+        deserializing = GroundhogFuture(original)
+
+        # Create a mock ShellResult
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 0
+        mock_shell_result.stdout = '{"result": "success"}'
+        mock_shell_result.stderr = "Some warning message"
+
+        # Complete the original future
+        original.set_result(mock_shell_result)
+
+        # Wait for callback
+        import time
+
+        time.sleep(0.01)
+
+        # Should be able to access the raw shell result
+        shell_result = deserializing.shell_result
+        assert shell_result.returncode == 0
+        assert shell_result.stdout == '{"result": "success"}'
+        assert shell_result.stderr == "Some warning message"
+
+    def test_shell_result_cached_across_calls(self):
+        """Test that shell_result is cached and doesn't call result() multiple times."""
+        original = Future()
+        deserializing = GroundhogFuture(original)
+
+        # Create a mock ShellResult
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 0
+        mock_shell_result.stdout = '{"result": "success"}'
+
+        # Complete the original future
+        original.set_result(mock_shell_result)
+
+        # Wait for callback
+        import time
+
+        time.sleep(0.01)
+
+        # Access shell_result multiple times
+        result1 = deserializing.shell_result
+        result2 = deserializing.shell_result
+
+        # Should return the same cached object
+        assert result1 is result2
+
+    def test_shell_result_available_after_error(self):
+        """Test that shell_result is accessible even when deserialization fails."""
+        original = Future()
+        deserializing = GroundhogFuture(original)
+
+        # Create a mock ShellResult with error
+        mock_shell_result = MagicMock()
+        mock_shell_result.returncode = 1
+        mock_shell_result.stderr = "Detailed error output"
+        mock_shell_result.stdout = "Partial output"
+
+        # Complete the original future
+        original.set_result(mock_shell_result)
+
+        # Wait for callback
+        import time
+
+        time.sleep(0.01)
+
+        # .result() should raise
+        with pytest.raises(RemoteExecutionError):
+            deserializing.result()
+
+        # But shell_result should still be accessible
+        shell_result = deserializing.shell_result
+        assert shell_result.returncode == 1
+        assert shell_result.stderr == "Detailed error output"
+        assert shell_result.stdout == "Partial output"
 
 
 class TestProcessShellResult:
@@ -328,6 +407,7 @@ class TestProcessShellResult:
         """Test that non-zero return codes raise RemoteExecutionError."""
         mock_result = MagicMock()
         mock_result.returncode = 1
+        mock_result.stdout = "Some output"
         mock_result.stderr = "Error occurred"
 
         with pytest.raises(RemoteExecutionError) as exc_info:
@@ -335,12 +415,13 @@ class TestProcessShellResult:
 
         assert exc_info.value.returncode == 1
         assert "Error occurred" in exc_info.value.stderr
-        assert "exit code 1" in str(exc_info.value)
+        assert "exit code: 1" in str(exc_info.value)
 
     def test_includes_stderr_in_error(self):
         """Test that stderr is included in the error."""
         mock_result = MagicMock()
         mock_result.returncode = 2
+        mock_result.stdout = "Partial output"
         mock_result.stderr = "Traceback:\n  File test.py\nSyntaxError"
 
         with pytest.raises(RemoteExecutionError) as exc_info:
