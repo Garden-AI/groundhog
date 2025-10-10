@@ -28,6 +28,10 @@ class GroundhogFuture(Future):
         self._shell_result = None
         self.task_id = None
 
+        # set after created in Function.submit, useful for invocation logs etc
+        self.endpoint = None
+        self.user_endpoint_config = None
+
         def callback(fut):
             try:
                 # Get and cache the ShellResult
