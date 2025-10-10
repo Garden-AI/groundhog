@@ -66,12 +66,14 @@ class Function:
             )
 
         payload = serialize((args, kwargs))
-        future = submit_to_executor(
+        future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
             shell_function=self._shell_function,
             payload=payload,
         )
+        future.endpoint = endpoint
+        future.user_endpoint_config = config
         return future
 
     def remote(

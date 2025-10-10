@@ -3,13 +3,17 @@ class RemoteExecutionError(Exception):
 
     Attributes:
         message: Human-readable error description
+        cmd: The shell command that was executed (with truncated payload)
         stdout: Standard output from the remote execution
         stderr: Standard error output from the remote execution
         returncode: Exit code from the remote process
     """
 
-    def __init__(self, message: str, stdout: str, stderr: str, returncode: int):
+    def __init__(
+        self, message: str, cmd: str, stdout: str, stderr: str, returncode: int
+    ):
         self.message = message
+        self.cmd = cmd
         self.stdout = stdout
         self.returncode = returncode
 
@@ -30,7 +34,7 @@ class RemoteExecutionError(Exception):
             sout = (
                 f"[... truncated; see .shell_result.stdout for full output ...]\n{sout}"
             )
-        msg = f"{self.message}\n\nexit code: {rc}\n   stdout:\n{sout}"
+        msg = f"{self.message}\n\nexit code: {rc}\n\n   cmd:\n{self.cmd}\n\n   stdout:\n{sout}"
 
         if rc != 0:
             # not successful

@@ -1,3 +1,4 @@
+import re
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -26,6 +27,10 @@ class GroundhogFuture(Future):
         self._original_future = original_future
         self._shell_result = None
         self.task_id = None
+
+        # set after created in Function.submit, useful for invocation logs etc
+        self.endpoint = None
+        self.user_endpoint_config = None
 
         def callback(fut):
             try:
@@ -57,12 +62,40 @@ class GroundhogFuture(Future):
         return self._shell_result
 
 
+def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
+    """Truncate the payload in a shell command for display purposes.
+
+    The shell command contains a heredoc with the payload data between
+    'cat > script.in << 'END'' and 'END'. This function truncates that
+    payload to make the command more readable.
+    """
+    # Match the heredoc pattern: cat > *.in << 'END'\n<payload>\nEND
+    pattern = r"(cat > [^\s]+\.in << 'END'\n)(.*?)(\nEND)"
+
+    def replace_payload(match):
+        prefix = match.group(1)
+        payload = match.group(2)
+        suffix = match.group(3)
+
+        if len(payload) > max_length:
+            truncated = (
+                payload[:max_length]
+                + f"... [truncated {len(payload) - max_length} chars]"
+            )
+            return prefix + truncated + suffix
+        return match.group(0)
+
+    return re.sub(pattern, replace_payload, cmd, flags=re.DOTALL)
+
+
 def _process_shell_result(shell_result: ShellResult) -> Any:
     """Process a ShellResult by checking for errors and deserializing the payload."""
     if shell_result.returncode != 0:
         msg = f"Remote execution failed with exit code: {shell_result.returncode}."
+        truncated_cmd = _truncate_payload_in_cmd(shell_result.cmd)
         raise RemoteExecutionError(
             message=msg,
+            cmd=truncated_cmd,
             stdout=shell_result.stdout,
             stderr=shell_result.stderr,
             returncode=shell_result.returncode,
