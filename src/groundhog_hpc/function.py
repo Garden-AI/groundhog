@@ -1,8 +1,8 @@
 import os
-from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
+from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.runner import script_to_submittable, submit_to_executor
 from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
@@ -42,7 +42,7 @@ class Function:
 
     def submit(
         self, *args, endpoint=None, walltime=None, user_endpoint_config=None, **kwargs
-    ) -> Future:
+    ) -> GroundhogFuture:
         if not self._running_in_harness():
             raise RuntimeError(
                 "Can't invoke a remote function outside of a @hog.harness function"

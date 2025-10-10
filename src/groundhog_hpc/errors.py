@@ -3,19 +3,44 @@ class RemoteExecutionError(Exception):
 
     Attributes:
         message: Human-readable error description
+        stdout: Standard output from the remote execution
         stderr: Standard error output from the remote execution
         returncode: Exit code from the remote process
     """
 
-    def __init__(self, message: str, stderr: str, returncode: int):
+    def __init__(self, message: str, stdout: str, stderr: str, returncode: int):
+        self.message = message
+        self.stdout = stdout
+        self.returncode = returncode
+
         # Remove trailing WARNING lines that aren't part of the traceback
         lines = stderr.strip().split("\n")
         while lines and lines[-1].startswith("WARNING:"):
             lines.pop()
-
         self.stderr = "\n".join(lines)
-        self.returncode = returncode
-        super().__init__(message + f"\n[stderr]:\n{self.stderr}")
+
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        # lifted from ShellResult.__str__
+        rc = self.returncode
+        _sout = self.stdout.lstrip("\n").rstrip()
+        sout = "\n".join(_sout[-1024:].splitlines()[-10:])
+        if sout != _sout:
+            sout = (
+                f"[... truncated; see .shell_result.stdout for full output ...]\n{sout}"
+            )
+        msg = f"{self.message}\n\nexit code: {rc}\n   stdout:\n{sout}"
+
+        if rc != 0:
+            # not successful
+            _serr = self.stderr.lstrip("\n").rstrip()
+            serr = "\n".join(_serr[-1024:].splitlines()[-10:])
+            if serr != _serr:
+                serr = f"[... truncated; see .shell_result.stderr for full output ...]\n{serr}"
+            msg += f"\n\n   stderr:\n{serr}"
+
+        return msg
 
 
 class PayloadTooLargeError(Exception):
