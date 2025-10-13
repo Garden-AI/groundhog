@@ -1,16 +1,26 @@
 [project]
 name = "groundhog-hpc"
-description = "Add your description here"
+description = "Iterative HPC function development. As many 'first tries' as you need."
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["version"] # read from git tag
 dependencies = [
-    "globus-compute-sdk>=3.12.0",
-    "jinja2>=3.0.0",
-    "packaging>=24.0",
-    "tomli>=1.1.0 ; python_full_version < '3.11'",
-    "typer>=0.16.1",
+  "globus-compute-sdk>=3.12.0",
+  "jinja2>=3.0.0",
+  "packaging>=24.0",
+  "tomli>=1.1.0 ; python_full_version < '3.11'",
+  "typer>=0.16.1",
 ]
+authors = [
+  { name = "Owen Price Skelly", email = "OwenPriceSkelly@uchicago.edu" },
+]
+license = { text = "MIT" }
+keywords = ["Globus Compute", "FaaS", "Function Serving", "HPC"]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering"
+]
+
 
 [project.scripts]
 hog = "groundhog_hpc.app.main:app"
@@ -20,7 +30,10 @@ requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true }}]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { git = { commit = true, tags = true } },
+]
 # see: https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata
 
 [tool.hatch.version]
@@ -32,17 +45,17 @@ pattern = "default-unprefixed"
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.3.0",
-    "pytest>=8.4.1",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.12.11",
-    "ty>=0.0.1a21",
+  "pre-commit>=4.3.0",
+  "pytest>=8.4.1",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.12.11",
+  "ty>=0.0.1a21",
 ]
 
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-ignore = ["E501"]  # line length handled by pre-commit hook
+ignore = ["E501"]        # line length handled by pre-commit hook
 
 [tool.ty.src]
 exclude = ["examples", "scripts", "tests"]
@@ -52,14 +65,14 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["*/tests/*", "*/test_*.py"]
+omit = ["*/tests/*", "*/test_*.py", "*/examples/*"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
 ]
