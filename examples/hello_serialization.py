@@ -32,10 +32,8 @@ def hello_arguments_json(data: dict, multiplier: int):
 @hog.function(account=DIAMOND_ACCT)
 def hello_arguments_pkl(obj):
     """Function that accepts and returns non-JSON-serializable types (sets, custom classes)."""
-    # Demonstrate working with a set (not JSON-serializable)
     if isinstance(obj, set):
         return {f"processed_{item}" for item in obj}
-    # Return the object type name as a set
     return {type(obj).__name__, "processed"}
 
 

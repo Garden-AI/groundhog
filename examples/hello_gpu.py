@@ -5,9 +5,6 @@
 # ]
 #
 # ///
-"""
-sample script for `hog run` to execute on the remote globus compute endpoint with uv
-"""
 
 import groundhog_hpc as hog
 

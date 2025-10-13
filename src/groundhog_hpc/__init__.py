@@ -4,7 +4,7 @@ This package provides a decorator-based API for running Python functions remotel
 on Globus Compute multiuser endpoints on HPC systems. The two main decorators are:
 
 - @hog.function(): Mark a function for remote execution
-- @hog.harness(): Mark a local orchestrator function that coordinates remote calls
+- @hog.harness(): Mark a local orchestrator function that issues remote calls
 
 Example:
     ```python
@@ -18,6 +18,8 @@ Example:
     @hog.harness()
     def main():
         # This orchestrates from your local machine
+        with open("mydata.csv", 'r') as f:
+            my_data = f.read()
         result = compute_on_hpc.remote(my_data)
         print(result)
     ```
