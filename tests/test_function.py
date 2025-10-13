@@ -36,7 +36,7 @@ class TestFunctionInitialization:
         os.environ["GROUNDHOG_SCRIPT_PATH"] = "/path/to/script.py"
         try:
             func = Function(dummy_function)
-            assert func.script_path == "/path/to/script.py"
+            assert func._script_path == "/path/to/script.py"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
@@ -137,7 +137,7 @@ def main():
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
             func = Function(dummy_function)
-            func.script_path = None
+            func._script_path = None
 
             with pytest.raises(ValueError, match="Could not locate source file"):
                 func.submit()
@@ -154,7 +154,7 @@ def main():
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
             func = Function(dummy_function)
-            func.script_path = str(script_path)
+            func._script_path = str(script_path)
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()

@@ -1,3 +1,10 @@
+"""Command-line interface for Groundhog.
+
+This module implements the `hog` CLI tool for running Python scripts on
+Globus Compute endpoints. It handles script execution, harness invocation,
+Python version validation, and error reporting.
+"""
+
 import os
 import sys
 from pathlib import Path
@@ -8,11 +15,11 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
 import groundhog_hpc
-from groundhog_hpc.environment import read_pep723
+from groundhog_hpc.compute import pre_register_shell_function
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.runner import pre_register_shell_function
+from groundhog_hpc.pep723 import read_pep723
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
@@ -160,11 +167,24 @@ def register(
 
 
 def _python_version_matches(current: str, spec: str) -> bool:
-    """Check if current Python version satisfies the PEP 440 version specifier."""
+    """Check if current Python version satisfies the PEP 440 version specifier.
+
+    Args:
+        current: Current Python version string (e.g., "3.11.5")
+        spec: PEP 440 version specifier (e.g., ">=3.11")
+
+    Returns:
+        True if current version matches the specifier, False otherwise
+    """
     return Version(current) in SpecifierSet(spec)
 
 
 def _version_callback(show):
+    """Typer callback to display version and exit.
+
+    Args:
+        show: Boolean flag set by --version option
+    """
     if show:
         typer.echo(f"{groundhog_hpc.__version__}")
         raise typer.Exit()
