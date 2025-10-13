@@ -5,6 +5,7 @@ users apply to their Python functions to enable remote execution orchestration.
 """
 
 import functools
+from typing import Any, Callable
 
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
@@ -12,7 +13,7 @@ from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 from groundhog_hpc.utils import merge_endpoint_configs
 
 
-def harness():
+def harness() -> Callable[[Callable[[], Any]], Harness]:
     """Decorator to mark a function as a local orchestrator harness.
 
     Harness functions:
@@ -32,7 +33,7 @@ def harness():
         ```
     """
 
-    def decorator(func):
+    def decorator(func: Callable[[], Any]) -> Harness:
         wrapper = Harness(func)
         functools.update_wrapper(wrapper, func)
         return wrapper
@@ -40,7 +41,11 @@ def harness():
     return decorator
 
 
-def function(endpoint=None, walltime=None, **user_endpoint_config):
+def function(
+    endpoint: str | None = None,
+    walltime: int | None = None,
+    **user_endpoint_config: Any,
+) -> Callable[[Callable], Function]:
     """Decorator to mark a function for remote execution on Globus Compute.
 
     Decorated functions can be:
@@ -77,7 +82,7 @@ def function(endpoint=None, walltime=None, **user_endpoint_config):
         DEFAULT_USER_CONFIG, user_endpoint_config if user_endpoint_config else None
     )
 
-    def decorator(func):
+    def decorator(func: Callable) -> Function:
         wrapper = Function(func, endpoint, walltime, **merged_config)
         functools.update_wrapper(wrapper, func)
         return wrapper

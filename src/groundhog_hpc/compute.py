@@ -7,7 +7,7 @@ endpoints.
 
 import os
 import warnings
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.future import GroundhogFuture
@@ -75,7 +75,7 @@ def pre_register_shell_function(
 
 def submit_to_executor(
     endpoint: UUID,
-    user_endpoint_config: dict,
+    user_endpoint_config: dict[str, Any],
     shell_function: ShellFunction,
     payload: str,
 ) -> GroundhogFuture:

@@ -70,7 +70,7 @@ def template_shell_command(script_path: str, function_name: str) -> str:
     return shell_command_string
 
 
-def _script_hash_prefix(contents: str, length=8) -> str:
+def _script_hash_prefix(contents: str, length: int = 8) -> str:
     return str(sha1(bytes(contents, "utf-8")).hexdigest()[:length])
 
 

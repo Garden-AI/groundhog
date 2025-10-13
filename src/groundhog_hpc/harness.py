@@ -37,7 +37,7 @@ class Harness:
         self.name = func.__qualname__
         self._validate_signature()
 
-    def __call__(self):
+    def __call__(self) -> Any:
         """Execute the harness function.
 
         Sets the GROUNDHOG_IN_HARNESS environment variable to enable remote
@@ -63,13 +63,13 @@ class Harness:
         del os.environ["GROUNDHOG_IN_HARNESS"]
         return results
 
-    def _already_in_harness(self):
+    def _already_in_harness(self) -> bool:
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
-    def _invoked_by_cli(self):
+    def _invoked_by_cli(self) -> bool:
         return bool(os.environ.get(f"GROUNDHOG_RUN_{self.name}".upper()))
 
-    def _validate_signature(self):
+    def _validate_signature(self) -> None:
         sig = inspect.signature(self.func)
         if len(sig.parameters) > 0:
             raise TypeError(

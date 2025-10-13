@@ -34,22 +34,22 @@ class GroundhogFuture(Future):
         user_endpoint_config: Configuration dict used for the endpoint
     """
 
-    def __init__(self, original_future: Future):
+    def __init__(self, original_future: Future) -> None:
         """Wrap a Globus Compute future with automatic deserialization.
 
         Args:
             original_future: The original Future returned by Globus Compute Executor
         """
         super().__init__()
-        self._original_future = original_future
-        self._shell_result = None
-        self.task_id = None
+        self._original_future: Future = original_future
+        self._shell_result: ShellResult | None = None
+        self.task_id: str | None = None
 
         # set after created in Function.submit, useful for invocation logs etc
-        self.endpoint = None
-        self.user_endpoint_config = None
+        self.endpoint: str | None = None
+        self.user_endpoint_config: dict[str, Any] | None = None
 
-        def callback(fut):
+        def callback(fut: Future) -> None:
             try:
                 # Get and cache the ShellResult
                 shell_result = fut.result()
@@ -89,7 +89,7 @@ def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
     # Match the heredoc pattern: cat > *.in << 'END'\n<payload>\nEND
     pattern = r"(cat > [^\s]+\.in << 'END'\n)(.*?)(\nEND)"
 
-    def replace_payload(match):
+    def replace_payload(match: re.Match[str]) -> str:
         prefix = match.group(1)
         payload = match.group(2)
         suffix = match.group(3)

@@ -44,10 +44,10 @@ class Function:
     def __init__(
         self,
         func: Callable,
-        endpoint=None,
-        walltime=None,
-        **user_endpoint_config,
-    ):
+        endpoint: str | None = None,
+        walltime: int | None = None,
+        **user_endpoint_config: Any,
+    ) -> None:
         """Initialize a Function wrapper.
 
         Args:
@@ -57,14 +57,16 @@ class Function:
             **user_endpoint_config: Additional endpoint configuration passed to
                 Globus Compute Executor (e.g., worker_init commands)
         """
-        self._script_path = os.environ.get("GROUNDHOG_SCRIPT_PATH")  # set by cli
-        self.endpoint = endpoint or DEFAULT_ENDPOINTS["anvil"]
-        self.walltime = walltime or DEFAULT_WALLTIME_SEC
-        self.default_user_endpoint_config = user_endpoint_config
+        self._script_path: str | None = os.environ.get(
+            "GROUNDHOG_SCRIPT_PATH"
+        )  # set by cli
+        self.endpoint: str = endpoint or DEFAULT_ENDPOINTS["anvil"]
+        self.walltime: int = walltime or DEFAULT_WALLTIME_SEC
+        self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
         assert hasattr(func, "__qualname__")
-        self._name = func.__qualname__
-        self._local_function = func
+        self._name: str = func.__qualname__
+        self._local_function: Callable = func
         self._shell_function: ShellFunction | None = None
 
     def __call__(self, *args, **kwargs) -> Any:
@@ -84,7 +86,12 @@ class Function:
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
     def submit(
-        self, *args, endpoint=None, walltime=None, user_endpoint_config=None, **kwargs
+        self,
+        *args: Any,
+        endpoint: str | None = None,
+        walltime: int | None = None,
+        user_endpoint_config: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> GroundhogFuture:
         """Submit the function for asynchronous remote execution.
 
@@ -135,7 +142,12 @@ class Function:
         return future
 
     def remote(
-        self, *args, endpoint=None, walltime=None, user_endpoint_config=None, **kwargs
+        self,
+        *args: Any,
+        endpoint: str | None = None,
+        walltime: int | None = None,
+        user_endpoint_config: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> Any:
         """Execute the function remotely and block until completion.
 

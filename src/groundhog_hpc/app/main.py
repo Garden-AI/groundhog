@@ -33,7 +33,7 @@ def run(
     harness: str = typer.Argument(
         "main", help="Name of harness to run from script (default 'main')."
     ),
-):
+) -> None:
     """Run a Python script on a Globus Compute endpoint."""
 
     script_path = script.resolve()
@@ -113,7 +113,7 @@ def register(
         "-v",
         help="Print detailed information about registered functions",
     ),
-):
+) -> None:
     """Register all @hog.function decorated functions in a script and print their UUIDs."""
 
     script_path = script.resolve()
@@ -179,7 +179,7 @@ def _python_version_matches(current: str, spec: str) -> bool:
     return Version(current) in SpecifierSet(spec)
 
 
-def _version_callback(show):
+def _version_callback(show: bool) -> None:
     """Typer callback to display version and exit.
 
     Args:
@@ -195,7 +195,7 @@ def main_info(
     version: Optional[bool] = typer.Option(
         None, "--version", callback=_version_callback, is_eager=True
     ),
-):
+) -> None:
     """
     Hello, Groundhog ☀️🦫🕳️
     """
