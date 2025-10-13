@@ -8,6 +8,13 @@
 #     "certifi",
 # ]
 # ///
+"""
+NOTE: because this function returns an ase.Atoms object, the local environment
+must have ase installed in order to deserialize the results (The local
+environment does *not* need torch, torchsim, mace, etc).
+
+Run this example like: $ uvx --from groundhog-hpc@latest --with ase hog run hello_torchsim_gpu.py
+"""
 
 import os
 

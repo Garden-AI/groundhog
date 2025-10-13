@@ -27,7 +27,7 @@ If you don't have access to a multiuser endpoint, you can still run `00_hello_wo
 - **`hello_serialization.py`** - Argument serialization with JSON and pickle (dicts, sets, dataclasses)
 - **`hello_gpu.py`** - GPU/CUDA configuration and resource allocation
 - **`hello_concurrent_futures.py`** - Concurrent task execution with `.submit()` and `GroundhogFuture` API
-- **`hello_torchsim_gpu.py`** - Async execution with polling pattern for long-running GPU jobs
+- **`hello_torchsim_gpu.py`** - Toy example of a gpu-backed ~scientific workflow
 
 ## Error Examples
 
