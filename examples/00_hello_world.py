@@ -4,9 +4,9 @@
 #
 # ///
 """
-The simplest possible Groundhog example.
+The minimum viable groundhog.
 
-This demonstrates the core pattern:
+This shows off the core pattern:
 1. Decorate a function with @hog.function() to mark it for remote execution
 2. Create a @hog.harness() entry point that calls the remote function
 3. Run with: hog run examples/00_hello_world.py
@@ -14,9 +14,9 @@ This demonstrates the core pattern:
 
 import groundhog_hpc as hog
 
-# Replace with your endpoint ID and account
+# Replace with your account and preferred endpoint ID
 ENDPOINT = "5aafb4c1-27b2-40d8-a038-a0277611868f"  # Anvil
-ACCOUNT = "cis250223"
+ACCOUNT = "cis250461"
 
 
 @hog.function(endpoint=ENDPOINT, account=ACCOUNT)
@@ -28,6 +28,6 @@ def greet(name: str) -> str:
 @hog.harness()
 def main():
     """Entry point - orchestrates remote function calls."""
-    result = greet.remote("world")
+    result = greet.remote("groundhog ☀️🦫🕳️")
     print(result)
     return result
