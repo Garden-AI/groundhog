@@ -84,7 +84,7 @@ class Pep723Metadata(BaseModel, extra="allow"):
         return {"uv": {"exclude-newer": value}}
 
 
-def pep723_dumps(metadata: Pep723Metadata) -> str:
+def write_pep723(metadata: Pep723Metadata) -> str:
     """Dump a Pep723Metadata model to PEP 723 inline script metadata format.
 
     Converts pydantic model -> dictionary -> toml, and formats it
@@ -123,7 +123,7 @@ def insert_or_update_metadata(script_content: str, metadata: Pep723Metadata) -> 
     Returns:
         The updated script content with the metadata block
     """
-    metadata_block = pep723_dumps(metadata)
+    metadata_block = write_pep723(metadata)
 
     # Check if there's an existing metadata block
     match = re.search(INLINE_METADATA_REGEX, script_content)

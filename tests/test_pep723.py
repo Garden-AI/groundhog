@@ -7,8 +7,8 @@ import pytest
 from groundhog_hpc.pep723 import (
     Pep723Metadata,
     insert_or_update_metadata,
-    pep723_dumps,
     read_pep723,
+    write_pep723,
 )
 
 
@@ -147,7 +147,7 @@ class TestDumpsPep723:
         )
         metadata.requires_python = ">=3.10"
 
-        result = pep723_dumps(metadata)
+        result = write_pep723(metadata)
 
         # Should start and end with markers
         assert result.startswith("# /// script")
@@ -166,7 +166,7 @@ class TestDumpsPep723:
             exclude_newer=None,
         )
         metadata.requires_python = ">=3.10"
-        result = pep723_dumps(metadata)
+        result = write_pep723(metadata)
 
         assert "# dependencies = []" in result
 
@@ -177,7 +177,7 @@ class TestDumpsPep723:
             exclude_newer="2024-01-01T00:00:00Z",
         )
         metadata.requires_python = ">=3.11"
-        result = pep723_dumps(metadata)
+        result = write_pep723(metadata)
 
         assert "# [tool.uv]" in result
         assert '# exclude_newer = "2024-01-01T00:00:00Z"' in result
@@ -190,7 +190,7 @@ class TestDumpsPep723:
             "custom-field": "custom-value",
         }
         metadata = Pep723Metadata(**data)
-        result = pep723_dumps(metadata)
+        result = write_pep723(metadata)
 
         # Extra field should be present in output
         assert '# custom-field = "custom-value"' in result
@@ -203,7 +203,7 @@ class TestDumpsPep723:
         )
         original_metadata.requires_python = ">=3.11"
         # Dump to string
-        dumped = pep723_dumps(original_metadata)
+        dumped = write_pep723(original_metadata)
 
         # Read back
         parsed_dict = read_pep723(dumped)
