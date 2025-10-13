@@ -1,10 +1,10 @@
-"""Tests for the runner module helper functions."""
+"""Tests for the compute module helper functions."""
 
 from concurrent.futures import Future
 from unittest.mock import MagicMock, Mock, patch
 from uuid import UUID
 
-from groundhog_hpc.runner import (
+from groundhog_hpc.compute import (
     pre_register_shell_function,
     script_to_submittable,
     submit_to_executor,
@@ -19,9 +19,9 @@ class TestScriptToSubmittable:
         script_path = tmp_path / "test.py"
         script_path.write_text("# test")
 
-        with patch("groundhog_hpc.runner.template_shell_command") as mock_template:
+        with patch("groundhog_hpc.compute.template_shell_command") as mock_template:
             mock_template.return_value = "echo test"
-            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+            with patch("groundhog_hpc.compute.gc.ShellFunction") as mock_shell_func:
                 _result = script_to_submittable(str(script_path), "my_function")
 
                 # Verify template was called with correct args
@@ -37,8 +37,8 @@ class TestScriptToSubmittable:
         script_path = tmp_path / "test.py"
         script_path.write_text("# test")
 
-        with patch("groundhog_hpc.runner.template_shell_command"):
-            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+        with patch("groundhog_hpc.compute.template_shell_command"):
+            with patch("groundhog_hpc.compute.gc.ShellFunction") as mock_shell_func:
                 script_to_submittable(str(script_path), "my_function", walltime=120)
 
                 # Verify walltime was passed
@@ -49,8 +49,8 @@ class TestScriptToSubmittable:
         script_path = tmp_path / "test.py"
         script_path.write_text("# test")
 
-        with patch("groundhog_hpc.runner.template_shell_command"):
-            with patch("groundhog_hpc.runner.gc.ShellFunction") as mock_shell_func:
+        with patch("groundhog_hpc.compute.template_shell_command"):
+            with patch("groundhog_hpc.compute.gc.ShellFunction") as mock_shell_func:
                 script_to_submittable(str(script_path), "custom_func_name")
 
                 # Verify name was passed
@@ -69,8 +69,8 @@ class TestPreRegisterShellFunction:
         mock_client = MagicMock()
         mock_client.register_function.return_value = mock_uuid
 
-        with patch("groundhog_hpc.runner.gc.Client", return_value=mock_client):
-            with patch("groundhog_hpc.runner.script_to_submittable") as mock_s2s:
+        with patch("groundhog_hpc.compute.gc.Client", return_value=mock_client):
+            with patch("groundhog_hpc.compute.script_to_submittable") as mock_s2s:
                 mock_shell_func = MagicMock()
                 mock_s2s.return_value = mock_shell_func
 
@@ -104,13 +104,13 @@ class TestSubmitToExecutor:
 
         user_config = {"account": "test"}
 
-        with patch("groundhog_hpc.runner.gc.Executor", return_value=mock_executor):
+        with patch("groundhog_hpc.compute.gc.Executor", return_value=mock_executor):
             result = submit_to_executor(
                 UUID(mock_endpoint_uuid), user_config, mock_shell_func, "test_payload"
             )
 
             # Verify Executor was created with correct endpoint and config
-            from groundhog_hpc.runner import gc
+            from groundhog_hpc.compute import gc
 
             gc.Executor.assert_called_once_with(
                 UUID(mock_endpoint_uuid), user_endpoint_config=user_config
@@ -133,7 +133,7 @@ class TestSubmitToExecutor:
         mock_executor.__enter__ = Mock(return_value=mock_executor)
         mock_executor.__exit__ = Mock(return_value=False)
 
-        with patch("groundhog_hpc.runner.gc.Executor", return_value=mock_executor):
+        with patch("groundhog_hpc.compute.gc.Executor", return_value=mock_executor):
             result = submit_to_executor(
                 UUID(mock_endpoint_uuid), {}, mock_shell_func, "payload"
             )

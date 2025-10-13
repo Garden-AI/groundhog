@@ -14,14 +14,20 @@ import os
 
 import groundhog_hpc as hog
 
+# NOTE groundhog-hpc is automatically installed on the remote end, no need to
+# declare it above in the PEP 723 metadata
+
 
 @hog.function(walltime=30, account="cis250223")
 def hello_environment():
     return dict(os.environ)
 
 
-@hog.function(walltime=30, account="cis250223")
+@hog.function(walltime=30, account="cis250223", qos="gpu", partition="gpu-debug")
 def hello_torch():
+    # NOTE: we import torch inside the function because it's available on the
+    # remote endpoint (because it was declared in script metadata) but may not
+    # be available locally.
     import torch
 
     msg = f"Hello, cuda? {torch.cuda.is_available()=}"

@@ -12,3 +12,4 @@ wheels/
 /.python-version
 /CLAUDE.md
 /.DS_Store
+/.coverage

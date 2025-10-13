@@ -1,3 +1,10 @@
+"""Future wrapper for remote function execution.
+
+This module provides GroundhogFuture, a Future subclass that automatically
+deserializes results from remote execution while preserving access to raw
+shell execution metadata (stdout, stderr, returncode).
+"""
+
 import re
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -20,19 +27,29 @@ class GroundhogFuture(Future):
     This future automatically deserializes the payload when .result() is called,
     but preserves access to the original ShellResult (with stdout, stderr, returncode)
     via the .shell_result property.
+
+    Attributes:
+        task_id: Globus Compute task ID (set when the future completes)
+        endpoint: UUID of the endpoint where the task was submitted
+        user_endpoint_config: Configuration dict used for the endpoint
     """
 
-    def __init__(self, original_future: Future):
+    def __init__(self, original_future: Future) -> None:
+        """Wrap a Globus Compute future with automatic deserialization.
+
+        Args:
+            original_future: The original Future returned by Globus Compute Executor
+        """
         super().__init__()
-        self._original_future = original_future
-        self._shell_result = None
-        self.task_id = None
+        self._original_future: Future = original_future
+        self._shell_result: ShellResult | None = None
+        self.task_id: str | None = None
 
         # set after created in Function.submit, useful for invocation logs etc
-        self.endpoint = None
-        self.user_endpoint_config = None
+        self.endpoint: str | None = None
+        self.user_endpoint_config: dict[str, Any] | None = None
 
-        def callback(fut):
+        def callback(fut: Future) -> None:
             try:
                 # Get and cache the ShellResult
                 shell_result = fut.result()
@@ -72,7 +89,7 @@ def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
     # Match the heredoc pattern: cat > *.in << 'END'\n<payload>\nEND
     pattern = r"(cat > [^\s]+\.in << 'END'\n)(.*?)(\nEND)"
 
-    def replace_payload(match):
+    def replace_payload(match: re.Match[str]) -> str:
         prefix = match.group(1)
         payload = match.group(2)
         suffix = match.group(3)

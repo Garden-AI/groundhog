@@ -1,3 +1,12 @@
+"""Script templating for remote execution.
+
+This module provides utilities for injecting boilerplate code into user scripts
+to enable remote execution. It creates shell commands that:
+1. Write the user script to a file on the remote endpoint
+2. Write serialized arguments to an input file
+3. Execute the script with uv, deserialize args, call the function, serialize results
+"""
+
 from hashlib import sha1
 from pathlib import Path
 
@@ -20,6 +29,21 @@ $(python -c 'import uv; print(uv.find_uv_bin())') run -qq --managed-python --wit
 
 
 def template_shell_command(script_path: str, function_name: str) -> str:
+    """Generate a shell command to execute a user function on a remote endpoint.
+
+    The generated shell command:
+    - Creates a modified version of the user script with __main__ boilerplate
+    - Uses a hash-based filename for caching on the remote endpoint
+    - Sets up input/output files for serialized data
+    - Executes the script with uv for dependency management
+
+    Args:
+        script_path: Path to the user's Python script
+        function_name: Name of the function to execute
+
+    Returns:
+        A shell command string ready to be executed via Globus Compute
+    """
     with open(script_path, "r") as f_in:
         user_script = f_in.read()
 
@@ -46,7 +70,7 @@ def template_shell_command(script_path: str, function_name: str) -> str:
     return shell_command_string
 
 
-def _script_hash_prefix(contents: str, length=8) -> str:
+def _script_hash_prefix(contents: str, length: int = 8) -> str:
     return str(sha1(bytes(contents, "utf-8")).hexdigest()[:length])
 
 
@@ -59,6 +83,25 @@ def _inject_script_boilerplate(
     function_name: str,
     script_name: str,
 ) -> str:
+    """Inject __main__ boilerplate into a user script for remote execution.
+
+    Adds code that:
+    - Reads serialized arguments from an input file
+    - Deserializes the arguments
+    - Calls the specified function
+    - Serializes and writes the result to an output file
+
+    Args:
+        user_script: The original user script content
+        function_name: Name of the function to call in __main__
+        script_name: Base name for input/output files
+
+    Returns:
+        Modified script with __main__ boilerplate appended
+
+    Raises:
+        AssertionError: If user_script has prior __main__-related logic
+    """
     assert "__main__" not in user_script, (
         "invalid user script: can't define custom `__main__` logic"
     )
