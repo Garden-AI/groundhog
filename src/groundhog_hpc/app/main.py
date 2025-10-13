@@ -19,10 +19,77 @@ from groundhog_hpc.compute import pre_register_shell_function
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.pep723 import read_pep723
+from groundhog_hpc.pep723 import (
+    Pep723Metadata,
+    insert_or_update_metadata,
+    read_pep723,
+    write_pep723,
+)
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
+
+
+def _check_and_update_metadata(script_path: Path, contents: str) -> str:
+    """Check for missing/incomplete PEP 723 metadata and offer to update.
+
+    Args:
+        script_path: Path to the script file
+        contents: Current script contents
+
+    Returns:
+        Updated script contents (or original if no update made)
+    """
+    metadata_dict = read_pep723(contents)
+
+    # Check if metadata is missing or incomplete
+    needs_update = False
+    if metadata_dict is None:
+        # No metadata block at all
+        needs_update = True
+        typer.echo(
+            "\nWarning: Script does not contain PEP 723 metadata block.", err=True
+        )
+    else:
+        # Check if expected fields are present
+        missing_fields = []
+        if "requires-python" not in metadata_dict:
+            missing_fields.append("requires-python")
+        if "dependencies" not in metadata_dict:
+            missing_fields.append("dependencies")
+
+        if missing_fields:
+            needs_update = True
+            typer.echo(
+                f"\nWarning: Script metadata is missing fields: {', '.join(missing_fields)}",
+                err=True,
+            )
+
+    if not needs_update:
+        return contents
+
+    # Create metadata with defaults
+    if metadata_dict is None:
+        metadata = Pep723Metadata()
+    else:
+        # Preserve existing metadata, fill in defaults for missing fields
+        metadata = Pep723Metadata.model_validate(metadata_dict)
+
+    # Show proposed metadata
+    typer.echo("\nProposed metadata block:", err=True)
+    typer.echo(write_pep723(metadata), err=True)
+    typer.echo()
+
+    # Prompt user
+    if typer.confirm("Would you like to update the script with this metadata?"):
+        updated_contents = insert_or_update_metadata(contents, metadata)
+        script_path.write_text(updated_contents)
+        typer.echo(f"✓ Updated {script_path}", err=True)
+        typer.echo()
+        return updated_contents
+    else:
+        typer.echo("Continuing without updating metadata...\n", err=True)
+        return contents
 
 
 @app.command(no_args_is_help=True)
@@ -45,6 +112,9 @@ def run(
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
 
     contents = script_path.read_text()
+
+    # Check for missing/incomplete metadata and offer to update
+    contents = _check_and_update_metadata(script_path, contents)
 
     metadata = read_pep723(contents)
     if metadata and "requires-python" in metadata:
