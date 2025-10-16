@@ -4,12 +4,12 @@ Home of `hog` ☀️🦫🕳️
 
 Groundhog makes it easy to run, tweak, and re-run python functions on HPC clusters via [Globus Compute](https://www.globus.org/compute) using simple decorators.
 
-Groundhog automatically manages and isolates the environment on the remote endpoint (powered by [uv](https://docs.astral.sh/uv/))—you can change python versions or add a dependency with a single line, never needing to `ssh` in to install anything on the remote end yourself.
+Groundhog automatically manages remote environments (powered by [uv](https://docs.astral.sh/uv/))—just update Python versions or dependencies in your script, no SSH needed.
 
 **Key concepts:**
 - `@hog.function()` - Configures a function to run on a Globus Compute endpoint. Decorator kwargs (like `endpoint`, `account`) become the default `user_endpoint_config`.
 - `@hog.harness()` - Marks a local entry point that orchestrates remote calls via `.remote()` or `.submit()`.
-- The remote Python environment (version and dependencies) is specified alongside your code via [PEP 723](https://peps.python.org/pep-0723/) metadata.
+- The desired remote Python environment (version and dependencies) is specified alongside your code via [PEP 723](https://peps.python.org/pep-0723/) metadata.
 
 ```python
 # /// script
