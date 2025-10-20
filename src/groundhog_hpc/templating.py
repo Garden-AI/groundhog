@@ -21,7 +21,7 @@ EOF
 cat > {{ script_name }}.in << 'END'
 {payload}
 END
-$(python -c 'import uv; print(uv.find_uv_bin())') run -qq --managed-python --with {{ version_spec }} \\
+$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python --with {{ version_spec }} \\
   {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout \\
   && cat {{ script_name }}.stdout && echo "__GROUNDHOG_RESULT__" && cat {{ script_name }}.out
 """
