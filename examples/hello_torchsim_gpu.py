@@ -39,6 +39,7 @@ def hello_torchsim(n_steps: int = 50):
     from torch_sim.models.mace import MaceModel
 
     cu_atoms = bulk("Cu", "fcc", a=5.43, cubic=True)
+    print("Hello from hello_torchsim!")
 
     # Load the MACE "small" foundation model
     os.environ["SSL_CERT_FILE"] = certifi.where()

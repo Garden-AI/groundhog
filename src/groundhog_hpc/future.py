@@ -106,7 +106,12 @@ def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
 
 
 def _process_shell_result(shell_result: ShellResult) -> Any:
-    """Process a ShellResult by checking for errors and deserializing the payload."""
+    """Process a ShellResult by checking for errors, printing user output, and deserializing the result payload.
+
+    The stdout contains two parts separated by "__GROUNDHOG_RESULT__":
+    1. User output (from the .stdout file) - printed to stdout
+    2. Serialized results (from the .out file) - deserialized and returned
+    """
     if shell_result.returncode != 0:
         msg = f"Remote execution failed with exit code: {shell_result.returncode}."
         truncated_cmd = _truncate_payload_in_cmd(shell_result.cmd)
@@ -118,4 +123,18 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
-    return deserialize(shell_result.stdout)
+    # Split stdout into user output and serialized results
+    delimiter = "__GROUNDHOG_RESULT__"
+    if delimiter in shell_result.stdout:
+        parts = shell_result.stdout.split(delimiter, 1)
+        user_output = parts[0].rstrip("\n")  # Remove trailing newline from cat output
+        serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
+
+        # Print user output if it exists
+        if user_output:
+            print(user_output)
+
+        return deserialize(serialized_result)
+    else:
+        # Fallback for backward compatibility (no delimiter found)
+        return deserialize(shell_result.stdout)

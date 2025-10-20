@@ -246,6 +246,36 @@ class TestProcessShellResult:
         result = _process_shell_result(mock_result)
         assert result == test_object
 
+    def test_splits_user_output_and_result_with_delimiter(self, capsys):
+        """Test that user output is printed and result is deserialized when delimiter is present."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        # Simulate stdout with user output, delimiter, and serialized result
+        mock_result.stdout = (
+            'User printed this\nAnd this\n__GROUNDHOG_RESULT__\n{"result": "success"}'
+        )
+
+        result = _process_shell_result(mock_result)
+
+        # Check that the result is deserialized correctly
+        assert result == {"result": "success"}
+
+        # Check that user output was printed
+        captured = capsys.readouterr()
+        assert "User printed this" in captured.out
+        assert "And this" in captured.out
+        assert "__GROUNDHOG_RESULT__" not in captured.out
+
+    def test_handles_empty_user_output_with_delimiter(self):
+        """Test that empty user output doesn't cause issues."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        # No user output before delimiter
+        mock_result.stdout = '__GROUNDHOG_RESULT__\n{"result": "success"}'
+
+        result = _process_shell_result(mock_result)
+        assert result == {"result": "success"}
+
 
 class TestTruncatePayloadInCmd:
     """Test the _truncate_payload_in_cmd function."""
