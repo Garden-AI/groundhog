@@ -10,21 +10,11 @@ as defaults but overridden when calling .remote() or .submit().
 """
 
 import os
-import time
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
-from rich.console import Console
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.text import Text
-
-from groundhog_hpc.compute import (
-    get_task_status,
-    script_to_submittable,
-    submit_to_executor,
-)
+from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.console import display_status_while_waiting
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
@@ -36,74 +26,6 @@ if TYPE_CHECKING:
     ShellFunction = globus_compute_sdk.ShellFunction
 else:
     ShellFunction = TypeVar("ShellFunction")
-
-
-def _display_status_while_waiting(
-    future: GroundhogFuture, poll_interval: float = 0.5
-) -> None:
-    """Display live status updates while waiting for a future to complete.
-
-    Args:
-        future: The GroundhogFuture to monitor
-        poll_interval: How often to poll for status updates (seconds)
-    """
-    console = Console()
-    start_time = time.time()
-
-    def format_elapsed(seconds: float) -> str:
-        """Format elapsed time in a human-readable way."""
-        if seconds < 60:
-            return f"{seconds:.1f}s"
-        elif seconds < 3600:
-            minutes = int(seconds // 60)
-            secs = int(seconds % 60)
-            return f"{minutes}m {secs}s"
-        else:
-            hours = int(seconds // 3600)
-            minutes = int((seconds % 3600) // 60)
-            return f"{hours}h {minutes}m"
-
-    def get_status_display() -> Text:
-        """Generate the current status display."""
-        elapsed = time.time() - start_time
-        task_id = future.task_id
-
-        # Create the display text
-        text = Text()
-        text.append("Task ", style="bold")
-        text.append(f"{task_id[:8]}..." if task_id else "pending", style="cyan")
-        text.append(" | ", style="dim")
-        text.append(format_elapsed(elapsed), style="yellow")
-
-        # Try to get current status
-        if task_id:
-            try:
-                status = get_task_status(task_id)
-                text.append(" | ", style="dim")
-                text.append(f"{status}", style="green")
-            except Exception:
-                # If we can't get status, just skip it
-                pass
-
-        return text
-
-    spinner = Spinner("dots", text="")
-
-    # Use Rich Live display for smooth updates
-    with Live(spinner, console=console, refresh_per_second=2) as live:
-        while not future.done():
-            status_text = get_status_display()
-            spinner.text = status_text
-            live.update(spinner)
-
-            # Poll with a short timeout
-            try:
-                future.result(timeout=poll_interval)
-                # Future completed, exit the display loop
-                break
-            except FuturesTimeoutError:
-                # Expected - just continue polling
-                continue
 
 
 class Function:
@@ -256,5 +178,5 @@ class Function:
             user_endpoint_config=user_endpoint_config,
             **kwargs,
         )
-        _display_status_while_waiting(future)
+        display_status_while_waiting(future)
         return future.result()
