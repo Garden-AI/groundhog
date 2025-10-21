@@ -29,5 +29,4 @@ def greet(name: str) -> str:
 def main():
     """Entry point - orchestrates remote function calls."""
     result = greet.remote("groundhog ☀️🦫🕳️")
-    print(result)
     return result

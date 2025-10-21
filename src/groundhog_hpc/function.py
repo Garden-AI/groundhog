@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
@@ -152,6 +153,7 @@ class Function:
         """Execute the function remotely and block until completion.
 
         This is a convenience method that calls submit() and immediately waits for the result.
+        While waiting, displays live status updates with task ID, elapsed time, and status.
 
         Args:
             *args: Positional arguments to pass to the function
@@ -176,4 +178,5 @@ class Function:
             user_endpoint_config=user_endpoint_config,
             **kwargs,
         )
+        display_task_status(future)
         return future.result()
