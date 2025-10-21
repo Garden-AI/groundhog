@@ -464,3 +464,223 @@ class TestSubmitMethod:
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
+
+
+class TestLocalMethod:
+    """Test the local() method for running functions in local subprocess."""
+
+    def test_local_executes_function_and_returns_result(self, tmp_path):
+        """Test that local() executes the function in a subprocess and returns result."""
+        # Create a test script
+        script_path = tmp_path / "test_local.py"
+        script_content = """import groundhog_hpc as hog
+
+@hog.function()
+def add(a, b):
+    return a + b
+"""
+        script_path.write_text(script_content)
+
+        def add(a, b):
+            return a + b
+
+        func = Function(add)
+        func._script_path = str(script_path)
+
+        # Mock subprocess.run to simulate successful execution
+        mock_result = MagicMock()
+        mock_result.stdout = '{"result": 5}'
+
+        with patch("groundhog_hpc.function.subprocess.run", return_value=mock_result):
+            with patch(
+                "groundhog_hpc.function.deserialize_stdout", return_value=5
+            ) as mock_deserialize:
+                result = func.local(2, 3)
+
+        assert result == 5
+        mock_deserialize.assert_called_once_with('{"result": 5}')
+
+    def test_local_serializes_arguments(self, tmp_path):
+        """Test that local() serializes arguments correctly."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = '{"result": "success"}'
+
+        with patch(
+            "groundhog_hpc.function.serialize", return_value="serialized"
+        ) as mock_serialize:
+            with patch(
+                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout", return_value="success"
+                ):
+                    func.local(1, 2, key="value")
+
+        # Verify serialize was called with args and kwargs
+        mock_serialize.assert_called_once()
+        call_args = mock_serialize.call_args[0][0]
+        assert call_args == ((1, 2), {"key": "value"})
+        # Verify size_limit_bytes is set to infinity
+        assert mock_serialize.call_args[1]["size_limit_bytes"] == float("inf")
+
+    def test_local_runs_in_temporary_directory(self, tmp_path):
+        """Test that local() runs subprocess in a temporary directory."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = "result"
+
+        with patch(
+            "groundhog_hpc.function.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            with patch(
+                "groundhog_hpc.function.deserialize_stdout", return_value="result"
+            ):
+                func.local()
+
+        # Verify subprocess.run was called with a cwd parameter
+        assert mock_run.call_args[1]["cwd"] is not None
+        # Verify it's a valid directory path (starts with /tmp or similar)
+        cwd = mock_run.call_args[1]["cwd"]
+        assert isinstance(cwd, str)
+
+    def test_local_raises_if_script_path_unavailable(self):
+        """Test that local() raises ValueError if script path cannot be determined."""
+
+        def local_func():
+            return "test"
+
+        func = Function(local_func)
+        func._script_path = None
+
+        # Mock inspect.getfile to raise TypeError (e.g., for built-in functions)
+        with patch(
+            "groundhog_hpc.function.inspect.getfile",
+            side_effect=TypeError("not a file"),
+        ):
+            with pytest.raises(ValueError, match="Could not determine script path"):
+                func.local()
+
+    def test_local_uses_template_shell_command(self, tmp_path):
+        """Test that local() uses template_shell_command to generate the command."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = "result"
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command",
+            return_value="echo {payload}",
+        ) as mock_template:
+            with patch(
+                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout", return_value="result"
+                ):
+                    func.local()
+
+        # Verify template_shell_command was called with script path and function name
+        mock_template.assert_called_once_with(str(script_path), "dummy_function")
+
+    def test_local_passes_shell_command_to_subprocess(self, tmp_path):
+        """Test that local() passes the formatted shell command to subprocess."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = "result"
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command",
+            return_value="uv run script.py {payload}",
+        ):
+            with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
+                with patch(
+                    "groundhog_hpc.function.subprocess.run", return_value=mock_result
+                ) as mock_run:
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value="result",
+                    ):
+                        func.local()
+
+        # Verify subprocess.run was called with the formatted command
+        assert mock_run.call_args[0][0] == "uv run script.py ABC123"
+        assert mock_run.call_args[1]["shell"] is True
+        assert mock_run.call_args[1]["capture_output"] is True
+        assert mock_run.call_args[1]["text"] is True
+        assert mock_run.call_args[1]["check"] is True
+
+    def test_local_infers_script_path_from_function(self, tmp_path):
+        """Test that local() can infer script path from function's source file."""
+        # Create a test script
+        script_path = tmp_path / "inferred_script.py"
+        script_content = """def my_function():
+    return 42
+"""
+        script_path.write_text(script_content)
+
+        def my_function():
+            return 42
+
+        func = Function(my_function)
+        func._script_path = None  # Force it to infer
+
+        mock_result = MagicMock()
+        mock_result.stdout = "42"
+
+        # Mock inspect.getfile to return our test script
+        with patch(
+            "groundhog_hpc.function.inspect.getfile", return_value=str(script_path)
+        ):
+            with patch(
+                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout", return_value=42
+                ):
+                    result = func.local()
+
+        assert result == 42
+
+    def test_local_sets_no_size_limit_env_var(self, tmp_path):
+        """Test that local() sets GROUNDHOG_NO_SIZE_LIMIT environment variable."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = "result"
+
+        with patch(
+            "groundhog_hpc.function.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            with patch(
+                "groundhog_hpc.function.deserialize_stdout", return_value="result"
+            ):
+                func.local()
+
+        # Verify the environment variable was set
+        env = mock_run.call_args[1]["env"]
+        assert "GROUNDHOG_NO_SIZE_LIMIT" in env
+        assert env["GROUNDHOG_NO_SIZE_LIMIT"] == "1"

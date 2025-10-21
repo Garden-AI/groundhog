@@ -10,7 +10,6 @@ as defaults but overridden when calling .remote() or .submit().
 """
 
 import inspect
-import math
 import os
 import subprocess
 import tempfile
@@ -205,11 +204,13 @@ class Function:
         script_path = self._get_script_path()
         shell_command_template = template_shell_command(script_path, self._name)
 
-        # no size limit for local processes
-        payload = serialize((args, kwargs), size_limit_bytes=math.inf)
+        payload = serialize((args, kwargs))
         shell_command = shell_command_template.format(payload=payload)
 
-        # Run in a temporary directory to avoid littering the current directory
+        # disable size limit since this is all local
+        env = os.environ.copy()
+        env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
+
         with tempfile.TemporaryDirectory() as tmpdir:
             result = subprocess.run(
                 shell_command,
@@ -218,6 +219,7 @@ class Function:
                 text=True,
                 check=True,
                 cwd=tmpdir,
+                env=env,
             )
 
         return deserialize_stdout(result.stdout)

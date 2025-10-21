@@ -149,3 +149,23 @@ class TestPayloadSizeLimit:
             serialize(large_set)
 
         assert exc_info.value.size_mb > 10
+
+    def test_no_size_limit_env_var_disables_check(self):
+        """Test that GROUNDHOG_NO_SIZE_LIMIT environment variable disables size check."""
+        import os
+
+        # Create a payload larger than 10MB
+        large_data = "x" * (11 * 1024 * 1024)
+
+        # Without the env var, should raise
+        with pytest.raises(PayloadTooLargeError):
+            serialize(large_data)
+
+        # With the env var, should succeed
+        os.environ["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
+        try:
+            result = serialize(large_data)
+            assert result is not None
+            assert deserialize(result) == large_data
+        finally:
+            del os.environ["GROUNDHOG_NO_SIZE_LIMIT"]

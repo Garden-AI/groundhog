@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import pickle
 from typing import Any
 
@@ -17,8 +18,10 @@ def serialize(
     First attempts JSON serialization for efficiency and human-readability.
     Falls back to pickle + base64 encoding for non-JSON-serializable types.
 
+    If GROUNDHOG_NO_SIZE_LIMIT environment variable is set, no size limit is enforced.
+
     Raises:
-        PayloadTooLargeError: If the serialized payload exceeds 10 MB.
+        PayloadTooLargeError: If the serialized payload exceeds the size limit.
     """
     try:
         result = json.dumps(obj)
@@ -29,11 +32,12 @@ def serialize(
         # Prefix with marker to indicate pickle encoding
         result = f"__PICKLE__:{b64_encoded}"
 
-    # Check payload size
-    payload_size = len(result.encode("utf-8"))
-    if payload_size > size_limit_bytes:
-        size_mb = payload_size / (1024 * 1024)
-        raise PayloadTooLargeError(size_mb)
+    # Check payload size (unless disabled via environment variable)
+    if not os.environ.get("GROUNDHOG_NO_SIZE_LIMIT"):
+        payload_size = len(result.encode("utf-8"))
+        if payload_size > size_limit_bytes:
+            size_mb = payload_size / (1024 * 1024)
+            raise PayloadTooLargeError(size_mb)
 
     return result
 
