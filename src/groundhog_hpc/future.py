@@ -43,7 +43,7 @@ class GroundhogFuture(Future):
         super().__init__()
         self._original_future: Future = original_future
         self._shell_result: ShellResult | None = None
-        self.task_id: str | None = None
+        self._task_id: str | None = None
 
         # set after created in Function.submit, useful for invocation logs etc
         self.endpoint: str | None = None
@@ -60,9 +60,6 @@ class GroundhogFuture(Future):
                 self.set_result(deserialized_result)
             except Exception as e:
                 self.set_exception(e)
-            finally:
-                if hasattr(fut, "task_id"):
-                    self.task_id = fut.task_id
 
         original_future.add_done_callback(callback)
 
@@ -77,6 +74,10 @@ class GroundhogFuture(Future):
         if self._shell_result is None:
             self._shell_result = self._original_future.result()
         return self._shell_result
+
+    @property
+    def task_id(self) -> str | None:
+        return self._original_future.task_id
 
 
 def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:

@@ -96,3 +96,11 @@ def submit_to_executor(
         future = executor.submit(shell_function, payload=payload)
         deserializing_future = GroundhogFuture(future)
         return deserializing_future
+
+
+def get_task_status(task_id: str | UUID) -> str:
+    import globus_compute_sdk as gc
+
+    client = gc.Client()
+    status = client.get_task(str(task_id)).get("status", "awaiting status")
+    return status
