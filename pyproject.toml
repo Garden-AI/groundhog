@@ -21,7 +21,7 @@ license = { text = "MIT" }
 keywords = ["Globus Compute", "FaaS", "Function Serving", "HPC"]
 classifiers = [
   "Intended Audience :: Science/Research",
-  "Topic :: Scientific/Engineering"
+  "Topic :: Scientific/Engineering",
 ]
 
 

@@ -9,8 +9,10 @@ and user_endpoint_config parameters, which can be specified at decoration time
 as defaults but overridden when calling .remote() or .submit().
 """
 
+import inspect
+import math
 import os
-import tempfile
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
@@ -18,9 +20,10 @@ from uuid import UUID
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
-from groundhog_hpc.serialization import serialize
+from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
-from groundhog_hpc.utils import groundhog_script_path, merge_endpoint_configs
+from groundhog_hpc.templating import template_shell_command
+from groundhog_hpc.utils import merge_endpoint_configs
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -33,10 +36,11 @@ else:
 class Function:
     """Wrapper that enables a Python function to be executed remotely on Globus Compute.
 
-    Decorated functions can be called in three ways:
-    1. Direct call: func(*args) - executes locally
+    Decorated functions can be called in four ways:
+    1. Direct call: func(*args) - executes locally (regular python call)
     2. Remote call: func.remote(*args) - executes remotely and blocks until complete
     3. Async submit: func.submit(*args) - executes remotely and returns a Future
+    4. Local subprocess: func.local(*args) - executes locally in a separate process
 
     Attributes:
         endpoint: Default Globus Compute endpoint UUID
@@ -183,32 +187,57 @@ class Function:
         display_task_status(future)
         return future.result()
 
+    def local(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute the function using the same shell command as remote execution but in a local subprocess.
 
-def load_function_from_source(contents: str, name) -> Function:
-    """Load a groundhog function from script contents by writing to a temporary file.
+        Args:
+            *args: Positional arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
 
-    Args:
-        contents: The script contents as a string
-        name: The name of the function to load from the script
+        Returns:
+            The deserialized result of the local function execution
 
-    Returns:
-        The loaded groundhog Function instance
-    """
-    # Create a temporary file to write the script contents
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
-        temp_file.write(contents)
-        script_path = Path(temp_file.name)
-        with groundhog_script_path(script_path):
-            import __main__
+        Raises:
+            ValueError: If source file cannot be located
+            subprocess.CalledProcessError: If local execution fails (non-zero exit code)
+        """
+        script_path = self._get_script_path()
+        shell_command_template = template_shell_command(script_path, self._name)
 
-            # exec the script to init the Function instance
-            exec(contents, __main__.__dict__)
+        # no size limit for local processes
+        payload = serialize((args, kwargs), size_limit_bytes=math.inf)
+        shell_command = shell_command_template.format(payload=payload)
 
-            obj = __main__.__dict__.get(name)
-            if obj is None:
-                raise ValueError(f"No groundhog function {name} found in script")
-            elif not isinstance(obj, Function):
-                raise ValueError(
-                    f"Expected {name} to be a groundhog function, got: {type(obj)}"
-                )
-    return obj
+        result = subprocess.run(
+            shell_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        return deserialize_stdout(result.stdout)
+
+    def _get_script_path(self) -> str:
+        """Get the script path for this function.
+
+        First tries the GROUNDHOG_SCRIPT_PATH environment variable (set by CLI).
+        If not set, infers it from the function's source file.
+
+        Returns:
+            Absolute path to the script file
+
+        Raises:
+            ValueError: If script path cannot be determined
+        """
+        if self._script_path is not None:
+            return self._script_path
+
+        try:
+            source_file = inspect.getfile(self._local_function)
+            return str(Path(source_file).resolve())
+        except (TypeError, OSError) as e:
+            raise ValueError(
+                f"Could not determine script path for function {self._name}. "
+                "Function must be defined in a file (not in interactive mode)."
+            ) from e
