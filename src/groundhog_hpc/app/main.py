@@ -95,13 +95,20 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
 @app.command(no_args_is_help=True)
 def run(
     script: Path = typer.Argument(
-        ..., help="Python script with PEP 723 dependencies to deploy to the endpoint"
+        ..., help="Path to script with PEP 723 dependencies to deploy to the endpoint"
     ),
     harness: str = typer.Argument(
-        "main", help="Name of harness to run from script (default 'main')."
+        "main", help="Name of harness function to invoke from script (default 'main')"
+    ),
+    no_fun_allowed: bool = typer.Option(
+        False,
+        "--no-fun-allowed",
+        help="Suppress emoji output\n\n[env: GROUNDHOG_NO_FUN_ALLOWED=]",
     ),
 ) -> None:
     """Run a Python script on a Globus Compute endpoint."""
+    if no_fun_allowed:
+        os.environ["GROUNDHOG_NO_FUN_ALLOWED"] = str(no_fun_allowed)
 
     script_path = script.resolve()
     if not script_path.exists():
@@ -266,7 +273,7 @@ def main_info(
         None, "--version", callback=_version_callback, is_eager=True
     ),
 ) -> None:
-    """
-    Hello, Groundhog ☀️🦫🕳️
+    f"""
+    Hello, Groundhog {"☀️🦫🕳️" if not os.environ.get("GROUNDHOG_NO_FUN_ALLOWED") else ""}
     """
     pass

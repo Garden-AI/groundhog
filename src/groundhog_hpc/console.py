@@ -1,16 +1,27 @@
 """Console display utilities for showing task status during execution."""
 
+import os
 import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from rich.console import Console
 from rich.live import Live
-from rich.spinner import Spinner
+from rich.spinner import SPINNERS, Spinner
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
+
+SPINNERS["groundhog"] = {
+    "interval": 400,
+    "frames": [
+        " ☀️🦫🕳️",
+        " 🌤 🦫🕳️",
+        " 🌥 🦫  ",
+        " ☁️🦫  ",
+    ],
+}
 
 
 def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> None:
@@ -23,7 +34,9 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     console = Console()
     start_time = time.time()
 
-    spinner = Spinner("dots", text="")
+    spinner = (
+        Spinner("groundhog", text="") if _fun_allowed() else Spinner("dots", text="")
+    )
 
     with Live(spinner, console=console, refresh_per_second=20) as live:
         # initial task_status
@@ -88,6 +101,7 @@ def _format_status_line(
         Formatted Text object
     """
     text = Text()
+    text.append("| ", style="dim")
     text.append(task_id or "task pending", style="cyan" if task_id else "dim")
     text.append(" | ", style="dim")
     text.append(status, style=status_style)
@@ -134,3 +148,7 @@ def _format_elapsed(seconds: float) -> str:
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         return f"{hours}h {minutes}m"
+
+
+def _fun_allowed() -> bool:
+    return not os.environ.get("GROUNDHOG_NO_FUN_ALLOWED")
