@@ -10,6 +10,8 @@ as defaults but overridden when calling .remote() or .submit().
 """
 
 import os
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
@@ -18,7 +20,7 @@ from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
-from groundhog_hpc.utils import merge_endpoint_configs
+from groundhog_hpc.utils import groundhog_script_path, merge_endpoint_configs
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -180,3 +182,33 @@ class Function:
         )
         display_task_status(future)
         return future.result()
+
+
+def load_function_from_source(contents: str, name) -> Function:
+    """Load a groundhog function from script contents by writing to a temporary file.
+
+    Args:
+        contents: The script contents as a string
+        name: The name of the function to load from the script
+
+    Returns:
+        The loaded groundhog Function instance
+    """
+    # Create a temporary file to write the script contents
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
+        temp_file.write(contents)
+        script_path = Path(temp_file.name)
+        with groundhog_script_path(script_path):
+            import __main__
+
+            # exec the script to init the Function instance
+            exec(contents, __main__.__dict__)
+
+            obj = __main__.__dict__.get(name)
+            if obj is None:
+                raise ValueError(f"No groundhog function {name} found in script")
+            elif not isinstance(obj, Function):
+                raise ValueError(
+                    f"Expected {name} to be a groundhog function, got: {type(obj)}"
+                )
+    return obj
