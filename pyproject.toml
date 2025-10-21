@@ -13,6 +13,7 @@ dependencies = [
   "tomli>=1.1.0 ; python_full_version < '3.11'",
   "tomli-w>=1.0.0",
   "typer>=0.16.1",
+  "uv>=0.9.5",
 ]
 authors = [
   { name = "Owen Price Skelly", email = "OwenPriceSkelly@uchicago.edu" },
