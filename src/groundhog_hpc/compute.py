@@ -7,6 +7,7 @@ endpoints.
 
 import os
 import warnings
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
@@ -23,14 +24,23 @@ if TYPE_CHECKING:
     import globus_compute_sdk
 
     ShellFunction = globus_compute_sdk.ShellFunction
+    Client = globus_compute_sdk.Client
 else:
     ShellFunction = TypeVar("ShellFunction")
+    Client = TypeVar("Client")
 
 if os.environ.get("PYTEST_VERSION") is not None:
     # we lazy import globus compute everywhere to avoid possible
     # cryptography/libssl related errors on remote endpoint
     # unless we're testing, in which case we need to import for mocks
     import globus_compute_sdk as gc  # noqa: F401, I001
+
+
+@lru_cache
+def _get_compute_client() -> Client:
+    import globus_compute_sdk as gc
+
+    return gc.Client()
 
 
 def script_to_submittable(
@@ -65,9 +75,8 @@ def pre_register_shell_function(
     should be a serialized str, and will return a serialized str to be
     deserialized.
     """
-    import globus_compute_sdk as gc
 
-    client = gc.Client()
+    client = _get_compute_client()
     shell_function = script_to_submittable(script_path, function_name, walltime)
     function_id = client.register_function(shell_function, public=True)
     return function_id
@@ -98,9 +107,18 @@ def submit_to_executor(
         return deserializing_future
 
 
-def get_task_status(task_id: str | UUID) -> str:
-    import globus_compute_sdk as gc
+def get_task_status(task_id: str | UUID | None) -> dict[str, Any]:
+    """Get the full task status response from Globus Compute.
 
-    client = gc.Client()
-    status = client.get_task(str(task_id)).get("status", "awaiting status")
-    return status
+    Args:
+        task_id: The task ID to query, or None if not yet available
+
+    Returns:
+        A dict containing task_id, status, result, completion_t, exception, and details.
+        If task_id is None, returns a dict with status="status pending".
+    """
+    if task_id is None:
+        return {"status": "status pending", "exception": None}
+
+    client = _get_compute_client()
+    return client.get_task(task_id)

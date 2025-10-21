@@ -9,11 +9,12 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
 
 
 def display_status_while_waiting(
-    future: GroundhogFuture, poll_interval: float = 0.5
+    future: GroundhogFuture, poll_interval: float = 0.321
 ) -> None:
     """Display live status updates while waiting for a future to complete.
 
@@ -24,66 +25,85 @@ def display_status_while_waiting(
     console = Console()
     start_time = time.time()
 
-    def format_elapsed(seconds: float) -> str:
-        """Format elapsed time in a human-readable way."""
-        if seconds < 60:
-            return f"{seconds:.1f}s"
-        elif seconds < 3600:
-            minutes = int(seconds // 60)
-            secs = int(seconds % 60)
-            return f"{minutes}m {secs}s"
-        else:
-            hours = int(seconds // 3600)
-            minutes = int((seconds % 3600) // 60)
-            return f"{hours}h {minutes}m"
-
-    def get_status_display() -> Text:
-        """Generate the current status display."""
-        elapsed = time.time() - start_time
-        task_id = future.task_id
-
-        # Create the display text: <task id> | <status> | <time elapsed>
-        text = Text()
-
-        # Task ID (full UUID)
-        if task_id:
-            text.append(task_id, style="cyan")
-        else:
-            text.append("pending", style="dim")
-
-        # Status
-        if task_id:
-            text.append(" | ", style="dim")
-            try:
-                status = get_task_status(task_id)
-                text.append(f"{status}", style="green")
-            except Exception:
-                # If we can't get status, show unknown
-                text.append("unknown", style="dim")
-        else:
-            text.append(" | ", style="dim")
-            text.append("pending", style="dim")
-
-        # Elapsed time
-        text.append(" | ", style="dim")
-        text.append(format_elapsed(elapsed), style="yellow")
-
-        return text
-
     spinner = Spinner("dots", text="")
 
-    # Use Rich Live display for smooth updates (10 refreshes per second)
-    with Live(spinner, console=console, refresh_per_second=10) as live:
+    with Live(spinner, console=console, refresh_per_second=20) as live:
         while not future.done():
-            status_text = get_status_display()
+            elapsed = time.time() - start_time
+            status_text = _get_status_display(future, elapsed)
             spinner.text = status_text
             live.update(spinner)
 
             # Poll with a short timeout
             try:
                 future.result(timeout=poll_interval)
-                # Future completed, exit the display loop
+                # exit the display loop if result available
                 break
             except FuturesTimeoutError:
-                # Expected - just continue polling
+                # expected - continue polling
                 continue
+            except RemoteExecutionError:
+                # update display to indicate failure and re-raise
+                elapsed = time.time() - start_time
+                failure_text = _format_status_line(
+                    future.task_id, "failed", "red", elapsed
+                )
+                spinner.text = failure_text
+                live.update(spinner)
+                raise
+
+
+def _get_status_display(future: GroundhogFuture, elapsed: float) -> Text:
+    """Generate the current status display by checking task status from API."""
+    task_id = future.task_id
+
+    # polls globus compute for task status
+    task_status = get_task_status(task_id)
+    status_str = task_status.get("status", "unknown")
+    has_exception = task_status.get("exception") is not None
+
+    if has_exception:
+        status, style = "failed", "red"
+    elif "pending" in status_str:
+        status, style = status_str, "dim"
+    else:
+        status, style = status_str, "green"
+
+    return _format_status_line(task_id, status, style, elapsed)
+
+
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time in a human-readable way."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs}s"
+    else:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
+
+
+def _format_status_line(
+    task_id: str | None, status: str, status_style: str, elapsed: float
+) -> Text:
+    """Format a status line with task ID, status, and elapsed time.
+
+    Args:
+        task_id: The task UUID or None
+        status: Status text to display
+        status_style: Rich style for the status (e.g., "red", "green", "dim")
+        elapsed: Elapsed time in seconds
+
+    Returns:
+        Formatted Text object
+    """
+    text = Text()
+    text.append(task_id or "task pending", style="cyan" if task_id else "dim")
+    text.append(" | ", style="dim")
+    text.append(status, style=status_style)
+    text.append(" | ", style="dim")
+    text.append(_format_elapsed(elapsed), style="yellow")
+    return text

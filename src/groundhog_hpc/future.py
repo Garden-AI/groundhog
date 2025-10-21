@@ -131,7 +131,6 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
         user_output = parts[0].rstrip("\n")  # Remove trailing newline from cat output
         serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
 
-        # Print user output if it exists
         if user_output:
             print(user_output)
 
