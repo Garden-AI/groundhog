@@ -13,6 +13,7 @@ import inspect
 import math
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
@@ -208,13 +209,16 @@ class Function:
         payload = serialize((args, kwargs), size_limit_bytes=math.inf)
         shell_command = shell_command_template.format(payload=payload)
 
-        result = subprocess.run(
-            shell_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # Run in a temporary directory to avoid littering the current directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = subprocess.run(
+                shell_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=tmpdir,
+            )
 
         return deserialize_stdout(result.stdout)
 
