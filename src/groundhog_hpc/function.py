@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
-from groundhog_hpc.console import display_status_while_waiting
+from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
@@ -178,5 +178,5 @@ class Function:
             user_endpoint_config=user_endpoint_config,
             **kwargs,
         )
-        display_status_while_waiting(future)
+        display_task_status(future)
         return future.result()
