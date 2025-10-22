@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from types import FrameType, ModuleType
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
@@ -183,8 +184,49 @@ class Function:
         display_task_status(future)
         return future.result()
 
+    def _should_use_subprocess_for_local(self) -> bool:
+        """Determine if .local() should use subprocess isolation.
+
+        Returns False (use direct call) if any <module>-level frame in the call stack
+        belongs to the same module as the function. This prevents infinite recursion
+        from top-level .local() calls and optimizes same-module calls.
+
+        Returns:
+            True if subprocess isolation is needed, False if direct call is safe
+        """
+        frame: FrameType | None = inspect.currentframe()
+        if frame is None:
+            # frame introspection unavailable (non-CPython implementations)
+            # fall back to direct call for safety against infinite recursion
+            return False
+
+        function_module: ModuleType | None = inspect.getmodule(self._local_function)
+
+        try:
+            # walk up the call stack looking for module-level execution
+            while frame := frame.f_back:
+                # check for <module>-level (i.e., import-time) frames
+                if frame.f_code.co_name == "<module>":
+                    calling_module = inspect.getmodule(frame)
+                    # if we find a <module> frame in the function's own module,
+                    # we're in the import path of that module. Using a subprocess
+                    # would cause it to be imported again, leading to 💥💀
+                    if calling_module is function_module:
+                        return False  # should *not* use subprocess
+
+            # no matching <module> frame found - safe to use subprocess for isolation
+            return True
+
+        finally:
+            # Clean up frame reference to avoid reference cycles
+            # See: https://docs.python.org/3/library/inspect.html#the-interpreter-stack
+            del frame
+
     def local(self, *args: Any, **kwargs: Any) -> Any:
-        """Execute the function using the same shell command as remote execution but in a local subprocess.
+        """Execute the function locally, using subprocess only when crossing module boundaries.
+
+        Falls back to direct execution (__call__) if called from within the same module
+        where the function is defined, preventing infinite recursion from top-level calls.
 
         Args:
             *args: Positional arguments to pass to the function
@@ -197,6 +239,11 @@ class Function:
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
+        if not self._should_use_subprocess_for_local():
+            # Same module or uncertain - use direct call for safety
+            return self._local_function(*args, **kwargs)
+
+        # different module - use subprocess for isolation
         shell_command_template = template_shell_command(
             self.script_path, self._local_function.__qualname__
         )
