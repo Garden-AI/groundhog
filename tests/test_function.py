@@ -131,18 +131,35 @@ def main():
         del os.environ["GROUNDHOG_SCRIPT_PATH"]
         del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_submit_raises_without_script_path(self):
-        """Test that submit raises when script_path is None."""
+    def test_submit_uses_fallback_when_script_path_is_none(self):
+        """Test that submit can use inspection fallback when _script_path is None."""
 
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
             func = Function(dummy_function)
             func._script_path = None
 
-            with pytest.raises(ValueError, match="Could not locate source file"):
-                func.submit()
+            # Should use inspect fallback to find the script path
+            script_path = func.script_path
+            assert script_path.endswith("test_function.py")
         finally:
             del os.environ["GROUNDHOG_IN_HARNESS"]
+
+    def test_script_path_raises_when_uninspectable(self):
+        """Test that script_path raises when function cannot be inspected."""
+
+        func = Function(dummy_function)
+        func._script_path = None
+
+        # Mock inspect.getfile to raise TypeError (simulating uninspectable function)
+        with patch("groundhog_hpc.function.inspect.getfile") as mock_getfile:
+            mock_getfile.side_effect = TypeError("not inspectable")
+
+            with pytest.raises(
+                ValueError,
+                match="Could not determine script path.*not in interactive mode",
+            ):
+                _ = func.script_path
 
     def test_submit_creates_shell_function(self, tmp_path):
         """Test that submit creates a shell function using script_to_submittable."""
@@ -501,7 +518,7 @@ def add(a, b):
         mock_deserialize.assert_called_once_with('{"result": 5}')
 
     def test_local_serializes_arguments(self, tmp_path):
-        """Test that local() serializes arguments correctly."""
+        """Test that local() serializes arguments correctly and disables size limit via env var."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -516,7 +533,7 @@ def add(a, b):
         ) as mock_serialize:
             with patch(
                 "groundhog_hpc.function.subprocess.run", return_value=mock_result
-            ):
+            ) as mock_run:
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout", return_value="success"
                 ):
@@ -526,8 +543,10 @@ def add(a, b):
         mock_serialize.assert_called_once()
         call_args = mock_serialize.call_args[0][0]
         assert call_args == ((1, 2), {"key": "value"})
-        # Verify size_limit_bytes is set to infinity
-        assert mock_serialize.call_args[1]["size_limit_bytes"] == float("inf")
+
+        # Verify GROUNDHOG_NO_SIZE_LIMIT env var was set in subprocess
+        call_env = mock_run.call_args[1]["env"]
+        assert call_env.get("GROUNDHOG_NO_SIZE_LIMIT") == "1"
 
     def test_local_runs_in_temporary_directory(self, tmp_path):
         """Test that local() runs subprocess in a temporary directory."""

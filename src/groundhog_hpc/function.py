@@ -71,8 +71,6 @@ class Function:
         self.walltime: int = walltime or DEFAULT_WALLTIME_SEC
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
-        assert hasattr(func, "__qualname__")
-        self._name: str = func.__qualname__
         self._local_function: Callable = func
         self._shell_function: ShellFunction | None = None
 
@@ -131,10 +129,8 @@ class Function:
         )
 
         if self._shell_function is None:
-            if self._script_path is None:
-                raise ValueError("Could not locate source file")
             self._shell_function = script_to_submittable(
-                self._script_path, self._name, walltime
+                self.script_path, self._local_function.__qualname__, walltime
             )
 
         payload = serialize((args, kwargs))
@@ -201,8 +197,9 @@ class Function:
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
-        script_path = self._get_script_path()
-        shell_command_template = template_shell_command(script_path, self._name)
+        shell_command_template = template_shell_command(
+            self.script_path, self._local_function.__qualname__
+        )
 
         payload = serialize((args, kwargs))
         shell_command = shell_command_template.format(payload=payload)
@@ -224,7 +221,8 @@ class Function:
 
         return deserialize_stdout(result.stdout)
 
-    def _get_script_path(self) -> str:
+    @property
+    def script_path(self) -> str:
         """Get the script path for this function.
 
         First tries the GROUNDHOG_SCRIPT_PATH environment variable (set by CLI).
@@ -244,6 +242,6 @@ class Function:
             return str(Path(source_file).resolve())
         except (TypeError, OSError) as e:
             raise ValueError(
-                f"Could not determine script path for function {self._name}. "
+                f"Could not determine script path for function {self._local_function.__qualname__}. "
                 "Function must be defined in a file (not in interactive mode)."
             ) from e
