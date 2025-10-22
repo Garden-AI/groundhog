@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from groundhog_hpc.function import Function
+from tests.test_fixtures import cross_module_function, simple_function
 
-
-def dummy_function():
-    return "results!"
+# Alias for backward compatibility with existing tests
+dummy_function = simple_function
 
 
 class TestFunctionInitialization:
@@ -136,12 +136,12 @@ def main():
 
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
-            func = Function(dummy_function)
+            func = Function(simple_function)
             func._script_path = None
 
             # Should use inspect fallback to find the script path
             script_path = func.script_path
-            assert script_path.endswith("test_function.py")
+            assert script_path.endswith("test_fixtures.py")
         finally:
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
@@ -190,7 +190,9 @@ def main():
             mock_script_to_submittable.assert_called_once()
             call_args = mock_script_to_submittable.call_args[0]
             assert call_args[0] == str(script_path)
-            assert call_args[1] == "dummy_function"
+            assert (
+                call_args[1] == "simple_function"
+            )  # dummy_function is an alias to simple_function
         finally:
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
@@ -601,20 +603,23 @@ def add(a, b):
         mock_result = MagicMock()
         mock_result.stdout = "result"
 
-        with patch(
-            "groundhog_hpc.function.template_shell_command",
-            return_value="echo {payload}",
-        ) as mock_template:
+        # Mock _should_use_subprocess_for_local to ensure subprocess path is taken
+        with patch.object(func, "_should_use_subprocess_for_local", return_value=True):
             with patch(
-                "groundhog_hpc.function.subprocess.run", return_value=mock_result
-            ):
+                "groundhog_hpc.function.template_shell_command",
+                return_value="echo {payload}",
+            ) as mock_template:
                 with patch(
-                    "groundhog_hpc.function.deserialize_stdout", return_value="result"
+                    "groundhog_hpc.function.subprocess.run", return_value=mock_result
                 ):
-                    func.local()
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value="result",
+                    ):
+                        func.local()
 
         # Verify template_shell_command was called with script path and function name
-        mock_template.assert_called_once_with(str(script_path), "dummy_function")
+        mock_template.assert_called_once_with(str(script_path), "simple_function")
 
     def test_local_passes_shell_command_to_subprocess(self, tmp_path):
         """Test that local() passes the formatted shell command to subprocess."""
@@ -717,53 +722,39 @@ class TestLocalSubprocessDetection:
         with patch("groundhog_hpc.function.inspect.currentframe", return_value=None):
             assert not func._should_use_subprocess_for_local()
 
-    def test_should_use_subprocess_returns_true_for_different_module(self):
+    def test_should_use_subprocess_for_cross_module_function(self):
         """Test that subprocess is used when calling from a different module."""
         import sys
 
-        func = Function(dummy_function)
-
-        # Mock frame chain: current frame -> <module> frame
-        current_frame = MagicMock()
-        module_frame = MagicMock()
-        module_frame.f_code.co_name = "<module>"
-        module_frame.f_back = None
-        current_frame.f_back = module_frame
-
-        # Function is defined in this test module
+        # cross_module_function is defined in test_fixtures, not test_function
+        # So calling from here should use subprocess
         test_module = sys.modules[__name__]
+        fixtures_module = sys.modules["tests.test_fixtures"]
 
-        # Caller is in a different (mock) module
-        mock_caller_module = MagicMock()
-        mock_caller_module.__name__ = "different_module"
+        # Verify we're actually testing cross-module behavior
+        assert cross_module_function._local_function.__module__ == "tests.test_fixtures"
+        assert test_module != fixtures_module
 
-        with patch(
-            "groundhog_hpc.function.inspect.currentframe", return_value=current_frame
-        ):
-            with patch(
-                "groundhog_hpc.function.inspect.getmodule",
-                side_effect=lambda x: (
-                    mock_caller_module if x == module_frame else test_module
-                ),
-            ):
-                assert func._should_use_subprocess_for_local()
+        # Should detect cross-module call and use subprocess
+        assert cross_module_function._should_use_subprocess_for_local()
 
     def test_should_use_subprocess_returns_false_for_same_module(self):
-        """Test that direct call is used when calling from the same module."""
+        """Test that direct call is used when <module> frame matches function's module."""
         import sys
 
-        func = Function(dummy_function)
+        # Define a function in this test module
+        def local_function():
+            return "local"
 
-        # Mock frame chain: current frame -> <module> frame
-        # Note: the loop starts with frame.f_back, so we need an initial frame
+        func = Function(local_function)
+        test_module = sys.modules[__name__]
+
+        # Mock a <module> frame from the same module as the function
         current_frame = MagicMock()
         module_frame = MagicMock()
         module_frame.f_code.co_name = "<module>"
         module_frame.f_back = None
         current_frame.f_back = module_frame
-
-        # Both function and caller are in test_function module
-        test_module = sys.modules[__name__]
 
         with patch(
             "groundhog_hpc.function.inspect.currentframe", return_value=current_frame
@@ -771,47 +762,53 @@ class TestLocalSubprocessDetection:
             with patch(
                 "groundhog_hpc.function.inspect.getmodule", return_value=test_module
             ):
+                # Should return False (no subprocess) because <module> frame matches
                 assert not func._should_use_subprocess_for_local()
 
     def test_local_uses_direct_call_for_same_module(self):
-        """Test that .local() falls back to direct call when in same module."""
+        """Test that .local() falls back to direct call when _should_use_subprocess_for_local returns False."""
 
         def test_func(x):
             return x * 2
 
         func = Function(test_func)
 
-        # Mock _should_use_subprocess_for_local to return False
+        # Mock _should_use_subprocess_for_local to simulate same-module detection
         with patch.object(func, "_should_use_subprocess_for_local", return_value=False):
             result = func.local(21)
 
-        # Should have called the function directly
+        # Should have called the function directly (no subprocess)
         assert result == 42
 
     def test_local_uses_subprocess_for_different_module(self, tmp_path):
         """Test that .local() uses subprocess when crossing module boundaries."""
-        script_path = tmp_path / "test_local.py"
-        script_path.write_text("# test")
+        # Create a test script for the cross_module_function
+        script_path = tmp_path / "test_fixtures.py"
+        script_content = """
+import groundhog_hpc as hog
 
-        func = Function(dummy_function)
-        func._script_path = str(script_path)
+@hog.function()
+def cross_module_function(x):
+    return x * 2
+"""
+        script_path.write_text(script_content)
+
+        # cross_module_function is from test_fixtures (different module)
+        # Override script path for testing
+        cross_module_function._script_path = str(script_path)
 
         mock_result = MagicMock()
-        mock_result.stdout = "subprocess result"
+        mock_result.stdout = "__GROUNDHOG_RESULT__\n84"
 
-        # Mock _should_use_subprocess_for_local to return True
-        with patch.object(func, "_should_use_subprocess_for_local", return_value=True):
-            with patch(
-                "groundhog_hpc.function.subprocess.run", return_value=mock_result
-            ) as mock_run:
-                with patch(
-                    "groundhog_hpc.function.deserialize_stdout",
-                    return_value="subprocess result",
-                ):
-                    result = func.local()
+        # Mock subprocess.run since we're not doing real execution
+        with patch(
+            "groundhog_hpc.function.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            with patch("groundhog_hpc.function.deserialize_stdout", return_value=84):
+                result = cross_module_function.local(42)
 
-        # Should have used subprocess
-        assert result == "subprocess result"
+        # Should have used subprocess (different module)
+        assert result == 84
         mock_run.assert_called_once()
 
     def test_should_use_subprocess_walks_entire_call_stack(self):
