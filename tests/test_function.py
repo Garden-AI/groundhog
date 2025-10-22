@@ -703,3 +703,156 @@ def add(a, b):
         env = mock_run.call_args[1]["env"]
         assert "GROUNDHOG_NO_SIZE_LIMIT" in env
         assert env["GROUNDHOG_NO_SIZE_LIMIT"] == "1"
+
+
+class TestLocalSubprocessDetection:
+    """Test that .local() correctly detects when to use subprocess vs direct call."""
+
+    def test_should_use_subprocess_returns_false_when_frame_unavailable(self):
+        """Test fallback when inspect.currentframe() returns None."""
+
+        func = Function(dummy_function)
+
+        # Mock inspect.currentframe to return None
+        with patch("groundhog_hpc.function.inspect.currentframe", return_value=None):
+            assert not func._should_use_subprocess_for_local()
+
+    def test_should_use_subprocess_returns_true_for_different_module(self):
+        """Test that subprocess is used when calling from a different module."""
+        import sys
+
+        func = Function(dummy_function)
+
+        # Mock frame chain: current frame -> <module> frame
+        current_frame = MagicMock()
+        module_frame = MagicMock()
+        module_frame.f_code.co_name = "<module>"
+        module_frame.f_back = None
+        current_frame.f_back = module_frame
+
+        # Function is defined in this test module
+        test_module = sys.modules[__name__]
+
+        # Caller is in a different (mock) module
+        mock_caller_module = MagicMock()
+        mock_caller_module.__name__ = "different_module"
+
+        with patch(
+            "groundhog_hpc.function.inspect.currentframe", return_value=current_frame
+        ):
+            with patch(
+                "groundhog_hpc.function.inspect.getmodule",
+                side_effect=lambda x: (
+                    mock_caller_module if x == module_frame else test_module
+                ),
+            ):
+                assert func._should_use_subprocess_for_local()
+
+    def test_should_use_subprocess_returns_false_for_same_module(self):
+        """Test that direct call is used when calling from the same module."""
+        import sys
+
+        func = Function(dummy_function)
+
+        # Mock frame chain: current frame -> <module> frame
+        # Note: the loop starts with frame.f_back, so we need an initial frame
+        current_frame = MagicMock()
+        module_frame = MagicMock()
+        module_frame.f_code.co_name = "<module>"
+        module_frame.f_back = None
+        current_frame.f_back = module_frame
+
+        # Both function and caller are in test_function module
+        test_module = sys.modules[__name__]
+
+        with patch(
+            "groundhog_hpc.function.inspect.currentframe", return_value=current_frame
+        ):
+            with patch(
+                "groundhog_hpc.function.inspect.getmodule", return_value=test_module
+            ):
+                assert not func._should_use_subprocess_for_local()
+
+    def test_local_uses_direct_call_for_same_module(self):
+        """Test that .local() falls back to direct call when in same module."""
+
+        def test_func(x):
+            return x * 2
+
+        func = Function(test_func)
+
+        # Mock _should_use_subprocess_for_local to return False
+        with patch.object(func, "_should_use_subprocess_for_local", return_value=False):
+            result = func.local(21)
+
+        # Should have called the function directly
+        assert result == 42
+
+    def test_local_uses_subprocess_for_different_module(self, tmp_path):
+        """Test that .local() uses subprocess when crossing module boundaries."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        mock_result = MagicMock()
+        mock_result.stdout = "subprocess result"
+
+        # Mock _should_use_subprocess_for_local to return True
+        with patch.object(func, "_should_use_subprocess_for_local", return_value=True):
+            with patch(
+                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+            ) as mock_run:
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout",
+                    return_value="subprocess result",
+                ):
+                    result = func.local()
+
+        # Should have used subprocess
+        assert result == "subprocess result"
+        mock_run.assert_called_once()
+
+    def test_should_use_subprocess_walks_entire_call_stack(self):
+        """Test that the frame walker checks all <module> frames in the stack."""
+        import sys
+
+        func = Function(dummy_function)
+        test_module = sys.modules[__name__]
+
+        # Create a chain of frames: non-module -> <module> (different) -> <module> (same)
+        frame_0 = MagicMock()  # Current frame (in _should_use_subprocess_for_local)
+        frame_0.f_code.co_name = "_should_use_subprocess_for_local"
+
+        frame_1 = MagicMock()  # Intermediate function frame
+        frame_1.f_code.co_name = "some_function"
+        frame_0.f_back = frame_1
+
+        frame_2 = MagicMock()  # <module> frame from different module
+        frame_2.f_code.co_name = "<module>"
+        frame_1.f_back = frame_2
+
+        frame_3 = MagicMock()  # <module> frame from same module (should match!)
+        frame_3.f_code.co_name = "<module>"
+        frame_2.f_back = frame_3
+        frame_3.f_back = None
+
+        mock_different_module = MagicMock()
+        mock_different_module.__name__ = "different_module"
+
+        def mock_getmodule(frame_or_func):
+            if frame_or_func == frame_2:
+                return mock_different_module
+            elif frame_or_func == frame_3:
+                return test_module
+            elif frame_or_func == func._local_function:
+                return test_module
+            return None
+
+        with patch("groundhog_hpc.function.inspect.currentframe", return_value=frame_0):
+            with patch(
+                "groundhog_hpc.function.inspect.getmodule", side_effect=mock_getmodule
+            ):
+                # Should return False because frame_3 matches the function's module
+                assert not func._should_use_subprocess_for_local()
