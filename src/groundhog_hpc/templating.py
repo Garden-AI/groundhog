@@ -33,7 +33,6 @@ def template_shell_command(script_path: str, function_name: str) -> str:
 
     The generated shell command:
     - Creates a modified version of the user script with __main__ boilerplate
-    - Uses a hash-based filename for caching on the remote endpoint
     - Sets up input/output files for serialized data
     - Executes the script with uv for dependency management
 

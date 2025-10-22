@@ -4,7 +4,33 @@ This module provides helper functions for version management, configuration
 merging, and other cross-cutting concerns.
 """
 
+import os
+from contextlib import contextmanager
+from pathlib import Path
+
 import groundhog_hpc
+
+
+@contextmanager
+def groundhog_script_path(script_path: Path):
+    """temporarily set the GROUNDHOG_SCRIPT_PATH environment variable"""
+    script_path = Path(script_path).resolve()
+    try:
+        # set this while exec'ing so the Function objects can template their shell functions
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        yield
+    finally:
+        del os.environ["GROUNDHOG_SCRIPT_PATH"]
+
+
+@contextmanager
+def groundhog_in_harness():
+    """Simulate running in a @hog.harness function to enable remote execution"""
+    try:
+        os.environ["GROUNDHOG_IN_HARNESS"] = str(True)
+        yield
+    finally:
+        del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 def get_groundhog_version_spec() -> str:

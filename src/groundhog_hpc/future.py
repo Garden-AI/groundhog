@@ -10,7 +10,7 @@ from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.serialization import deserialize
+from groundhog_hpc.serialization import deserialize_stdout
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -124,17 +124,4 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
-    # Split stdout into user output and serialized results
-    delimiter = "__GROUNDHOG_RESULT__"
-    if delimiter in shell_result.stdout:
-        parts = shell_result.stdout.split(delimiter, 1)
-        user_output = parts[0].rstrip("\n")  # Remove trailing newline from cat output
-        serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
-
-        if user_output:
-            print(user_output)
-
-        return deserialize(serialized_result)
-    else:
-        # Fallback for backward compatibility (no delimiter found)
-        return deserialize(shell_result.stdout)
+    return deserialize_stdout(shell_result.stdout)

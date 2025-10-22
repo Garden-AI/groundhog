@@ -20,7 +20,6 @@ class Harness:
 
     Attributes:
         func: The wrapped orchestrator function
-        name: The qualified name of the function
     """
 
     def __init__(self, func: Callable[..., Any]):
@@ -33,8 +32,6 @@ class Harness:
             TypeError: If the function accepts any arguments
         """
         self.func = func
-        assert hasattr(func, "__qualname__")
-        self.name = func.__qualname__
         self._validate_signature()
 
     def __call__(self) -> Any:
@@ -51,11 +48,11 @@ class Harness:
         """
         if not self._invoked_by_cli():
             raise RuntimeError(
-                f"Error: harness function '{self.name}' should only be invoked via 'hog run {self.name}' (and not called within the script)."
+                f"Error: harness function '{self.func.__qualname__}' should only be invoked via 'hog run {self.func.__qualname__}' (and not called within the script)."
             )
         if self._already_in_harness():
             raise RuntimeError(
-                f"Error: harness function '{self.name}' cannot be called from another harness function"
+                f"Error: harness function '{self.func.__qualname__}' cannot be called from another harness function"
             )
 
         os.environ["GROUNDHOG_IN_HARNESS"] = str(True)
@@ -67,12 +64,12 @@ class Harness:
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
     def _invoked_by_cli(self) -> bool:
-        return bool(os.environ.get(f"GROUNDHOG_RUN_{self.name}".upper()))
+        return bool(os.environ.get(f"GROUNDHOG_RUN_{self.func.__qualname__}".upper()))
 
     def _validate_signature(self) -> None:
         sig = inspect.signature(self.func)
         if len(sig.parameters) > 0:
             raise TypeError(
-                f"Harness function '{self.name}' must not accept any arguments, "
+                f"Harness function '{self.func.__qualname__}' must not accept any arguments, "
                 f"but has parameters: {list(sig.parameters.keys())}"
             )
