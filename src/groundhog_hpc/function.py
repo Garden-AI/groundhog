@@ -266,7 +266,7 @@ class Function:
                 env=env,
             )
 
-        return deserialize_stdout(result.stdout)
+        return deserialize_stdout(result.stdout, origin="local")
 
     @property
     def script_path(self) -> str:

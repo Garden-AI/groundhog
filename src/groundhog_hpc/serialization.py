@@ -56,7 +56,7 @@ def deserialize(payload: str) -> Any:
         return json.loads(payload)
 
 
-def deserialize_stdout(stdout: str) -> Any:
+def deserialize_stdout(stdout: str, origin: str | None = None) -> Any:
     """
     Helper: deserialize groundhog-generated stdout that may contain both
     printed user output and a serialized result.
@@ -80,7 +80,11 @@ def deserialize_stdout(stdout: str) -> Any:
         serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
 
         if user_output:
-            print(user_output)
+            if origin is not None:
+                for line in user_output.split("\n"):
+                    print(f"[{origin}] {line}")
+            else:
+                print(user_output)
 
         return deserialize(serialized_result)
     else:

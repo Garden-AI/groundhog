@@ -124,4 +124,4 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
-    return deserialize_stdout(shell_result.stdout)
+    return deserialize_stdout(shell_result.stdout, origin="remote")
