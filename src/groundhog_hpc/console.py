@@ -33,7 +33,7 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     """
     console = Console()
     start_time = time.time()
-    spinner = Spinner("groundhog" if _fun_allowed() else "dots")
+    spinner = Spinner("groundhog") if _fun_allowed() else None
 
     with Live("", console=console, refresh_per_second=20) as live:
         # Poll with a short timeout until done
@@ -113,8 +113,9 @@ def _get_status_display(
         display.append(")", style="dim")
 
     # Add spinner at the end
-    display.append(" | ")
-    display.append(spinner.render(current_time))
+    if spinner is not None:
+        display.append(" | ")
+        display.append(spinner.render(current_time))
 
     return display
 
