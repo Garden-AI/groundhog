@@ -11,6 +11,7 @@ from io import StringIO
 from pathlib import Path
 
 from rich.console import Console
+from rich.text import Text
 
 import groundhog_hpc
 
@@ -89,7 +90,7 @@ def prefix_output(prefix: str = "", *, prefix_color: str = "blue"):
             stderr_content = stderr_content.rstrip("\n")
 
         if stdout_content or stderr_content:
-            print_subprocess_output(
+            _print_subprocess_output(
                 stdout=stdout_content if stdout_content else None,
                 stderr=stderr_content if stderr_content else None,
                 prefix=prefix,
@@ -97,7 +98,7 @@ def prefix_output(prefix: str = "", *, prefix_color: str = "blue"):
             )
 
 
-def print_subprocess_output(
+def _print_subprocess_output(
     stdout: str | None = None,
     stderr: str | None = None,
     prefix: str = "",
@@ -112,7 +113,6 @@ def print_subprocess_output(
         prefix: Prefix label (e.g., "[remote]", "[local]")
         prefix_color: Rich color for the prefix (default: blue)
     """
-    from rich.text import Text
 
     console = Console()
 
