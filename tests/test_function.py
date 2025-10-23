@@ -603,8 +603,8 @@ def add(a, b):
         mock_result = MagicMock()
         mock_result.stdout = "result"
 
-        # Mock _should_use_subprocess_for_local to ensure subprocess path is taken
-        with patch.object(func, "_should_use_subprocess_for_local", return_value=True):
+        # Mock _local_subprocess_safe to ensure subprocess path is taken
+        with patch.object(func, "_local_subprocess_safe", return_value=True):
             with patch(
                 "groundhog_hpc.function.template_shell_command",
                 return_value="echo {payload}",
@@ -720,7 +720,7 @@ class TestLocalSubprocessDetection:
 
         # Mock inspect.currentframe to return None
         with patch("groundhog_hpc.function.inspect.currentframe", return_value=None):
-            assert not func._should_use_subprocess_for_local()
+            assert not func._local_subprocess_safe()
 
     def test_should_use_subprocess_for_cross_module_function(self):
         """Test that subprocess is used when calling from a different module."""
@@ -736,7 +736,7 @@ class TestLocalSubprocessDetection:
         assert test_module != fixtures_module
 
         # Should detect cross-module call and use subprocess
-        assert cross_module_function._should_use_subprocess_for_local()
+        assert cross_module_function._local_subprocess_safe()
 
     def test_should_use_subprocess_returns_false_for_same_module(self):
         """Test that direct call is used when <module> frame matches function's module."""
@@ -763,18 +763,18 @@ class TestLocalSubprocessDetection:
                 "groundhog_hpc.function.inspect.getmodule", return_value=test_module
             ):
                 # Should return False (no subprocess) because <module> frame matches
-                assert not func._should_use_subprocess_for_local()
+                assert not func._local_subprocess_safe()
 
     def test_local_uses_direct_call_for_same_module(self):
-        """Test that .local() falls back to direct call when _should_use_subprocess_for_local returns False."""
+        """Test that .local() falls back to direct call when _local_subprocess_safe returns False."""
 
         def test_func(x):
             return x * 2
 
         func = Function(test_func)
 
-        # Mock _should_use_subprocess_for_local to simulate same-module detection
-        with patch.object(func, "_should_use_subprocess_for_local", return_value=False):
+        # Mock _local_subprocess_safe to simulate same-module detection
+        with patch.object(func, "_local_subprocess_safe", return_value=False):
             result = func.local(21)
 
         # Should have called the function directly (no subprocess)
@@ -819,8 +819,8 @@ def cross_module_function(x):
         test_module = sys.modules[__name__]
 
         # Create a chain of frames: non-module -> <module> (different) -> <module> (same)
-        frame_0 = MagicMock()  # Current frame (in _should_use_subprocess_for_local)
-        frame_0.f_code.co_name = "_should_use_subprocess_for_local"
+        frame_0 = MagicMock()  # Current frame (in _local_subprocess_safe)
+        frame_0.f_code.co_name = "_local_subprocess_safe"
 
         frame_1 = MagicMock()  # Intermediate function frame
         frame_1.f_code.co_name = "some_function"
@@ -852,4 +852,4 @@ def cross_module_function(x):
                 "groundhog_hpc.function.inspect.getmodule", side_effect=mock_getmodule
             ):
                 # Should return False because frame_3 matches the function's module
-                assert not func._should_use_subprocess_for_local()
+                assert not func._local_subprocess_safe()
