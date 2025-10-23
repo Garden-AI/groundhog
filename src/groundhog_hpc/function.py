@@ -24,7 +24,7 @@ from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
 from groundhog_hpc.templating import template_shell_command
-from groundhog_hpc.utils import merge_endpoint_configs
+from groundhog_hpc.utils import log_output_stream, merge_endpoint_configs
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -184,20 +184,21 @@ class Function:
         display_task_status(future)
         return future.result()
 
-    def _should_use_subprocess_for_local(self) -> bool:
+    def _local_subprocess_safe(self) -> bool:
         """Determine if .local() should use subprocess isolation.
 
-        Returns False (use direct call) if any <module>-level frame in the call stack
-        belongs to the same module as the function. This prevents infinite recursion
-        from top-level .local() calls and optimizes same-module calls.
+        Returns False (use direct __call__) if any <module>-level frame in the
+        call stack belongs to the same module as the function. This prevents
+        top-level .local() calls from accidentally spinning up infinite
+        subprocesses.
 
         Returns:
-            True if subprocess isolation is needed, False if direct call is safe
+            False if subprocess isolation is unsafe or unnecessary, True otherwise.
         """
         frame: FrameType | None = inspect.currentframe()
         if frame is None:
             # frame introspection unavailable (non-CPython implementations)
-            # fall back to direct call for safety against infinite recursion
+            # fall back to direct call for safety
             return False
 
         function_module: ModuleType | None = inspect.getmodule(self._local_function)
@@ -239,7 +240,7 @@ class Function:
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
-        if not self._should_use_subprocess_for_local():
+        if not self._local_subprocess_safe():
             # Same module or uncertain - use direct call for safety
             return self._local_function(*args, **kwargs)
 
@@ -261,10 +262,18 @@ class Function:
                 shell=True,
                 capture_output=True,
                 text=True,
-                check=True,
+                check=False,
                 cwd=tmpdir,
                 env=env,
             )
+            if result.returncode != 0:
+                log_output_stream(result.stderr, "local")
+                raise subprocess.CalledProcessError(
+                    result.returncode,
+                    shell_command,
+                    output=result.stdout,
+                    stderr=result.stderr,
+                )
 
         return deserialize_stdout(result.stdout, origin="local")
 

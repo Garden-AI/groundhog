@@ -22,6 +22,7 @@ def hello_torch():
     import torch
 
     msg = f"Hello, cuda? {torch.cuda.is_available()=}"
+    print(msg)
     return msg
 
 

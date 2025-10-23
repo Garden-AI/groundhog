@@ -83,3 +83,8 @@ def merge_endpoint_configs(
 
     merged.update(override_config)
     return merged
+
+
+def log_output_stream(stream: str, origin: str):
+    for line in stream.splitlines():
+        print(f"[{origin}] {line}")

@@ -5,6 +5,7 @@ import pickle
 from typing import Any
 
 from groundhog_hpc.errors import PayloadTooLargeError
+from groundhog_hpc.utils import log_output_stream
 
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
@@ -80,11 +81,7 @@ def deserialize_stdout(stdout: str, origin: str | None = None) -> Any:
         serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
 
         if user_output:
-            if origin is not None:
-                for line in user_output.split("\n"):
-                    print(f"[{origin}] {line}")
-            else:
-                print(user_output)
+            log_output_stream(user_output, origin or "remote")
 
         return deserialize(serialized_result)
     else:
