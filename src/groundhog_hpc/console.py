@@ -16,10 +16,11 @@ from groundhog_hpc.future import GroundhogFuture
 SPINNERS["groundhog"] = {
     "interval": 400,
     "frames": [
-        " ☀️🦫🕳️",
-        " 🌤 🦫🕳️",
-        " 🌥 🦫  ",
-        " ☁️🦫  ",
+        "☀️🦫🕳️",
+        "☁️🦫",
+        "☁️🦫",
+        "☁️🦫",
+        "☀️🦫🕳️",
     ],
 }
 
@@ -33,88 +34,92 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     """
     console = Console()
     start_time = time.time()
+    spinner = Spinner("groundhog" if _fun_allowed() else "dots")
 
-    spinner = (
-        Spinner("groundhog", text="") if _fun_allowed() else Spinner("dots", text="")
-    )
-
-    with Live(spinner, console=console, refresh_per_second=20) as live:
-        # initial task_status
+    with Live("", console=console, refresh_per_second=20) as live:
+        # Poll with a short timeout until done
         while not future.done():
             elapsed = time.time() - start_time
             task_status = get_task_status(future.task_id)
-            status_text = _get_status_display(future.task_id, task_status, elapsed)
 
-            # Poll with a short timeout
+            display = _get_status_display(
+                future.task_id, task_status, elapsed, spinner, time.time()
+            )
+
+            live.update(display)
+
             try:
                 future.result(timeout=poll_interval)
-                # exit the display loop if result available
                 break
             except FuturesTimeoutError:
                 # expected - continue polling
                 continue
             except RemoteExecutionError:
-                # set status_text to indicate failure
-                status_text = _get_status_display(
-                    future.task_id, task_status, elapsed, has_exception=True
-                )
                 raise
-            finally:
-                spinner.text = status_text
-                live.update(spinner)
 
 
 def _get_status_display(
-    task_id: str | None, task_status: dict, elapsed: float, has_exception: bool = False
+    task_id: str | None,
+    task_status: dict,
+    elapsed: float,
+    spinner: Spinner,
+    current_time: float,
+    has_exception: bool = False,
 ) -> Text:
-    """Generate the current status display by checking task status from API."""
+    """Generate the current status display by checking task status from API.
+
+    Args:
+        task_id: The task ID or None if pending
+        task_status: Task status dict from Globus Compute API
+        elapsed: Total elapsed time in seconds
+        spinner: The spinner instance to render
+        current_time: Current time for spinner animation
+        has_exception: Whether the task has failed with an exception
+
+    Returns:
+        Rich Text object with formatted status display
+    """
     status_str = task_status.get("status", "unknown")
     exec_time = _extract_exec_time(task_status)
 
     if has_exception:
-        status, style = "failed", "red"
+        status = "failed"
     elif "pending" in status_str:
-        status, style = status_str, "dim"
+        status = status_str
     else:
-        status, style = status_str, "green"
+        status = status_str
 
-    return _format_status_line(task_id, status, style, elapsed, exec_time)
+    elapsed_str = _format_elapsed(elapsed)
+    exec_time_str = _format_elapsed(exec_time) if exec_time is not None else None
 
+    # Build display
+    display = Text()
+    display.append(" | ", style="dim")
+    display.append(task_id or "task pending", style="cyan" if task_id else "dim")
+    display.append(" | ", style="dim")
 
-def _format_status_line(
-    task_id: str | None,
-    status: str,
-    status_style: str,
-    elapsed: float,
-    exec_time: float | None = None,
-) -> Text:
-    """Format a status line with task ID, status, and elapsed time.
+    # Determine status style
+    if status == "failed":
+        status_style = "red"
+    elif "pending" in status:
+        status_style = "dim"
+    else:
+        status_style = "green"
+    display.append(status, style=status_style)
 
-    Args:
-        task_id: The task UUID or None
-        status: Status text to display
-        status_style: Rich style for the status (e.g., "red", "green", "dim")
-        elapsed: Total elapsed time in seconds (wall time)
-        exec_time: Actual execution time in seconds (from task_transitions), if available
+    display.append(" | ", style="dim")
+    display.append(elapsed_str, style="yellow")
 
-    Returns:
-        Formatted Text object
-    """
-    text = Text()
-    text.append("| ", style="dim")
-    text.append(task_id or "task pending", style="cyan" if task_id else "dim")
-    text.append(" | ", style="dim")
-    text.append(status, style=status_style)
-    text.append(" | ", style="dim")
-    text.append(_format_elapsed(elapsed), style="yellow")
+    if exec_time_str:
+        display.append(" (exec: ", style="dim")
+        display.append(exec_time_str, style="blue")
+        display.append(")", style="dim")
 
-    # Add execution time if available (when task is completed)
-    if exec_time is not None:
-        text.append(" (exec: ", style="dim")
-        text.append(_format_elapsed(exec_time), style="blue")
-        text.append(")", style="dim")
+    # Add spinner at the end
+    display.append(" | ")
+    display.append(spinner.render(current_time))
 
-    return text
+    return display
 
 
 def _extract_exec_time(task_status: dict) -> float | None:
