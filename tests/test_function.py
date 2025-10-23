@@ -649,7 +649,7 @@ def add(a, b):
         # Verify subprocess.run was called with the formatted command
         assert mock_run.call_args[0][0] == "uv run script.py ABC123"
         assert mock_run.call_args[1]["shell"] is True
-        assert mock_run.call_args[1]["prefix_output"] is True
+        assert mock_run.call_args[1]["capture_output"] is True
         assert mock_run.call_args[1]["text"] is True
         assert mock_run.call_args[1]["check"] is True
 
