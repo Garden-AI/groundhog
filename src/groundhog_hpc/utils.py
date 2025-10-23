@@ -5,8 +5,12 @@ merging, and other cross-cutting concerns.
 """
 
 import os
+import sys
 from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
+
+from rich.console import Console
 
 import groundhog_hpc
 
@@ -47,6 +51,86 @@ def get_groundhog_version_spec() -> str:
         version_spec = f"groundhog-hpc@git+https://github.com/Garden-AI/groundhog.git@{commit_hash}"
 
     return version_spec
+
+
+@contextmanager
+def prefix_output(prefix: str = "", *, prefix_color: str = "blue"):
+    """Context manager that captures stdout/stderr and prints with colored prefix.
+
+    Args:
+        prefix: Prefix label (e.g., "[remote]", "[local]")
+        prefix_color: Rich color for the prefix (default: blue)
+
+    Yields:
+        None
+    """
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    stdout_capture = StringIO()
+    stderr_capture = StringIO()
+
+    try:
+        sys.stdout = stdout_capture
+        sys.stderr = stderr_capture
+        yield
+    finally:
+        # Restore original stdout/stderr FIRST
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+        # Now print captured output with prefix using the restored streams
+        stdout_content = stdout_capture.getvalue()
+        stderr_content = stderr_capture.getvalue()
+
+        # Strip trailing newline to avoid extra blank line
+        if stdout_content:
+            stdout_content = stdout_content.rstrip("\n")
+        if stderr_content:
+            stderr_content = stderr_content.rstrip("\n")
+
+        if stdout_content or stderr_content:
+            print_subprocess_output(
+                stdout=stdout_content if stdout_content else None,
+                stderr=stderr_content if stderr_content else None,
+                prefix=prefix,
+                prefix_color=prefix_color,
+            )
+
+
+def print_subprocess_output(
+    stdout: str | None = None,
+    stderr: str | None = None,
+    prefix: str = "",
+    *,
+    prefix_color: str = "blue",
+) -> None:
+    """Print subprocess output with colored prefixes.
+
+    Args:
+        stdout: Standard output to print
+        stderr: Standard error to print (if any, printed in red)
+        prefix: Prefix label (e.g., "[remote]", "[local]")
+        prefix_color: Rich color for the prefix (default: blue)
+    """
+    from rich.text import Text
+
+    console = Console()
+
+    if stdout:
+        for line in stdout.splitlines():
+            # Build a Text object with colored prefix and plain line content
+            text = Text()
+            text.append(f"{prefix} ", style=prefix_color)
+            text.append(line)
+            console.print(text)
+
+    if stderr:
+        for line in stderr.splitlines():
+            # Build a Text object with colored prefix and red line content
+            text = Text()
+            text.append(f"{prefix} ", style=prefix_color)
+            text.append(line, style="red")
+            console.print(text)
 
 
 def merge_endpoint_configs(

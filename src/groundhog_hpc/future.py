@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize_stdout
+from groundhog_hpc.utils import prefix_output
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -110,9 +111,10 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
     """Process a ShellResult by checking for errors, printing user output, and deserializing the result payload.
 
     The stdout contains two parts separated by "__GROUNDHOG_RESULT__":
-    1. User output (from the .stdout file) - printed to stdout
+    1. User output (from the .stdout file) - printed to stdout with [remote] prefix
     2. Serialized results (from the .out file) - deserialized and returned
     """
+
     if shell_result.returncode != 0:
         msg = f"Remote execution failed with exit code: {shell_result.returncode}."
         truncated_cmd = _truncate_payload_in_cmd(shell_result.cmd)
@@ -124,4 +126,5 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
-    return deserialize_stdout(shell_result.stdout)
+    with prefix_output(prefix="[remote]", prefix_color="green"):
+        return deserialize_stdout(shell_result.stdout)
