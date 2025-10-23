@@ -184,15 +184,18 @@ class Function:
         display_task_status(future)
         return future.result()
 
-    def _should_use_subprocess_for_local(self) -> bool:
+    def _local_subprocess_safe(self) -> bool:
         """Determine if .local() should use subprocess isolation.
 
-        Returns False (use direct call) if any <module>-level frame in the call stack
-        belongs to the same module as the function. This prevents infinite recursion
-        from top-level .local() calls and optimizes same-module calls.
+        Returns False (use direct __call__) if any <module>-level frame in the
+        call stack belongs to the same module as the function.
+
+        This prevents top-level .local() calls from spinning up subprocesses
+        which would reach the same .local() call, spinning up another
+        subprocess, etc.
 
         Returns:
-            True if subprocess isolation is needed, False if direct call is safe
+            False if subprocess isolation is not safe or not needed, True otherwise.
         """
         frame: FrameType | None = inspect.currentframe()
         if frame is None:
@@ -239,7 +242,7 @@ class Function:
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
-        if not self._should_use_subprocess_for_local():
+        if not self._local_subprocess_safe():
             # Same module or uncertain - use direct call for safety
             return self._local_function(*args, **kwargs)
 
