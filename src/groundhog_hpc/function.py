@@ -132,7 +132,7 @@ class Function:
         endpoint = endpoint or self.endpoint
         walltime = walltime or self.walltime
 
-        # Use ConfigResolver to merge all config sources
+        # merge all config sources
         config = self.config_resolver.resolve(
             endpoint=endpoint,
             decorator_config=self.default_user_endpoint_config,

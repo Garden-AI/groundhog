@@ -4,15 +4,19 @@ This module provides the ConfigResolver class which handles merging endpoint
 configuration from multiple sources with proper precedence:
 
 1. DEFAULT_USER_CONFIG (configuration/defaults.py)
-2. @hog.function(**user_endpoint_config) decorator kwargs
-3. [tool.hog.<base-endpoint>] from PEP 723 script metadata
-4. [tool.hog.<base-endpoint>.<variant>] from PEP 723 script metadata
+2. [tool.hog.<base-endpoint>] from PEP 723 script metadata
+3. [tool.hog.<base-endpoint>.<variant>] from PEP 723 script metadata
+4. @hog.function(**user_endpoint_config) decorator kwargs
 5. .remote(user_endpoint_config={...}) call-time overrides
 
 PEP 723 config is applied at call-time (not decoration-time) because:
-- The script path isn't available until CLI execution (GROUNDHOG_SCRIPT_PATH)
+- The script path isn't always available until CLI execution (GROUNDHOG_SCRIPT_PATH)
 - Allows runtime `endpoint` parameter to select different PEP 723 configs
 - Keeps decorator evaluation side-effect free
+
+The precedence order reflects the natural reading order of the script:
+PEP 723 metadata sets sharable defaults, decorators customize per-function,
+and call-time overrides allow runtime changes.
 """
 
 from pathlib import Path
@@ -66,9 +70,9 @@ class ConfigResolver:
 
     Configuration precedence (later overrides earlier):
     1. DEFAULT_USER_CONFIG (groundhog defaults)
-    2. Decorator config (@hog.function(**config))
-    3. PEP 723 base config ([tool.hog.<base>])
-    4. PEP 723 variant config ([tool.hog.<base>.<variant>])
+    2. PEP 723 base config ([tool.hog.<base>])
+    3. PEP 723 variant config ([tool.hog.<base>.<variant>])
+    4. Decorator config (@hog.function(**config))
     5. Call-time config (.remote(user_endpoint_config={...}))
 
     Special handling:
@@ -117,16 +121,16 @@ class ConfigResolver:
         # Layer 1: Start with DEFAULT_USER_CONFIG
         config = DEFAULT_USER_CONFIG.copy()
 
-        # Layer 2: Merge decorator config
-        config = _merge_endpoint_configs(config, decorator_config)
-
-        # Layer 3: [tool.hog.<base>] from PEP 723
+        # Layer 2: [tool.hog.<base>] from PEP 723
         if base_config := self._get_pep723_base_config(endpoint):
             config = _merge_endpoint_configs(config, base_config)
 
-        # Layer 4: [tool.hog.<base>.<variant>] from PEP 723
+        # Layer 3: [tool.hog.<base>.<variant>] from PEP 723
         if variant_config := self._get_pep723_variant_config(endpoint):
             config = _merge_endpoint_configs(config, variant_config)
+
+        # Layer 4: Merge decorator config
+        config = _merge_endpoint_configs(config, decorator_config)
 
         # Layer 5: Call-time overrides
         if call_time_config:
