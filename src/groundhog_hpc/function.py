@@ -21,11 +21,12 @@ from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.defaults import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
+from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.templating import template_shell_command
-from groundhog_hpc.utils import merge_endpoint_configs, prefix_output
+from groundhog_hpc.utils import prefix_output
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -66,15 +67,14 @@ class Function:
             **user_endpoint_config: Additional endpoint configuration passed to
                 Globus Compute Executor (e.g., worker_init commands)
         """
-        self._script_path: str | None = os.environ.get(
-            "GROUNDHOG_SCRIPT_PATH"
-        )  # set by cli
+        self._script_path: str | None = None
         self.endpoint: str = endpoint or DEFAULT_ENDPOINTS["anvil"]
         self.walltime: int = walltime or DEFAULT_WALLTIME_SEC
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
         self._local_function: Callable = func
         self._shell_function: ShellFunction | None = None
+        self._config_resolver: ConfigResolver | None = None
 
     def __call__(self, *args, **kwargs) -> Any:
         """Execute the function locally (not remotely).
@@ -91,6 +91,13 @@ class Function:
     def _running_in_harness(self) -> bool:
         # set by @harness decorator
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
+
+    @property
+    def config_resolver(self) -> ConfigResolver:
+        """Lazily initialize and return the ConfigResolver instance."""
+        if self._config_resolver is None:
+            self._config_resolver = ConfigResolver(self.script_path)
+        return self._config_resolver
 
     def submit(
         self,
@@ -125,10 +132,17 @@ class Function:
         endpoint = endpoint or self.endpoint
         walltime = walltime or self.walltime
 
-        # Merge runtime config with decorator defaults
-        config = merge_endpoint_configs(
-            self.default_user_endpoint_config, user_endpoint_config
+        # Use ConfigResolver to merge all config sources
+        config = self.config_resolver.resolve(
+            endpoint=endpoint,
+            decorator_config=self.default_user_endpoint_config,
+            call_time_config=user_endpoint_config,
         )
+
+        # Extract endpoint UUID from config if PEP 723 specified it
+        # This allows PEP 723 to map friendly names to actual UUIDs
+        if "endpoint" in config:
+            endpoint = config.pop("endpoint")
 
         if self._shell_function is None:
             self._shell_function = script_to_submittable(
@@ -291,6 +305,8 @@ class Function:
         Raises:
             ValueError: If script path cannot be determined
         """
+        # priority to env var set by CLI
+        self._script_path = os.environ.get("GROUNDHOG_SCRIPT_PATH", self._script_path)
         if self._script_path is not None:
             return self._script_path
 
