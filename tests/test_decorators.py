@@ -2,7 +2,6 @@
 
 from groundhog_hpc.decorators import function
 from groundhog_hpc.function import Function
-from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
 
 class TestFunctionDecorator:
@@ -18,13 +17,14 @@ class TestFunctionDecorator:
         assert isinstance(my_function, Function)
 
     def test_uses_default_config_when_no_args(self):
-        """Test that default config is used when no arguments provided."""
+        """Test that decorator config is empty when no arguments provided."""
 
         @function()
         def my_function():
             return "result"
 
-        assert my_function.default_user_endpoint_config == DEFAULT_USER_CONFIG
+        # ConfigResolver will handle merging DEFAULT_USER_CONFIG at call-time
+        assert my_function.default_user_endpoint_config == {}
 
     def test_accepts_endpoint_parameter(self, mock_endpoint_uuid):
         """Test that endpoint parameter is accepted."""
@@ -56,16 +56,12 @@ class TestFunctionDecorator:
         assert my_function.default_user_endpoint_config["cores_per_node"] == 4
 
     def test_merges_worker_init_with_default(self):
-        """Test that custom worker_init is merged with default."""
+        """Test that custom worker_init is stored in decorator config."""
         custom_init = "module load custom"
 
         @function(worker_init=custom_init)
         def my_function():
             return "result"
 
-        # Should contain both custom and default worker_init
-        assert custom_init in my_function.default_user_endpoint_config["worker_init"]
-        assert (
-            DEFAULT_USER_CONFIG["worker_init"]
-            in my_function.default_user_endpoint_config["worker_init"]
-        )
+        # Decorator should only have custom init, ConfigResolver will merge with DEFAULT
+        assert my_function.default_user_endpoint_config["worker_init"] == custom_init

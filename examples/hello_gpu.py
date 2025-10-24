@@ -4,20 +4,30 @@
 #     "torch",
 # ]
 #
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "cis250461-gpu"  # Replace with your GPU allocation
+# qos = "gpu"
+#
+# [tool.hog.anvil.gpu-debug]
+# partition = "gpu-debug"
+# scheduler_options = "#SBATCH --gpus-per-node=1"
 # ///
+"""
+Example demonstrating PEP 723 configuration with base and variant endpoints.
+
+The [tool.hog.anvil] section defines base GPU configuration.
+The [tool.hog.anvil.gpu-debug] variant inherits from base and adds GPU-specific settings.
+
+To use this script:
+1. Update 'account' in [tool.hog.anvil] to your GPU allocation
+2. Run with: hog run examples/hello_gpu.py
+"""
 
 import groundhog_hpc as hog
 
-ANVIL = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 
-
-@hog.function(
-    endpoint=ANVIL,
-    account="cis250461-gpu",
-    qos="gpu",
-    partition="gpu-debug",
-    scheduler_options="#SBATCH --gpus-per-node=1",
-)
+@hog.function(endpoint="anvil.gpu-debug")
 def hello_torch():
     import torch
 
@@ -25,7 +35,7 @@ def hello_torch():
     return msg
 
 
-@hog.function(endpoint=ANVIL, account="cis250461-gpu", qos="gpu")
+@hog.function(endpoint="anvil")
 def hello_groundhog(greeting="Hello"):
     msg = f"{greeting}, groundhog ☀️🦫🕳️ {hog.__version__=}"
     return msg

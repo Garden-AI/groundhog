@@ -22,7 +22,8 @@ class TestFunctionInitialization:
 
         assert func._local_function == dummy_function
         assert func._shell_function is None
-        assert func.walltime is not None
+        assert func.endpoint is None
+        assert func.walltime is None
 
     def test_initialization_with_custom_endpoint(self, mock_endpoint_uuid):
         """Test Function initialization with custom endpoint."""
@@ -36,7 +37,8 @@ class TestFunctionInitialization:
         os.environ["GROUNDHOG_SCRIPT_PATH"] = "/path/to/script.py"
         try:
             func = Function(dummy_function)
-            assert func._script_path == "/path/to/script.py"
+            # script_path property lazily reads from environment
+            assert func.script_path == "/path/to/script.py"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
@@ -81,7 +83,7 @@ class TestRemoteExecution:
         finally:
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_remote_call_lazy_initialization(self, tmp_path):
+    def test_remote_call_lazy_initialization(self, tmp_path, mock_endpoint_uuid):
         """Test that _shell_function is lazily initialized on first .remote() call."""
 
         # Create a temporary script file
@@ -101,7 +103,7 @@ def main():
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
-        func = Function(dummy_function)
+        func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
         # Initially, shell function is not initialized
         assert func._shell_function is None
@@ -131,12 +133,12 @@ def main():
         del os.environ["GROUNDHOG_SCRIPT_PATH"]
         del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_submit_uses_fallback_when_script_path_is_none(self):
+    def test_submit_uses_fallback_when_script_path_is_none(self, mock_endpoint_uuid):
         """Test that submit can use inspection fallback when _script_path is None."""
 
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
-            func = Function(simple_function)
+            func = Function(simple_function, endpoint=mock_endpoint_uuid)
             func._script_path = None
 
             # Should use inspect fallback to find the script path
@@ -161,7 +163,7 @@ def main():
             ):
                 _ = func.script_path
 
-    def test_submit_creates_shell_function(self, tmp_path):
+    def test_submit_creates_shell_function(self, tmp_path, mock_endpoint_uuid):
         """Test that submit creates a shell function using script_to_submittable."""
 
         script_path = tmp_path / "test_script.py"
@@ -170,7 +172,7 @@ def main():
 
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
         try:
-            func = Function(dummy_function)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
             func._script_path = str(script_path)
 
             mock_shell_func = MagicMock()
@@ -208,7 +210,7 @@ class TestSubmitMethod:
         with pytest.raises(RuntimeError, match="outside of a @hog.harness function"):
             func.submit()
 
-    def test_submit_returns_future(self, tmp_path):
+    def test_submit_returns_future(self, tmp_path, mock_endpoint_uuid):
         """Test that submit() returns a Future object."""
 
         script_path = tmp_path / "test_script.py"
@@ -218,7 +220,7 @@ class TestSubmitMethod:
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
         try:
-            func = Function(dummy_function)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -233,7 +235,7 @@ class TestSubmitMethod:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_submit_serializes_arguments(self, tmp_path):
+    def test_submit_serializes_arguments(self, tmp_path, mock_endpoint_uuid):
         """Test that submit() properly serializes function arguments."""
 
         script_path = tmp_path / "test_script.py"
@@ -243,7 +245,7 @@ class TestSubmitMethod:
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
         try:
-            func = Function(dummy_function)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -299,7 +301,7 @@ class TestSubmitMethod:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_remote_uses_submit_internally(self, tmp_path):
+    def test_remote_uses_submit_internally(self, tmp_path, mock_endpoint_uuid):
         """Test that remote() calls submit() and returns its result."""
 
         script_path = tmp_path / "test_script.py"
@@ -309,7 +311,7 @@ class TestSubmitMethod:
         os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
         try:
-            func = Function(dummy_function)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
             mock_future = MagicMock()
             mock_future.result.return_value = "final_result"
@@ -358,7 +360,7 @@ class TestSubmitMethod:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_callsite_walltime_overrides_default(self, tmp_path):
+    def test_callsite_walltime_overrides_default(self, tmp_path, mock_endpoint_uuid):
         """Test that walltime provided at callsite overrides default walltime."""
         script_path = tmp_path / "test_script.py"
         script_path.write_text("# test")
@@ -368,7 +370,7 @@ class TestSubmitMethod:
 
         try:
             # Initialize with default walltime
-            func = Function(dummy_function, walltime=60)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid, walltime=60)
 
             with patch("groundhog_hpc.function.script_to_submittable") as mock_s2s:
                 with patch("groundhog_hpc.function.submit_to_executor"):
@@ -382,7 +384,7 @@ class TestSubmitMethod:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_callsite_user_config_overrides_default(self, tmp_path):
+    def test_callsite_user_config_overrides_default(self, tmp_path, mock_endpoint_uuid):
         """Test that user_endpoint_config at callsite overrides default config."""
         script_path = tmp_path / "test_script.py"
         script_path.write_text("# test")
@@ -392,7 +394,12 @@ class TestSubmitMethod:
 
         try:
             # Initialize with default config
-            func = Function(dummy_function, account="default_account", cores_per_node=4)
+            func = Function(
+                dummy_function,
+                endpoint=mock_endpoint_uuid,
+                account="default_account",
+                cores_per_node=4,
+            )
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -416,7 +423,9 @@ class TestSubmitMethod:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_worker_init_is_appended_not_overwritten(self, tmp_path):
+    def test_worker_init_is_appended_not_overwritten(
+        self, tmp_path, mock_endpoint_uuid
+    ):
         """Test that worker_init from callsite is appended to default, not overwritten."""
         script_path = tmp_path / "test_script.py"
         script_path.write_text("# test")
@@ -427,7 +436,11 @@ class TestSubmitMethod:
         try:
             # Initialize with default worker_init
             default_worker_init = "module load default"
-            func = Function(dummy_function, worker_init=default_worker_init)
+            func = Function(
+                dummy_function,
+                endpoint=mock_endpoint_uuid,
+                worker_init=default_worker_init,
+            )
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -441,20 +454,22 @@ class TestSubmitMethod:
                         user_endpoint_config={"worker_init": custom_worker_init}
                     )
 
-            # Verify both are present (custom + default)
+            # Verify all are present (call-time + decorator + DEFAULT)
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
-            # Custom should come first, then newline, then default
+            # Should have call-time, decorator, and DEFAULT_USER_CONFIG
             assert custom_worker_init in config["worker_init"]
             assert default_worker_init in config["worker_init"]
-            # Verify order: custom + "\n" + default
+            assert "pip show -qq uv || pip install uv" in config["worker_init"]
+            # Verify order: call-time + "\n" + decorator + "\n" + DEFAULT
             assert config["worker_init"].startswith(custom_worker_init)
-            assert config["worker_init"].endswith(default_worker_init)
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_default_worker_init_preserved_when_no_callsite_override(self, tmp_path):
+    def test_default_worker_init_preserved_when_no_callsite_override(
+        self, tmp_path, mock_endpoint_uuid
+    ):
         """Test that default worker_init is used when no override provided."""
         script_path = tmp_path / "test_script.py"
         script_path.write_text("# test")
@@ -465,7 +480,11 @@ class TestSubmitMethod:
         try:
             # Initialize with default worker_init
             default_worker_init = "module load default"
-            func = Function(dummy_function, worker_init=default_worker_init)
+            func = Function(
+                dummy_function,
+                endpoint=mock_endpoint_uuid,
+                worker_init=default_worker_init,
+            )
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -476,10 +495,11 @@ class TestSubmitMethod:
                     # Call without any override
                     func.submit()
 
-            # Verify default worker_init is in the config
+            # Verify decorator worker_init + DEFAULT_USER_CONFIG are in the config
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
-            assert config["worker_init"] == default_worker_init
+            assert default_worker_init in config["worker_init"]
+            assert "pip show -qq uv || pip install uv" in config["worker_init"]
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
