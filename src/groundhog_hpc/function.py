@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
-from groundhog_hpc.configuration.defaults import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
+from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
@@ -46,8 +46,8 @@ class Function:
     4. Local subprocess: func.local(*args) - executes locally in a separate process
 
     Attributes:
-        endpoint: Default Globus Compute endpoint UUID
-        walltime: Default walltime in seconds for remote execution
+        endpoint: Default Globus Compute endpoint UUID or None to use resolved config
+        walltime: Default walltime in seconds for remote execution or None to use resolved config
         default_user_endpoint_config: Default endpoint configuration (e.g., worker_init)
     """
 
@@ -62,14 +62,14 @@ class Function:
 
         Args:
             func: The Python function to wrap
-            endpoint: Globus Compute endpoint UUID
-            walltime: Maximum execution time in seconds (default: 60)
-            **user_endpoint_config: Additional endpoint configuration passed to
+            endpoint: Globus Compute endpoint UUID or named endpoint from `[tool.hog.<name>]` PEP 723
+            walltime: Maximum execution time in seconds (can also be set in config)
+            **user_endpoint_config: Additional endpoint configuration to pass to
                 Globus Compute Executor (e.g., worker_init commands)
         """
         self._script_path: str | None = None
-        self.endpoint: str = endpoint or DEFAULT_ENDPOINTS["anvil"]
-        self.walltime: int = walltime or DEFAULT_WALLTIME_SEC
+        self.endpoint: str | None = endpoint
+        self.walltime: int | None = walltime
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
         self._local_function: Callable = func
@@ -91,6 +91,14 @@ class Function:
     def _running_in_harness(self) -> bool:
         # set by @harness decorator
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
+
+    def _get_available_endpoints_from_pep723(self) -> list[str]:
+        """Get list of endpoint names defined in PEP 723 [tool.hog.*] sections."""
+        metadata = self.config_resolver._load_pep723_metadata()
+        if not metadata:
+            return []
+        hog_config = metadata.get("tool", {}).get("hog", {})
+        return list(hog_config.keys())
 
     def submit(
         self,
@@ -114,7 +122,7 @@ class Function:
 
         Raises:
             RuntimeError: If called outside of a @hog.harness function
-            ValueError: If source file cannot be located
+            ValueError: If endpoint is not specified and cannot be resolved from config
             PayloadTooLargeError: If serialized arguments exceed 10MB
         """
         if not self._running_in_harness():
@@ -123,19 +131,47 @@ class Function:
             )
 
         endpoint = endpoint or self.endpoint
-        walltime = walltime or self.walltime
+        # handle walltime specially, because it's passed to the shell command
+        # not the executor (like the rest of the user_endpoing_config options)
+        decorator_config = self.default_user_endpoint_config.copy()
+        if self.walltime is not None:
+            decorator_config["walltime"] = self.walltime
 
-        # merge all config sources
+        call_time_config = user_endpoint_config.copy() if user_endpoint_config else {}
+        if walltime is not None:
+            call_time_config["walltime"] = walltime
+
+        # Merge all config sources
         config = self.config_resolver.resolve(
-            endpoint_name=endpoint,
-            decorator_config=self.default_user_endpoint_config,
-            call_time_config=user_endpoint_config,
+            endpoint_name=endpoint or "",  # will validate below
+            decorator_config=decorator_config,
+            call_time_config=call_time_config,
         )
 
-        # Extract endpoint UUID from config if PEP 723 specified it
-        # This allows PEP 723 to map friendly names to actual UUIDs
+        # extract endpoint uuid from config if specified
+        # this maps friendly names to actual uuids
         if "endpoint" in config:
             endpoint = config.pop("endpoint")
+
+        if "walltime" in config:
+            walltime = config.pop("walltime")
+
+        # Validate that we have an endpoint at this point
+        if not endpoint:
+            # Try to provide helpful error message by listing available endpoints in config
+            available_endpoints = self._get_available_endpoints_from_pep723()
+            if available_endpoints:
+                endpoints_str = ", ".join(f"'{e}'" for e in available_endpoints)
+                raise ValueError(
+                    f"No endpoint specified. Available endpoints found in config: {endpoints_str}. "
+                    f"Call with endpoint=<name>, or specify a function default endpoint in decorator."
+                )
+            else:
+                raise ValueError("No endpoint specified")
+
+        # Use default walltime if still not specified
+        if walltime is None:
+            walltime = DEFAULT_WALLTIME_SEC
 
         if self._shell_function is None:
             self._shell_function = script_to_submittable(
