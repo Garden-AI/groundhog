@@ -1,8 +1,8 @@
 """Tests for the decorators module."""
 
+from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
 from groundhog_hpc.decorators import function
 from groundhog_hpc.function import Function
-from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 
 
 class TestFunctionDecorator:

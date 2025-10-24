@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from groundhog_hpc.pep723 import (
+from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
     insert_or_update_metadata,
     read_pep723,
