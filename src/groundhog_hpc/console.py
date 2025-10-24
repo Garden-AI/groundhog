@@ -59,7 +59,7 @@ def _get_status_display(
     task_id: str | None,
     task_status: dict,
     elapsed: float,
-    spinner: Spinner,
+    spinner: Spinner | None,
     current_time: float,
     has_exception: bool = False,
 ) -> Text:
