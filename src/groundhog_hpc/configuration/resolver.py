@@ -101,7 +101,7 @@ class ConfigResolver:
 
     def resolve(
         self,
-        endpoint: str,
+        endpoint_name: str,
         decorator_config: dict[str, Any],
         call_time_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -122,11 +122,11 @@ class ConfigResolver:
         config = DEFAULT_USER_CONFIG.copy()
 
         # Layer 2: [tool.hog.<base>] from PEP 723
-        if base_config := self._get_pep723_base_config(endpoint):
+        if base_config := self._get_pep723_base_config(endpoint_name):
             config = _merge_endpoint_configs(config, base_config)
 
         # Layer 3: [tool.hog.<base>.<variant>] from PEP 723
-        if variant_config := self._get_pep723_variant_config(endpoint):
+        if variant_config := self._get_pep723_variant_config(endpoint_name):
             config = _merge_endpoint_configs(config, variant_config)
 
         # Layer 4: Merge decorator config
@@ -138,7 +138,7 @@ class ConfigResolver:
 
         return config
 
-    def _get_pep723_base_config(self, endpoint: str) -> dict[str, Any] | None:
+    def _get_pep723_base_config(self, endpoint_name: str) -> dict[str, Any] | None:
         """Extract [tool.hog.<base>] config from PEP 723 metadata.
 
         Args:
@@ -154,13 +154,11 @@ class ConfigResolver:
         if not metadata:
             return None
 
-        # Parse endpoint: "anvil.gpu" -> base="anvil"
-        base_endpoint = endpoint.split(".")[0]
+        base_endpoint = endpoint_name.split(".")[0]
 
-        # Look for [tool.hog.anvil]
         return metadata.get("tool", {}).get("hog", {}).get(base_endpoint)
 
-    def _get_pep723_variant_config(self, endpoint: str) -> dict[str, Any] | None:
+    def _get_pep723_variant_config(self, endpoint_name: str) -> dict[str, Any] | None:
         """Extract [tool.hog.<base>.<variant>] config from PEP 723 metadata.
 
         Variants do NOT inherit from base - inheritance is handled by the caller
@@ -173,7 +171,7 @@ class ConfigResolver:
             Variant configuration dict or None if endpoint has no variant or
             variant config not found
         """
-        if "." not in endpoint:
+        if "." not in endpoint_name:
             return None
 
         if not self.script_path:
@@ -183,8 +181,7 @@ class ConfigResolver:
         if not metadata:
             return None
 
-        # Parse endpoint: "anvil.gpu" -> base="anvil", variant="gpu"
-        parts = endpoint.split(".", 1)
+        parts = endpoint_name.split(".", 1)
         base_endpoint, variant = parts[0], parts[1]
 
         # Look for [tool.hog.anvil.gpu]

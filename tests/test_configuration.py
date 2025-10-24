@@ -102,14 +102,15 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
 
-    def test_pep723_overrides_decorator(self):
-        """Test that PEP 723 config overrides decorator config."""
+    def test_decorator_overrides_pep723(self):
+        """Test that decorator config overrides PEP 723 config."""
         script_content = """# /// script
 # requires-python = ">=3.10"
 # dependencies = []
 #
 # [tool.hog.anvil]
 # account = "pep723-account"
+# qos = "cpu"
 # ///
 
 import groundhog_hpc as hog
@@ -121,16 +122,16 @@ import groundhog_hpc as hog
 
         try:
             resolver = ConfigResolver(script_path=script_path)
-            decorator_config = {"account": "decorator-account", "qos": "cpu"}
+            decorator_config = {"account": "decorator-account"}
 
             result = resolver.resolve(
                 endpoint="anvil",
                 decorator_config=decorator_config,
             )
 
-            # PEP 723 should override decorator
-            assert result["account"] == "pep723-account"
-            # Decorator field not in PEP 723 should remain
+            # Decorator should override PEP 723
+            assert result["account"] == "decorator-account"
+            # PEP 723 field not in decorator should remain
             assert result["qos"] == "cpu"
         finally:
             Path(script_path).unlink()
@@ -223,7 +224,7 @@ class TestConfigResolverPrecedence:
     """Test configuration precedence across all layers."""
 
     def test_full_precedence_chain(self):
-        """Test precedence: decorator < PEP 723 base < PEP 723 variant < call-time."""
+        """Test precedence: PEP 723 base < PEP 723 variant < decorator < call-time."""
         script_content = """# /// script
 # requires-python = ">=3.10"
 # dependencies = []
@@ -251,8 +252,6 @@ import groundhog_hpc as hog
             decorator_config = {
                 "account": "decorator-account",
                 "qos": "decorator-qos",
-                "partition": "decorator-partition",
-                "cores": 4,
             }
 
             call_time_config = {
@@ -265,17 +264,14 @@ import groundhog_hpc as hog
                 call_time_config=call_time_config,
             )
 
-            # account: PEP 723 base overrides decorator
-            assert result["account"] == "pep723-base-account"
+            # account: decorator overrides PEP 723 base
+            assert result["account"] == "decorator-account"
 
-            # qos: PEP 723 variant overrides base and decorator
-            assert result["qos"] == "gpu"
+            # qos: decorator overrides PEP 723 variant
+            assert result["qos"] == "decorator-qos"
 
-            # partition: call-time overrides all
+            # partition: call-time overrides all (PEP 723 variant in this case)
             assert result["partition"] == "runtime-partition"
-
-            # cores: only in decorator, should remain
-            assert result["cores"] == 4
         finally:
             Path(script_path).unlink()
 
@@ -313,8 +309,8 @@ import groundhog_hpc as hog
             )
 
             # All worker_init commands should be concatenated
-            # Order: call-time, PEP 723, decorator, DEFAULT (reverse precedence)
-            expected = "export CUDA_VISIBLE_DEVICES=0\nmodule load gcc\npip install uv\npip show -qq uv || pip install uv"
+            # Order: call-time, decorator, PEP 723, DEFAULT (reverse precedence)
+            expected = "export CUDA_VISIBLE_DEVICES=0\npip install uv\nmodule load gcc\npip show -qq uv || pip install uv"
             assert result["worker_init"] == expected
         finally:
             Path(script_path).unlink()

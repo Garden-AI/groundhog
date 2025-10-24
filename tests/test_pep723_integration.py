@@ -154,8 +154,8 @@ def test_func():
 class TestPep723IntegrationPrecedence:
     """Test configuration precedence with PEP 723."""
 
-    def test_pep723_overrides_decorator(self):
-        """Test that PEP 723 config overrides decorator config."""
+    def test_decorator_overrides_pep723(self):
+        """Test that decorator config overrides PEP 723 config."""
         script_content = """# /// script
 # requires-python = ">=3.10"
 # dependencies = []
@@ -200,10 +200,10 @@ import groundhog_hpc as hog
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
-            # PEP 723 should override decorator account
-            assert config["account"] == "pep723-account"
+            # Decorator should override PEP 723 account
+            assert config["account"] == "decorator-account"
 
-            # PEP 723 qos should be present
+            # PEP 723 qos should be present (not overridden)
             assert config["qos"] == "cpu"
 
             # Decorator-only field should remain
@@ -316,8 +316,8 @@ import groundhog_hpc as hog
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
             # All worker_init should be concatenated
-            # Order: call-time, PEP 723, decorator, DEFAULT (reverse precedence)
-            expected = "export DEBUG=1\nmodule load gcc\npip install uv\npip show -qq uv || pip install uv"
+            # Order: call-time, decorator, PEP 723, DEFAULT (reverse precedence)
+            expected = "export DEBUG=1\npip install uv\nmodule load gcc\npip show -qq uv || pip install uv"
             assert config["worker_init"] == expected
 
         finally:

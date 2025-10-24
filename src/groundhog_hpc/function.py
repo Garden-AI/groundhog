@@ -92,13 +92,6 @@ class Function:
         # set by @harness decorator
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
-    @property
-    def config_resolver(self) -> ConfigResolver:
-        """Lazily initialize and return the ConfigResolver instance."""
-        if self._config_resolver is None:
-            self._config_resolver = ConfigResolver(self.script_path)
-        return self._config_resolver
-
     def submit(
         self,
         *args: Any,
@@ -134,7 +127,7 @@ class Function:
 
         # merge all config sources
         config = self.config_resolver.resolve(
-            endpoint=endpoint,
+            endpoint_name=endpoint,
             decorator_config=self.default_user_endpoint_config,
             call_time_config=user_endpoint_config,
         )
@@ -318,3 +311,10 @@ class Function:
                 f"Could not determine script path for function {self._local_function.__qualname__}. "
                 "Function must be defined in a file (not in interactive mode)."
             ) from e
+
+    @property
+    def config_resolver(self) -> ConfigResolver:
+        """Lazily initialize and return the ConfigResolver instance."""
+        if self._config_resolver is None:
+            self._config_resolver = ConfigResolver(self.script_path)
+        return self._config_resolver
