@@ -15,7 +15,7 @@ class TestConfigResolverBasics:
 
         decorator_config = {"account": "my-account", "qos": "cpu"}
         result = resolver.resolve(
-            endpoint="anvil",
+            endpoint_name="anvil",
             decorator_config=decorator_config,
             call_time_config=None,
         )
@@ -37,7 +37,7 @@ class TestConfigResolverBasics:
             decorator_config = {"account": "my-account", "qos": "cpu"}
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config=decorator_config,
             )
 
@@ -56,7 +56,7 @@ class TestConfigResolverBasics:
         call_time_config = {"account": "runtime-account"}
 
         result = resolver.resolve(
-            endpoint="anvil",
+            endpoint_name="anvil",
             decorator_config=decorator_config,
             call_time_config=call_time_config,
         )
@@ -92,7 +92,7 @@ import groundhog_hpc as hog
             decorator_config = {}
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config=decorator_config,
             )
 
@@ -125,7 +125,7 @@ import groundhog_hpc as hog
             decorator_config = {"account": "decorator-account"}
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config=decorator_config,
             )
 
@@ -169,7 +169,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil.gpu",
+                endpoint_name="anvil.gpu",
                 decorator_config={},
             )
 
@@ -208,7 +208,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil.gpu",
+                endpoint_name="anvil.gpu",
                 decorator_config={},
             )
 
@@ -259,7 +259,7 @@ import groundhog_hpc as hog
             }
 
             result = resolver.resolve(
-                endpoint="anvil.gpu",
+                endpoint_name="anvil.gpu",
                 decorator_config=decorator_config,
                 call_time_config=call_time_config,
             )
@@ -303,7 +303,7 @@ import groundhog_hpc as hog
             call_time_config = {"worker_init": "export CUDA_VISIBLE_DEVICES=0"}
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config=decorator_config,
                 call_time_config=call_time_config,
             )
@@ -339,7 +339,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil.gpu",
+                endpoint_name="anvil.gpu",
                 decorator_config={},
             )
 
@@ -377,7 +377,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config={},
             )
 
@@ -395,7 +395,7 @@ class TestConfigResolverEdgeCases:
         resolver = ConfigResolver(script_path="/nonexistent/path/script.py")
 
         result = resolver.resolve(
-            endpoint="anvil",
+            endpoint_name="anvil",
             decorator_config={"account": "my-account"},
         )
 
@@ -424,7 +424,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="polaris",  # Not defined in PEP 723
+                endpoint_name="polaris",  # Not defined in PEP 723
                 decorator_config={"qos": "debug"},
             )
 
@@ -456,7 +456,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil.gpu",  # Variant not defined
+                endpoint_name="anvil.gpu",  # Variant not defined
                 decorator_config={},
             )
 
@@ -487,10 +487,10 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             # First call should load and cache
-            result1 = resolver.resolve(endpoint="anvil", decorator_config={})
+            result1 = resolver.resolve(endpoint_name="anvil", decorator_config={})
 
             # Second call should use cache
-            result2 = resolver.resolve(endpoint="anvil", decorator_config={})
+            result2 = resolver.resolve(endpoint_name="anvil", decorator_config={})
 
             assert result1 == result2
             assert result1["account"] == "my-account"
@@ -518,7 +518,7 @@ import groundhog_hpc as hog
             resolver = ConfigResolver(script_path=script_path)
 
             result = resolver.resolve(
-                endpoint="anvil",
+                endpoint_name="anvil",
                 decorator_config={"account": "my-account"},
             )
 

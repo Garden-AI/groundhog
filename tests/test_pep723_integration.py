@@ -411,7 +411,7 @@ class TestPep723IntegrationRealExamples:
 
             # Verify ConfigResolver loads the PEP 723 metadata
             resolver = func.config_resolver
-            config = resolver.resolve(endpoint="anvil", decorator_config={})
+            config = resolver.resolve(endpoint_name="anvil", decorator_config={})
 
             # Should load config from example file
             assert "endpoint" in config
@@ -440,7 +440,9 @@ class TestPep723IntegrationRealExamples:
             func = Function(hello_torch, endpoint="anvil.gpu-debug")
 
             resolver = func.config_resolver
-            config = resolver.resolve(endpoint="anvil.gpu-debug", decorator_config={})
+            config = resolver.resolve(
+                endpoint_name="anvil.gpu-debug", decorator_config={}
+            )
 
             # Should load base + variant config
             assert config["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
