@@ -7,10 +7,8 @@ users apply to their Python functions to enable remote execution orchestration.
 import functools
 from typing import Any, Callable
 
-from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.utils import merge_endpoint_configs
 
 
 def harness() -> Callable[[Callable[[], Any]], Harness]:
@@ -77,13 +75,9 @@ def function(
             print(result)
         ```
     """
-    # Merge user config with defaults, ensuring worker_init commands are combined
-    merged_config = merge_endpoint_configs(
-        DEFAULT_USER_CONFIG, user_endpoint_config if user_endpoint_config else None
-    )
 
     def decorator(func: Callable) -> Function:
-        wrapper = Function(func, endpoint, walltime, **merged_config)
+        wrapper = Function(func, endpoint, walltime, **user_endpoint_config)
         functools.update_wrapper(wrapper, func)
         return wrapper
 

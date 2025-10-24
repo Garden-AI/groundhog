@@ -18,8 +18,44 @@ PEP 723 config is applied at call-time (not decoration-time) because:
 from pathlib import Path
 from typing import Any
 
+from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
 from groundhog_hpc.configuration.pep723 import read_pep723
-from groundhog_hpc.utils import merge_endpoint_configs
+
+
+def _merge_endpoint_configs(
+    base_config: dict, override_config: dict | None = None
+) -> dict:
+    """Merge endpoint configurations, ensuring worker_init commands are combined.
+
+    The worker_init field is special-cased: if both configs provide it, the
+    override's worker_init is executed first, followed by the base's worker_init.
+    All other fields from override_config simply replace fields from base_config.
+
+    Args:
+        base_config: Base configuration dict (e.g., from decorator defaults)
+        override_config: Override configuration dict (e.g., from .remote() call)
+
+    Returns:
+        A new merged configuration dict
+
+    Example:
+        >>> base = {"worker_init": "pip install uv"}
+        >>> override = {"worker_init": "module load gcc", "cores": 4}
+        >>> _merge_endpoint_configs(base, override)
+        {'worker_init': 'module load gcc\\npip install uv', 'cores': 4}
+    """
+    if not override_config:
+        return base_config.copy()
+
+    merged = base_config.copy()
+
+    # Special handling for worker_init: append base to override
+    if "worker_init" in override_config and "worker_init" in base_config:
+        override_config = override_config.copy()
+        override_config["worker_init"] += f"\n{merged.pop('worker_init')}"
+
+    merged.update(override_config)
+    return merged
 
 
 class ConfigResolver:
@@ -29,10 +65,11 @@ class ConfigResolver:
     from PEP 723 script metadata with decorator-time and call-time configurations.
 
     Configuration precedence (later overrides earlier):
-    1. Decorator config (@hog.function(**config))
-    2. PEP 723 base config ([tool.hog.<base>])
-    3. PEP 723 variant config ([tool.hog.<base>.<variant>])
-    4. Call-time config (.remote(user_endpoint_config={...}))
+    1. DEFAULT_USER_CONFIG (groundhog defaults)
+    2. Decorator config (@hog.function(**config))
+    3. PEP 723 base config ([tool.hog.<base>])
+    4. PEP 723 variant config ([tool.hog.<base>.<variant>])
+    5. Call-time config (.remote(user_endpoint_config={...}))
 
     Special handling:
     - worker_init commands are concatenated (not replaced) across all layers
@@ -77,19 +114,23 @@ class ConfigResolver:
             The 'endpoint' field (if present in PEP 723) is included in the
             returned config for Function.submit() to extract and use.
         """
-        config = decorator_config.copy()
+        # Layer 1: Start with DEFAULT_USER_CONFIG
+        config = DEFAULT_USER_CONFIG.copy()
+
+        # Layer 2: Merge decorator config
+        config = _merge_endpoint_configs(config, decorator_config)
 
         # Layer 3: [tool.hog.<base>] from PEP 723
         if base_config := self._get_pep723_base_config(endpoint):
-            config = merge_endpoint_configs(config, base_config)
+            config = _merge_endpoint_configs(config, base_config)
 
         # Layer 4: [tool.hog.<base>.<variant>] from PEP 723
         if variant_config := self._get_pep723_variant_config(endpoint):
-            config = merge_endpoint_configs(config, variant_config)
+            config = _merge_endpoint_configs(config, variant_config)
 
         # Layer 5: Call-time overrides
         if call_time_config:
-            config = merge_endpoint_configs(config, call_time_config)
+            config = _merge_endpoint_configs(config, call_time_config)
 
         return config
 
