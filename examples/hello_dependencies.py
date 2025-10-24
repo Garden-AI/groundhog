@@ -4,9 +4,24 @@
 #     "torch",
 # ]
 #
+# [tool.hog.anvil]
+# account = "cis250223"  # Replace with your account
+# walltime = 30
+#
+# [tool.hog.anvil.gpu]
+# qos = "gpu"
+# partition = "gpu-debug"
 # ///
 """
-sample script for `hog run` to execute on the remote globus compute endpoint with uv
+Example demonstrating PEP 723 dependencies and configuration.
+
+This script shows how to:
+1. Declare dependencies in PEP 723 metadata (torch)
+2. Configure endpoint settings in [tool.hog] sections
+3. Use base and variant configurations (anvil vs anvil.gpu)
+
+NOTE: groundhog-hpc is automatically installed on the remote end, no need to
+declare it in the PEP 723 dependencies.
 """
 
 import json
@@ -14,16 +29,13 @@ import os
 
 import groundhog_hpc as hog
 
-# NOTE groundhog-hpc is automatically installed on the remote end, no need to
-# declare it above in the PEP 723 metadata
 
-
-@hog.function(walltime=30, account="cis250223")
+@hog.function(endpoint="anvil")
 def hello_environment():
     return dict(os.environ)
 
 
-@hog.function(walltime=30, account="cis250223", qos="gpu", partition="gpu-debug")
+@hog.function(endpoint="anvil.gpu")
 def hello_torch():
     # NOTE: we import torch inside the function because it's available on the
     # remote endpoint (because it was declared in script metadata) but may not
@@ -34,7 +46,7 @@ def hello_torch():
     return msg
 
 
-@hog.function(walltime=30, account="cis250223")
+@hog.function(endpoint="anvil")
 def hello_hog():
     return f"{hog.__version__=}"
 
