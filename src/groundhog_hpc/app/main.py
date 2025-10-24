@@ -25,7 +25,7 @@ from groundhog_hpc.configuration.pep723 import (
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.utils import get_groundhog_version_spec
+from groundhog_hpc.utils import get_groundhog_version_spec, prefix_output
 
 app = typer.Typer()
 
@@ -169,9 +169,10 @@ def run(
         result = __main__.__dict__[harness]()
         typer.echo(result)
     except RemoteExecutionError as e:
-        typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)
-        typer.echo(e.stderr, err=True)
-        raise typer.Exit(1)
+        with prefix_output(prefix="[remote]", prefix_color="green"):
+            typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)
+            typer.echo(e.stderr, err=True)
+            raise typer.Exit(1)
     except Exception as e:
         if not isinstance(e, RemoteExecutionError):
             typer.echo(f"Error: {e}", err=True)

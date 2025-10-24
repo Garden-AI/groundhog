@@ -15,11 +15,12 @@ from groundhog_hpc.future import GroundhogFuture
 SPINNERS["groundhog"] = {
     "interval": 400,
     "frames": [
-        "☀️🦫🕳️",
+        "☀️🦫️",
+        "☀️🦫️",
         "☁️🦫",
         "☁️🦫",
         "☁️🦫",
-        "☀️🦫🕳️",
+        "☀️🦫️",
     ],
 }
 
