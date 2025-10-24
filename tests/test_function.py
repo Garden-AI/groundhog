@@ -36,7 +36,8 @@ class TestFunctionInitialization:
         os.environ["GROUNDHOG_SCRIPT_PATH"] = "/path/to/script.py"
         try:
             func = Function(dummy_function)
-            assert func._script_path == "/path/to/script.py"
+            # script_path property lazily reads from environment
+            assert func.script_path == "/path/to/script.py"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
@@ -441,15 +442,15 @@ class TestSubmitMethod:
                         user_endpoint_config={"worker_init": custom_worker_init}
                     )
 
-            # Verify both are present (custom + default)
+            # Verify all are present (call-time + decorator + DEFAULT)
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
-            # Custom should come first, then newline, then default
+            # Should have call-time, decorator, and DEFAULT_USER_CONFIG
             assert custom_worker_init in config["worker_init"]
             assert default_worker_init in config["worker_init"]
-            # Verify order: custom + "\n" + default
+            assert "pip show -qq uv || pip install uv" in config["worker_init"]
+            # Verify order: call-time + "\n" + decorator + "\n" + DEFAULT
             assert config["worker_init"].startswith(custom_worker_init)
-            assert config["worker_init"].endswith(default_worker_init)
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
@@ -476,10 +477,11 @@ class TestSubmitMethod:
                     # Call without any override
                     func.submit()
 
-            # Verify default worker_init is in the config
+            # Verify decorator worker_init + DEFAULT_USER_CONFIG are in the config
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
-            assert config["worker_init"] == default_worker_init
+            assert default_worker_init in config["worker_init"]
+            assert "pip show -qq uv || pip install uv" in config["worker_init"]
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]

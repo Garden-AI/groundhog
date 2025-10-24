@@ -20,7 +20,10 @@ class TestConfigResolverBasics:
             call_time_config=None,
         )
 
-        assert result == decorator_config
+        # Should include DEFAULT_USER_CONFIG (worker_init) + decorator config
+        assert result["account"] == "my-account"
+        assert result["qos"] == "cpu"
+        assert "worker_init" in result  # From DEFAULT_USER_CONFIG
 
     def test_resolve_decorator_only(self):
         """Test config resolution with only decorator config."""
@@ -38,7 +41,10 @@ class TestConfigResolverBasics:
                 decorator_config=decorator_config,
             )
 
-            assert result == decorator_config
+            # Should include DEFAULT_USER_CONFIG + decorator config
+            assert result["account"] == "my-account"
+            assert result["qos"] == "cpu"
+            assert "worker_init" in result  # From DEFAULT_USER_CONFIG
         finally:
             Path(script_path).unlink()
 
@@ -307,8 +313,8 @@ import groundhog_hpc as hog
             )
 
             # All worker_init commands should be concatenated
-            # Order: call-time, PEP 723, decorator (reverse precedence)
-            expected = "export CUDA_VISIBLE_DEVICES=0\nmodule load gcc\npip install uv"
+            # Order: call-time, PEP 723, decorator, DEFAULT (reverse precedence)
+            expected = "export CUDA_VISIBLE_DEVICES=0\nmodule load gcc\npip install uv\npip show -qq uv || pip install uv"
             assert result["worker_init"] == expected
         finally:
             Path(script_path).unlink()
@@ -341,8 +347,10 @@ import groundhog_hpc as hog
                 decorator_config={},
             )
 
-            # Variant worker_init should come before base
-            expected = "module load cuda\nmodule load gcc"
+            # Variant worker_init should come before base, then DEFAULT
+            expected = (
+                "module load cuda\nmodule load gcc\npip show -qq uv || pip install uv"
+            )
             assert result["worker_init"] == expected
         finally:
             Path(script_path).unlink()
@@ -395,8 +403,9 @@ class TestConfigResolverEdgeCases:
             decorator_config={"account": "my-account"},
         )
 
-        # Should gracefully return decorator config only
-        assert result == {"account": "my-account"}
+        # Should have DEFAULT + decorator config (no PEP 723)
+        assert result["account"] == "my-account"
+        assert "worker_init" in result  # From DEFAULT_USER_CONFIG
 
     def test_endpoint_not_in_pep723(self):
         """Test using an endpoint name not defined in PEP 723."""
@@ -423,8 +432,9 @@ import groundhog_hpc as hog
                 decorator_config={"qos": "debug"},
             )
 
-            # Should only have decorator config
-            assert result == {"qos": "debug"}
+            # Should have DEFAULT + decorator config (endpoint not in PEP 723)
+            assert result["qos"] == "debug"
+            assert "worker_init" in result  # From DEFAULT_USER_CONFIG
         finally:
             Path(script_path).unlink()
 
@@ -516,7 +526,8 @@ import groundhog_hpc as hog
                 decorator_config={"account": "my-account"},
             )
 
-            # Should only have decorator config
-            assert result == {"account": "my-account"}
+            # Should have DEFAULT + decorator config (no [tool.hog] section)
+            assert result["account"] == "my-account"
+            assert "worker_init" in result  # From DEFAULT_USER_CONFIG
         finally:
             Path(script_path).unlink()
