@@ -20,10 +20,10 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.configuration.defaults import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
-from groundhog_hpc.settings import DEFAULT_ENDPOINTS, DEFAULT_WALLTIME_SEC
 from groundhog_hpc.templating import template_shell_command
 from groundhog_hpc.utils import merge_endpoint_configs, prefix_output
 

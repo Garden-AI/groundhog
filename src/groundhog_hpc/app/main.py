@@ -16,15 +16,15 @@ from packaging.version import Version
 
 import groundhog_hpc
 from groundhog_hpc.compute import pre_register_shell_function
-from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.function import Function
-from groundhog_hpc.harness import Harness
-from groundhog_hpc.pep723 import (
+from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
     insert_or_update_metadata,
     read_pep723,
     write_pep723,
 )
+from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.function import Function
+from groundhog_hpc.harness import Harness
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()

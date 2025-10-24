@@ -7,9 +7,9 @@ users apply to their Python functions to enable remote execution orchestration.
 import functools
 from typing import Any, Callable
 
+from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
 from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.settings import DEFAULT_USER_CONFIG
 from groundhog_hpc.utils import merge_endpoint_configs
 
 
