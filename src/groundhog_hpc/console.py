@@ -6,12 +6,12 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from rich.console import Console
 from rich.live import Live
-from rich.spinner import SPINNERS, Spinner
+from rich.spinner import SPINNERS
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
 from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.future import GroundhogFuture
+from groundhog_hpc.future import GroundhogFuture, print_remote_output
 
 SPINNERS["groundhog"] = {
     "interval": 400,
@@ -34,16 +34,19 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     console = Console()
     start_time = time.time()
 
-    spinner = (
-        Spinner("groundhog", text="") if _fun_allowed() else Spinner("dots", text="")
-    )
-
-    with Live(spinner, console=console, refresh_per_second=20) as live:
+    # Start with empty text - we'll build the whole line including spinner
+    with Live("", console=console, refresh_per_second=20) as live:
+        has_exception = False
         # initial task_status
         while not future.done():
             elapsed = time.time() - start_time
             task_status = get_task_status(future.task_id)
-            status_text = _get_status_display(future.task_id, task_status, elapsed)
+            spinner_frame = _get_spinner_frame(elapsed)
+            status_text = _get_status_display(
+                future.task_id, task_status, elapsed, spinner_frame, has_exception
+            )
+
+            live.update(status_text)
 
             # Poll with a short timeout
             try:
@@ -54,18 +57,34 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 # expected - continue polling
                 continue
             except RemoteExecutionError:
-                # set status_text to indicate failure
-                status_text = _get_status_display(
-                    future.task_id, task_status, elapsed, has_exception=True
-                )
-                raise
-            finally:
-                spinner.text = status_text
-                live.update(spinner)
+                # set flag to indicate failure
+                has_exception = True
+                # Re-raise after updating display one more time outside loop
+                # (will happen after the loop exits)
+                break
+
+    # Print final status line after exiting the live display
+    elapsed = time.time() - start_time
+    task_status = get_task_status(future.task_id)
+    final_status = _get_status_display(
+        future.task_id,
+        task_status,
+        elapsed,
+        spinner_frame=None,
+        has_exception=has_exception,
+    )
+    console.print(final_status)
+
+    # Now print the remote output after the status line
+    print_remote_output(future)
 
 
 def _get_status_display(
-    task_id: str | None, task_status: dict, elapsed: float, has_exception: bool = False
+    task_id: str | None,
+    task_status: dict,
+    elapsed: float,
+    spinner_frame: str | None,
+    has_exception: bool = False,
 ) -> Text:
     """Generate the current status display by checking task status from API."""
     status_str = task_status.get("status", "unknown")
@@ -78,7 +97,9 @@ def _get_status_display(
     else:
         status, style = status_str, "green"
 
-    return _format_status_line(task_id, status, style, elapsed, exec_time)
+    return _format_status_line(
+        task_id, status, style, elapsed, exec_time, spinner_frame
+    )
 
 
 def _format_status_line(
@@ -87,6 +108,7 @@ def _format_status_line(
     status_style: str,
     elapsed: float,
     exec_time: float | None = None,
+    spinner_frame: str | None = None,
 ) -> Text:
     """Format a status line with task ID, status, and elapsed time.
 
@@ -96,6 +118,7 @@ def _format_status_line(
         status_style: Rich style for the status (e.g., "red", "green", "dim")
         elapsed: Total elapsed time in seconds (wall time)
         exec_time: Actual execution time in seconds (from task_transitions), if available
+        spinner_frame: The current spinner frame to display at the end, or None
 
     Returns:
         Formatted Text object
@@ -113,6 +136,10 @@ def _format_status_line(
         text.append(" (exec: ", style="dim")
         text.append(_format_elapsed(exec_time), style="blue")
         text.append(")", style="dim")
+
+    # Add spinner frame at the end if provided
+    if spinner_frame is not None:
+        text.append(spinner_frame)
 
     return text
 
@@ -152,3 +179,26 @@ def _format_elapsed(seconds: float) -> str:
 
 def _fun_allowed() -> bool:
     return not os.environ.get("GROUNDHOG_NO_FUN_ALLOWED")
+
+
+def _get_spinner_frame(elapsed: float) -> str:
+    """Get the current spinner frame based on elapsed time.
+
+    Args:
+        elapsed: Time elapsed in seconds
+
+    Returns:
+        The current frame from the spinner animation
+    """
+    if not _fun_allowed():
+        # Use dots spinner
+        frames = SPINNERS["dots"]["frames"]
+        interval = SPINNERS["dots"]["interval"] / 1000.0  # convert ms to seconds
+    else:
+        # Use groundhog spinner
+        frames = SPINNERS["groundhog"]["frames"]
+        interval = SPINNERS["groundhog"]["interval"] / 1000.0  # convert ms to seconds
+
+    # Calculate which frame to show based on elapsed time
+    frame_index = int(elapsed / interval) % len(frames)
+    return frames[frame_index]

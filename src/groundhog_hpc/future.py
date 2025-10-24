@@ -108,11 +108,14 @@ def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
 
 
 def _process_shell_result(shell_result: ShellResult) -> Any:
-    """Process a ShellResult by checking for errors, printing user output, and deserializing the result payload.
+    """Process a ShellResult by checking for errors and deserializing the result payload.
 
     The stdout contains two parts separated by "__GROUNDHOG_RESULT__":
-    1. User output (from the .stdout file) - printed to stdout with [remote] prefix
+    1. User output (from the .stdout file) - NOT printed here (deferred to caller)
     2. Serialized results (from the .out file) - deserialized and returned
+
+    Note: This function no longer prints user output. The caller should use
+    print_remote_output() after displaying status information.
     """
 
     if shell_result.returncode != 0:
@@ -126,5 +129,29 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
+    # Deserialize without printing - let the caller handle output display
+    return deserialize_stdout(shell_result.stdout)
+
+
+def print_remote_output(future: "GroundhogFuture") -> None:
+    """Print the remote stdout/stderr with [remote] prefix.
+
+    This should be called after the status display is complete to ensure
+    output appears in the correct order.
+
+    Args:
+        future: The completed GroundhogFuture containing shell_result
+    """
+    shell_result = future.shell_result
+    # The stdout contains user output before the __GROUNDHOG_RESULT__ marker
+    # Extract and print it with the [remote] prefix
+    stdout_parts = shell_result.stdout.split("__GROUNDHOG_RESULT__")
+    user_stdout = stdout_parts[0] if stdout_parts else ""
+
     with prefix_output(prefix="[remote]", prefix_color="green"):
-        return deserialize_stdout(shell_result.stdout)
+        if user_stdout:
+            print(user_stdout, end="")
+        if shell_result.stderr:
+            import sys
+
+            print(shell_result.stderr, end="", file=sys.stderr)
