@@ -10,6 +10,7 @@ from rich.spinner import SPINNERS, Spinner
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
 
 SPINNERS["groundhog"] = {
@@ -59,6 +60,20 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
             except FuturesTimeoutError:
                 # expected - continue polling
                 continue
+            except RemoteExecutionError:
+                # set status_text to indicate failure
+                status_text = _get_status_display(
+                    future.task_id,
+                    task_status,
+                    elapsed,
+                    spinner,
+                    time.time(),
+                    has_exception=True,
+                    function_name=future.function_name,
+                )
+                spinner.text = status_text
+                live.update(spinner)
+                raise
 
 
 def _get_status_display(
