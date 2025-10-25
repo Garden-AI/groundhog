@@ -131,7 +131,7 @@ def _get_status_display(
     display = Text()
     display.append("| ", style="dim")
     if function_name:
-        display.append(function_name, style="blue")
+        display.append(function_name, style="magenta")
         display.append(" | ", style="dim")
     display.append(task_id or "task pending", style="cyan" if task_id else "dim")
     display.append(" | ", style="dim")
