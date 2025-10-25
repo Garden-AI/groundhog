@@ -532,7 +532,7 @@ def add(a, b):
 
         with patch("groundhog_hpc.function.subprocess.run", return_value=mock_result):
             with patch(
-                "groundhog_hpc.function.deserialize_stdout", return_value=5
+                "groundhog_hpc.function.deserialize_stdout", return_value=(None, 5)
             ) as mock_deserialize:
                 result = func.local(2, 3)
 
@@ -557,7 +557,8 @@ def add(a, b):
                 "groundhog_hpc.function.subprocess.run", return_value=mock_result
             ) as mock_run:
                 with patch(
-                    "groundhog_hpc.function.deserialize_stdout", return_value="success"
+                    "groundhog_hpc.function.deserialize_stdout",
+                    return_value=(None, "success"),
                 ):
                     func.local(1, 2, key="value")
 
@@ -585,7 +586,8 @@ def add(a, b):
             "groundhog_hpc.function.subprocess.run", return_value=mock_result
         ) as mock_run:
             with patch(
-                "groundhog_hpc.function.deserialize_stdout", return_value="result"
+                "groundhog_hpc.function.deserialize_stdout",
+                return_value=(None, "result"),
             ):
                 func.local()
 
@@ -634,7 +636,7 @@ def add(a, b):
                 ):
                     with patch(
                         "groundhog_hpc.function.deserialize_stdout",
-                        return_value="result",
+                        return_value=(None, "result"),
                     ):
                         func.local()
 
@@ -662,7 +664,7 @@ def add(a, b):
                 ) as mock_run:
                     with patch(
                         "groundhog_hpc.function.deserialize_stdout",
-                        return_value="result",
+                        return_value=(None, "result"),
                     ):
                         func.local()
 
@@ -699,7 +701,7 @@ def add(a, b):
                 "groundhog_hpc.function.subprocess.run", return_value=mock_result
             ):
                 with patch(
-                    "groundhog_hpc.function.deserialize_stdout", return_value=42
+                    "groundhog_hpc.function.deserialize_stdout", return_value=(None, 42)
                 ):
                     result = func.local()
 
@@ -720,7 +722,8 @@ def add(a, b):
             "groundhog_hpc.function.subprocess.run", return_value=mock_result
         ) as mock_run:
             with patch(
-                "groundhog_hpc.function.deserialize_stdout", return_value="result"
+                "groundhog_hpc.function.deserialize_stdout",
+                return_value=(None, "result"),
             ):
                 func.local()
 
@@ -824,7 +827,9 @@ def cross_module_function(x):
         with patch(
             "groundhog_hpc.function.subprocess.run", return_value=mock_result
         ) as mock_run:
-            with patch("groundhog_hpc.function.deserialize_stdout", return_value=84):
+            with patch(
+                "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
+            ):
                 result = cross_module_function.local(42)
 
         # Should have used subprocess (different module)
