@@ -187,6 +187,7 @@ class Function:
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
+        future.function_name = self._local_function.__qualname__
         return future
 
     def remote(
@@ -317,9 +318,12 @@ class Function:
             )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
+            user_stdout, deserialized_result = deserialize_stdout(result.stdout)
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
-            return deserialize_stdout(result.stdout)
+            if user_stdout:
+                print(user_stdout)
+            return deserialized_result
 
     @property
     def script_path(self) -> str:

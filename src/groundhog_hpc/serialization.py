@@ -56,14 +56,14 @@ def deserialize(payload: str) -> Any:
         return json.loads(payload)
 
 
-def deserialize_stdout(stdout: str) -> Any:
+def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
     """
     Helper: deserialize groundhog-generated stdout that may contain both
     printed user output and a serialized result.
 
     The stdout contains two parts separated by "__GROUNDHOG_RESULT__":
-    1. User output (from the .stdout file) - printed to stdout
-    2. Serialized results (from the .out file) - deserialized and returned
+    1. User output (from the .stdout file) - returned as first element of tuple
+    2. Serialized results (from the .out file) - deserialized and returned as second element
 
     If no delimiter is found, the entire stdout is treated as serialized result.
 
@@ -71,7 +71,7 @@ def deserialize_stdout(stdout: str) -> Any:
         stdout: The stdout string to process
 
     Returns:
-        The deserialized result
+        A tuple of (user_output, deserialized_result). user_output is None if no delimiter found.
     """
     delimiter = "__GROUNDHOG_RESULT__"
     if delimiter in stdout:
@@ -79,10 +79,6 @@ def deserialize_stdout(stdout: str) -> Any:
         user_output = parts[0].rstrip("\n")  # Remove trailing newline from cat output
         serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
 
-        if user_output:
-            print(user_output)
-
-        return deserialize(serialized_result)
+        return user_output, deserialize(serialized_result)
     else:
-        # Fallback for backward compatibility (no delimiter found)
-        return deserialize(stdout)
+        return None, deserialize(stdout)

@@ -169,8 +169,7 @@ def run(
         result = __main__.__dict__[harness]()
         typer.echo(result)
     except RemoteExecutionError as e:
-        typer.echo(f"Remote execution failed (exit code {e.returncode}):", err=True)
-        typer.echo(e.stderr, err=True)
+        typer.echo(f"Remote execution failed (exit code {e.returncode})", err=True)
         raise typer.Exit(1)
     except Exception as e:
         if not isinstance(e, RemoteExecutionError):

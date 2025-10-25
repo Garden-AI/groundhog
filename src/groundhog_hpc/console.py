@@ -1,6 +1,7 @@
 """Console display utilities for showing task status during execution."""
 
 import os
+import sys
 import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
@@ -10,16 +11,19 @@ from rich.spinner import SPINNERS, Spinner
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
+from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
+from groundhog_hpc.utils import prefix_output
 
 SPINNERS["groundhog"] = {
     "interval": 400,
     "frames": [
-        "☀️🦫🕳️",
+        "☀️🦫️",
+        "☀️🦫️",
         "☁️🦫",
         "☁️🦫",
         "☁️🦫",
-        "☀️🦫🕳️",
+        "☀️🦫️",
     ],
 }
 
@@ -31,9 +35,10 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
         future: The GroundhogFuture to monitor
         poll_interval: How often to poll for status updates (seconds)
     """
+
     console = Console()
     start_time = time.time()
-    spinner = Spinner("groundhog") if _fun_allowed() else None
+    spinner = Spinner("groundhog") if _fun_allowed() else Spinner("dots")
 
     with Live("", console=console, refresh_per_second=20) as live:
         # Poll with a short timeout until done
@@ -42,7 +47,12 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
             task_status = get_task_status(future.task_id)
 
             display = _get_status_display(
-                future.task_id, task_status, elapsed, spinner, time.time()
+                future.task_id,
+                task_status,
+                elapsed,
+                spinner,
+                time.time(),
+                function_name=future.function_name,
             )
 
             live.update(display)
@@ -53,15 +63,45 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
             except FuturesTimeoutError:
                 # expected - continue polling
                 continue
+            except RemoteExecutionError:
+                # set status_text to indicate failure
+                status_text = _get_status_display(
+                    future.task_id,
+                    task_status,
+                    elapsed,
+                    spinner,
+                    time.time(),
+                    has_exception=True,
+                    function_name=future.function_name,
+                )
+                live.update(status_text)
+                live.stop()
+
+                # print stdout and stderr after display has stopped but before re-raising
+                with prefix_output(prefix="[remote]", prefix_color="green"):
+                    if stderr := future.shell_result.stderr:
+                        print(stderr, file=sys.stderr)
+                    if stdout := future.user_stdout:
+                        print(stdout, file=sys.stdout)
+
+                raise
+
+    # print for success case
+    with prefix_output(prefix="[remote]", prefix_color="green"):
+        if stderr := future.shell_result.stderr:
+            print(stderr, file=sys.stderr)
+        if stdout := future.user_stdout:
+            print(stdout, file=sys.stdout)
 
 
 def _get_status_display(
     task_id: str | None,
     task_status: dict,
     elapsed: float,
-    spinner: Spinner | None,
+    spinner: Spinner,
     current_time: float,
     has_exception: bool = False,
+    function_name: str | None = None,
 ) -> Text:
     """Generate the current status display by checking task status from API.
 
@@ -72,6 +112,7 @@ def _get_status_display(
         spinner: The spinner instance to render
         current_time: Current time for spinner animation
         has_exception: Whether the task has failed with an exception
+        function_name: Name of the function being executed
 
     Returns:
         Rich Text object with formatted status display
@@ -81,21 +122,20 @@ def _get_status_display(
 
     if has_exception:
         status = "failed"
-    elif "pending" in status_str:
-        status = status_str
     else:
         status = status_str
 
     elapsed_str = _format_elapsed(elapsed)
     exec_time_str = _format_elapsed(exec_time) if exec_time is not None else None
 
-    # Build display
     display = Text()
-    display.append(" | ", style="dim")
+    display.append("| ", style="dim")
+    if function_name:
+        display.append(function_name, style="magenta")
+        display.append(" | ", style="dim")
     display.append(task_id or "task pending", style="cyan" if task_id else "dim")
     display.append(" | ", style="dim")
 
-    # Determine status style
     if status == "failed":
         status_style = "red"
     elif "pending" in status:
@@ -112,10 +152,8 @@ def _get_status_display(
         display.append(exec_time_str, style="blue")
         display.append(")", style="dim")
 
-    # Add spinner at the end
-    if spinner is not None:
-        display.append(" | ")
-        display.append(spinner.render(current_time))
+    display.append(" | ")
+    display.append(spinner.render(current_time))
 
     return display
 

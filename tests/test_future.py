@@ -200,8 +200,9 @@ class TestProcessShellResult:
         mock_result.returncode = 0
         mock_result.stdout = '{"key": "value"}'
 
-        result = _process_shell_result(mock_result)
+        user_output, result = _process_shell_result(mock_result)
         assert result == {"key": "value"}
+        assert user_output is None
 
     def test_raises_on_nonzero_returncode(self):
         """Test that non-zero return codes raise RemoteExecutionError."""
@@ -243,11 +244,12 @@ class TestProcessShellResult:
         mock_result.returncode = 0
         mock_result.stdout = f"__PICKLE__:{pickled}"
 
-        result = _process_shell_result(mock_result)
+        user_output, result = _process_shell_result(mock_result)
         assert result == test_object
+        assert user_output is None
 
     def test_splits_user_output_and_result_with_delimiter(self, capsys):
-        """Test that user output is printed and result is deserialized when delimiter is present."""
+        """Test that user output is separated from result when delimiter is present."""
         mock_result = MagicMock()
         mock_result.returncode = 0
         # Simulate stdout with user output, delimiter, and serialized result
@@ -255,16 +257,13 @@ class TestProcessShellResult:
             'User printed this\nAnd this\n__GROUNDHOG_RESULT__\n{"result": "success"}'
         )
 
-        result = _process_shell_result(mock_result)
+        user_output, result = _process_shell_result(mock_result)
 
         # Check that the result is deserialized correctly
         assert result == {"result": "success"}
 
-        # Check that user output was printed
-        captured = capsys.readouterr()
-        assert "User printed this" in captured.out
-        assert "And this" in captured.out
-        assert "__GROUNDHOG_RESULT__" not in captured.out
+        # Check that user output was extracted
+        assert user_output == "User printed this\nAnd this"
 
     def test_handles_empty_user_output_with_delimiter(self):
         """Test that empty user output doesn't cause issues."""
@@ -273,8 +272,9 @@ class TestProcessShellResult:
         # No user output before delimiter
         mock_result.stdout = '__GROUNDHOG_RESULT__\n{"result": "success"}'
 
-        result = _process_shell_result(mock_result)
+        user_output, result = _process_shell_result(mock_result)
         assert result == {"result": "success"}
+        assert user_output == ""
 
 
 class TestTruncatePayloadInCmd:
