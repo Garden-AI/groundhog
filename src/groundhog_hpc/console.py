@@ -1,6 +1,7 @@
 """Console display utilities for showing task status during execution."""
 
 import os
+import sys
 import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
@@ -12,7 +13,7 @@ from rich.text import Text
 from groundhog_hpc.compute import get_task_status
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
-from groundhog_hpc.utils import _print_subprocess_output
+from groundhog_hpc.utils import prefix_output
 
 SPINNERS["groundhog"] = {
     "interval": 400,
@@ -76,36 +77,21 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 live.update(status_text)
                 live.stop()
 
-                # print stdout and stderr after Live display has stopped
-                if future.shell_result.stderr:
-                    _print_subprocess_output(
-                        stderr=future.shell_result.stderr.rstrip("\n"),
-                        prefix="[remote]",
-                        prefix_color="green",
-                    )
-
-                if future.user_stdout:
-                    _print_subprocess_output(
-                        stdout=future.user_stdout,
-                        prefix="[remote]",
-                        prefix_color="green",
-                    )
+                # print stdout and stderr after display has stopped but before re-raising
+                with prefix_output(prefix="[remote]", prefix_color="green"):
+                    if stderr := future.shell_result.stderr:
+                        print(stderr, file=sys.stderr)
+                    if stdout := future.user_stdout:
+                        print(stdout, file=sys.stdout)
 
                 raise
 
-    # After Live display has exited, print stdout and stderr for success case
-    if future.shell_result.stderr:
-        _print_subprocess_output(
-            stderr=future.shell_result.stderr.rstrip("\n"),
-            prefix="[remote]",
-            prefix_color="green",
-        )
-    if future.user_stdout:
-        _print_subprocess_output(
-            stdout=future.user_stdout,
-            prefix="[remote]",
-            prefix_color="green",
-        )
+    # print for success case
+    with prefix_output(prefix="[remote]", prefix_color="green"):
+        if stderr := future.shell_result.stderr:
+            print(stderr, file=sys.stderr)
+        if stdout := future.user_stdout:
+            print(stdout, file=sys.stdout)
 
 
 def _get_status_display(
