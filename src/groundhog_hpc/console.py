@@ -35,7 +35,7 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     """
     console = Console()
     start_time = time.time()
-    spinner = Spinner("groundhog") if _fun_allowed() else None
+    spinner = Spinner("groundhog") if _fun_allowed() else Spinner("dots")
 
     with Live("", console=console, refresh_per_second=20) as live:
         # Poll with a short timeout until done
@@ -80,7 +80,7 @@ def _get_status_display(
     task_id: str | None,
     task_status: dict,
     elapsed: float,
-    spinner: Spinner | None,
+    spinner: Spinner,
     current_time: float,
     has_exception: bool = False,
     function_name: str | None = None,
@@ -104,15 +104,12 @@ def _get_status_display(
 
     if has_exception:
         status = "failed"
-    elif "pending" in status_str:
-        status = status_str
     else:
         status = status_str
 
     elapsed_str = _format_elapsed(elapsed)
     exec_time_str = _format_elapsed(exec_time) if exec_time is not None else None
 
-    # Build display
     display = Text()
     display.append(" | ", style="dim")
     if function_name:
@@ -121,7 +118,6 @@ def _get_status_display(
     display.append(task_id or "task pending", style="cyan" if task_id else "dim")
     display.append(" | ", style="dim")
 
-    # Determine status style
     if status == "failed":
         status_style = "red"
     elif "pending" in status:
@@ -138,10 +134,8 @@ def _get_status_display(
         display.append(exec_time_str, style="blue")
         display.append(")", style="dim")
 
-    # Add spinner at the end
-    if spinner is not None:
-        display.append(" | ")
-        display.append(spinner.render(current_time))
+    display.append(" | ")
+    display.append(spinner.render(current_time))
 
     return display
 
