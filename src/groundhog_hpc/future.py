@@ -33,6 +33,7 @@ class GroundhogFuture(Future):
         task_id: Globus Compute task ID (set when the future completes)
         endpoint: UUID of the endpoint where the task was submitted
         user_endpoint_config: Configuration dict used for the endpoint
+        function_name: Name of the function being executed
     """
 
     def __init__(self, original_future: Future) -> None:
@@ -49,6 +50,7 @@ class GroundhogFuture(Future):
         # set after created in Function.submit, useful for invocation logs etc
         self.endpoint: str | None = None
         self.user_endpoint_config: dict[str, Any] | None = None
+        self.function_name: str | None = None
 
         def callback(fut: Future) -> None:
             try:

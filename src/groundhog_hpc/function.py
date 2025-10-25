@@ -187,6 +187,7 @@ class Function:
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
+        future.function_name = self._local_function.__qualname__
         return future
 
     def remote(
