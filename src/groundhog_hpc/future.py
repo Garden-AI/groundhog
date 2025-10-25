@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize_stdout
-from groundhog_hpc.utils import prefix_output
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -46,6 +45,7 @@ class GroundhogFuture(Future):
         self._original_future: Future = original_future
         self._shell_result: ShellResult | None = None
         self._task_id: str | None = None
+        self._user_stdout: str | None = None
 
         # set after created in Function.submit, useful for invocation logs etc
         self.endpoint: str | None = None
@@ -59,7 +59,8 @@ class GroundhogFuture(Future):
                 self._shell_result = shell_result
 
                 # Process and deserialize
-                deserialized_result = _process_shell_result(shell_result)
+                user_stdout, deserialized_result = _process_shell_result(shell_result)
+                self._user_stdout = user_stdout
                 self.set_result(deserialized_result)
             except Exception as e:
                 self.set_exception(e)
@@ -77,6 +78,18 @@ class GroundhogFuture(Future):
         if self._shell_result is None:
             self._shell_result = self._original_future.result()
         return self._shell_result
+
+    @property
+    def user_stdout(self) -> str | None:
+        """Access the parsed user stdout (separate from serialized result).
+
+        This is the stdout output from the user's code, not including the
+        serialized result payload. Returns None if no user output was present.
+        """
+        if self._user_stdout is None and not self.done():
+            # Force completion to populate _user_stdout
+            self.result()
+        return self._user_stdout
 
     @property
     def task_id(self) -> str | None:
@@ -109,12 +122,19 @@ def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
     return re.sub(pattern, replace_payload, cmd, flags=re.DOTALL)
 
 
-def _process_shell_result(shell_result: ShellResult) -> Any:
-    """Process a ShellResult by checking for errors, printing user output, and deserializing the result payload.
+def _process_shell_result(shell_result: ShellResult) -> tuple[str | None, Any]:
+    """Process a ShellResult by checking for errors and deserializing the result payload.
 
     The stdout contains two parts separated by "__GROUNDHOG_RESULT__":
-    1. User output (from the .stdout file) - printed to stdout with [remote] prefix
-    2. Serialized results (from the .out file) - deserialized and returned
+    1. User output (from the .stdout file) - returned as first element of tuple
+    2. Serialized results (from the .out file) - deserialized and returned as second element
+
+    Note: Neither stdout nor stderr are printed here - it's the caller's responsibility
+    to print them after retrieving the result. This allows callers to control when/where
+    output appears (e.g., after stopping a Live status display).
+
+    Returns:
+        A tuple of (user_stdout, deserialized_result)
     """
 
     if shell_result.returncode != 0:
@@ -128,5 +148,4 @@ def _process_shell_result(shell_result: ShellResult) -> Any:
             returncode=shell_result.returncode,
         )
 
-    with prefix_output(prefix="[remote]", prefix_color="green"):
-        return deserialize_stdout(shell_result.stdout)
+    return deserialize_stdout(shell_result.stdout)

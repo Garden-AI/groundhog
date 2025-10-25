@@ -116,20 +116,20 @@ def _print_subprocess_output(
 
     console = Console()
 
-    if stdout:
-        for line in stdout.splitlines():
-            # Build a Text object with colored prefix and plain line content
-            text = Text()
-            text.append(f"{prefix} ", style=prefix_color)
-            text.append(line)
-            console.print(text)
-
     if stderr:
         for line in stderr.splitlines():
             # Build a Text object with colored prefix and red line content
             text = Text()
             text.append(f"{prefix} ", style=prefix_color)
             text.append(line, style="red")
+            console.print(text)
+
+    if stdout:
+        for line in stdout.splitlines():
+            # Build a Text object with colored prefix and plain line content
+            text = Text()
+            text.append(f"{prefix} ", style=prefix_color)
+            text.append(line)
             console.print(text)
 
 

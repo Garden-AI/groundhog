@@ -12,6 +12,7 @@ from rich.text import Text
 from groundhog_hpc.compute import get_task_status
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
+from groundhog_hpc.utils import _print_subprocess_output
 
 SPINNERS["groundhog"] = {
     "interval": 400,
@@ -33,6 +34,7 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
         future: The GroundhogFuture to monitor
         poll_interval: How often to poll for status updates (seconds)
     """
+
     console = Console()
     start_time = time.time()
     spinner = Spinner("groundhog") if _fun_allowed() else Spinner("dots")
@@ -71,9 +73,38 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                     has_exception=True,
                     function_name=future.function_name,
                 )
-                spinner.text = status_text
-                live.update(spinner)
+                live.update(status_text)
+                live.stop()
+
+                # Print stdout and stderr after Live display has stopped
+                if future.user_stdout:
+                    _print_subprocess_output(
+                        stdout=future.user_stdout,
+                        prefix="[remote]",
+                        prefix_color="green",
+                    )
+                if future.shell_result.stderr:
+                    _print_subprocess_output(
+                        stderr=future.shell_result.stderr.rstrip("\n"),
+                        prefix="[remote]",
+                        prefix_color="green",
+                    )
+
                 raise
+
+    # After Live display has exited, print stdout and stderr for success case
+    if future.user_stdout:
+        _print_subprocess_output(
+            stdout=future.user_stdout,
+            prefix="[remote]",
+            prefix_color="green",
+        )
+    if future.shell_result.stderr:
+        _print_subprocess_output(
+            stderr=future.shell_result.stderr.rstrip("\n"),
+            prefix="[remote]",
+            prefix_color="green",
+        )
 
 
 def _get_status_display(
@@ -111,7 +142,7 @@ def _get_status_display(
     exec_time_str = _format_elapsed(exec_time) if exec_time is not None else None
 
     display = Text()
-    display.append(" | ", style="dim")
+    display.append("| ", style="dim")
     if function_name:
         display.append(function_name, style="blue")
         display.append(" | ", style="dim")

@@ -318,9 +318,12 @@ class Function:
             )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
+            user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+            if user_stdout:
+                print(user_stdout)
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
-            return deserialize_stdout(result.stdout)
+            return deserialized_result
 
     @property
     def script_path(self) -> str:
