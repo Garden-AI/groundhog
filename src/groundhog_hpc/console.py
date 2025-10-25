@@ -76,13 +76,7 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 live.update(status_text)
                 live.stop()
 
-                # Print stdout and stderr after Live display has stopped
-                if future.user_stdout:
-                    _print_subprocess_output(
-                        stdout=future.user_stdout,
-                        prefix="[remote]",
-                        prefix_color="green",
-                    )
+                # print stdout and stderr after Live display has stopped
                 if future.shell_result.stderr:
                     _print_subprocess_output(
                         stderr=future.shell_result.stderr.rstrip("\n"),
@@ -90,18 +84,25 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                         prefix_color="green",
                     )
 
+                if future.user_stdout:
+                    _print_subprocess_output(
+                        stdout=future.user_stdout,
+                        prefix="[remote]",
+                        prefix_color="green",
+                    )
+
                 raise
 
     # After Live display has exited, print stdout and stderr for success case
-    if future.user_stdout:
-        _print_subprocess_output(
-            stdout=future.user_stdout,
-            prefix="[remote]",
-            prefix_color="green",
-        )
     if future.shell_result.stderr:
         _print_subprocess_output(
             stderr=future.shell_result.stderr.rstrip("\n"),
+            prefix="[remote]",
+            prefix_color="green",
+        )
+    if future.user_stdout:
+        _print_subprocess_output(
+            stdout=future.user_stdout,
             prefix="[remote]",
             prefix_color="green",
         )

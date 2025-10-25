@@ -87,7 +87,7 @@ class GroundhogFuture(Future):
         serialized result payload. Returns None if no user output was present.
         """
         if self._user_stdout is None and not self.done():
-            # Force completion to populate _user_stdout
+            # block to populate _user_stdout
             self.result()
         return self._user_stdout
 
