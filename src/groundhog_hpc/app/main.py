@@ -40,7 +40,13 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
     Returns:
         Updated script contents (or original if no update made)
     """
-    metadata_dict = read_pep723(contents)
+    metadata = read_pep723(contents)
+    if metadata is not None:
+        metadata_dict = metadata.model_dump(
+            mode="python", exclude_none=True, exclude_unset=True
+        )
+    else:
+        metadata_dict = {}
 
     # Check if metadata is missing or incomplete
     needs_update = False

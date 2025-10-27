@@ -99,7 +99,7 @@ class EndpointVariant(BaseModel, extra="allow"):
         return values
 
 
-class UvMetadata(BaseModel, extra="allow"):
+class UvMetadata(BaseModel, extra="allow", serialize_by_alias=True):
     exclude_newer: str | None = Field(
         default_factory=_default_exclude_newer, alias="exclude-newer"
     )
@@ -119,7 +119,7 @@ class ToolMetadata(BaseModel, extra="allow"):
     uv: UvMetadata | None = Field(default_factory=UvMetadata)
 
 
-class Pep723Metadata(BaseModel, extra="allow"):
+class Pep723Metadata(BaseModel, extra="allow", serialize_by_alias=True):
     requires_python: str = Field(
         alias="requires-python", default_factory=_default_requires_python
     )
