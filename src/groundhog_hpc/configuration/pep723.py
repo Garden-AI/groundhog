@@ -137,6 +137,20 @@ class EndpointVariant(BaseModel, extra="allow"):
         return values
 
 
+class ToolMetadata(BaseModel, extra="allow"):
+    """Metadata for [tool] section in PEP 723.
+
+    Contains tool-specific configuration including:
+    - hog: Groundhog endpoint configurations (dict of endpoint name -> EndpointConfig)
+    - uv: uv package manager configuration (arbitrary dict)
+
+    Other tools can be stored via extra="allow".
+    """
+
+    hog: dict[str, EndpointConfig] | None = None
+    uv: dict | None = None
+
+
 class Pep723Metadata(BaseModel, extra="allow"):
     requires_python: str = Field(
         alias="requires-python", default_factory=_default_requires_python

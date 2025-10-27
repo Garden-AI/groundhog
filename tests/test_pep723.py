@@ -484,3 +484,63 @@ class TestEndpointVariant:
         # worker_init should be a typed field, not in model_extra
         assert variant.worker_init == "module load cuda"
         assert "worker_init" not in variant.model_extra
+
+
+class TestToolMetadata:
+    """Test ToolMetadata model."""
+
+    def test_create_with_hog_config(self):
+        """Test creating ToolMetadata with hog endpoint configs."""
+        from groundhog_hpc.configuration.pep723 import EndpointConfig, ToolMetadata
+
+        tool = ToolMetadata(
+            hog={
+                "anvil": EndpointConfig(
+                    endpoint="uuid-here",
+                    account="my-account",
+                ),
+            }
+        )
+
+        assert "anvil" in tool.hog
+        assert tool.hog["anvil"].endpoint == "uuid-here"
+        assert tool.hog["anvil"].account == "my-account"
+
+    def test_create_with_uv_config(self):
+        """Test creating ToolMetadata with uv config."""
+        from groundhog_hpc.configuration.pep723 import ToolMetadata
+
+        tool = ToolMetadata(uv={"exclude-newer": "2024-01-01T00:00:00Z"})
+
+        assert tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
+
+    def test_create_with_both_hog_and_uv(self):
+        """Test creating ToolMetadata with both hog and uv."""
+        from groundhog_hpc.configuration.pep723 import EndpointConfig, ToolMetadata
+
+        tool = ToolMetadata(
+            hog={"anvil": EndpointConfig(endpoint="uuid")},
+            uv={"exclude-newer": "2024-01-01T00:00:00Z"},
+        )
+
+        assert "anvil" in tool.hog
+        assert tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
+
+    def test_parse_from_dict_validates_endpoint_configs(self):
+        """Test that parsing from dict validates endpoint configs."""
+        from pydantic import ValidationError
+
+        from groundhog_hpc.configuration.pep723 import ToolMetadata
+
+        # Invalid walltime should raise validation error
+        with pytest.raises(ValidationError) as exc_info:
+            ToolMetadata(
+                hog={
+                    "anvil": {
+                        "endpoint": "uuid",
+                        "walltime": -10,  # Invalid
+                    }
+                }
+            )
+
+        assert "walltime" in str(exc_info.value).lower()
