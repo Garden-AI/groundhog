@@ -27,16 +27,16 @@ from groundhog_hpc.configuration.pep723 import read_pep723
 
 
 def _merge_endpoint_configs(
-    base_config: dict, override_config: dict | None = None
+    base_endpoint_config: dict, override_config: dict | None = None
 ) -> dict:
     """Merge endpoint configurations, ensuring worker_init commands are combined.
 
     The worker_init field is special-cased: if both configs provide it, the
     override's worker_init is executed first, followed by the base's worker_init.
-    All other fields from override_config simply replace fields from base_config.
+    All other fields from override_config simply replace fields from base_endpoint_config.
 
     Args:
-        base_config: Base configuration dict (e.g., from decorator defaults)
+        base_endpoint_config: Base configuration dict (e.g., from decorator defaults)
         override_config: Override configuration dict (e.g., from .remote() call)
 
     Returns:
@@ -49,12 +49,12 @@ def _merge_endpoint_configs(
         {'worker_init': 'module load gcc\\npip install uv', 'cores': 4}
     """
     if not override_config:
-        return base_config.copy()
+        return base_endpoint_config.copy()
 
-    merged = base_config.copy()
+    merged = base_endpoint_config.copy()
 
     # Special handling for worker_init: append base to override
-    if "worker_init" in override_config and "worker_init" in base_config:
+    if "worker_init" in override_config and "worker_init" in base_endpoint_config:
         override_config = override_config.copy()
         override_config["worker_init"] += f"\n{merged.pop('worker_init')}"
 
@@ -138,9 +138,9 @@ class ConfigResolver:
         variant_path = parts[1:] if len(parts) > 1 else []
 
         # Layer 2: Load and merge base endpoint config
-        base_config = self._get_pep723_base_config(base_name)
-        if base_config:
-            config = _merge_endpoint_configs(config, base_config)
+        base_endpoint_config = self._get_pep723_base_config(base_name)
+        if base_endpoint_config:
+            config = _merge_endpoint_configs(config, base_endpoint_config)
 
         # Layer 3: Walk variant path hierarchically
         if variant_path:
@@ -152,13 +152,13 @@ class ConfigResolver:
                 )
 
             # Get base endpoint config from tool.hog
-            tool_hog = metadata.get("tool", {}).get("hog", {})
-            if base_name not in tool_hog:
+            hog_tool_config = metadata.get("tool", {}).get("hog", {})
+            if base_name not in hog_tool_config:
                 raise ValueError(
                     f"Base endpoint '{base_name}' not found in [tool.hog] configuration"
                 )
 
-            current_dict = tool_hog[base_name]
+            current_dict = hog_tool_config[base_name]
 
             # Walk each variant in the path
             for i, variant_name in enumerate(variant_path):
@@ -219,22 +219,23 @@ class ConfigResolver:
         base_endpoint = endpoint_name.split(".")[0]
 
         # Access tool.hog section
-        tool_hog = metadata.get("tool", {}).get("hog", {})
-        if base_endpoint not in tool_hog:
+        hog_tool_config = metadata.get("tool", {}).get("hog", {})
+        if base_endpoint not in hog_tool_config:
             return None
 
         # Get the base config dict
-        base_config_dict = tool_hog[base_endpoint]
+        base_endpoint_config = hog_tool_config[base_endpoint]
 
+        # TODO is this even necessary? Does globus compute ignore extra config fields?
         # Filter out nested variant dicts - only return top-level config fields
         # Variant fields are nested dicts that will be handled by resolve()
         result = {}
-        for key, value in base_config_dict.items():
+        for key, value in base_endpoint_config.items():
             # Don't include nested dicts (variants) in base config
             if not isinstance(value, dict):
                 result[key] = value
 
-        return result if result else None
+        return result or None
 
     def _load_pep723_metadata(self) -> dict | None:
         """Load and cache PEP 723 metadata from script.

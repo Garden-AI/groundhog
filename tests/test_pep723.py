@@ -6,6 +6,7 @@ import pytest
 
 from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
+    ToolMetadata,
     insert_or_update_metadata,
     read_pep723,
     write_pep723,
@@ -42,7 +43,7 @@ import numpy as np
         metadata = read_pep723(script)
         assert metadata is not None
         assert metadata.requires_python == ">=3.11"
-        assert metadata.tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
+        assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_read_no_metadata_returns_none(self):
         """Test that scripts without metadata return None."""
@@ -91,7 +92,7 @@ class TestPep723Metadata:
         metadata = Pep723Metadata()
         assert metadata.requires_python is not None
         assert metadata.dependencies == []
-        assert metadata.exclude_newer is not None
+        assert metadata.tool.uv.exclude_newer is not None
 
     def test_create_with_explicit_values(self):
         """Test creating metadata with explicit values."""
@@ -103,7 +104,7 @@ class TestPep723Metadata:
         metadata = Pep723Metadata.model_validate(data)
         assert metadata.requires_python == ">=3.11"
         assert metadata.dependencies == ["numpy", "pandas"]
-        assert metadata.exclude_newer == "2024-01-01T00:00:00Z"
+        assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_create_from_dict_with_aliases(self):
         """Test creating metadata from dict using aliases."""
@@ -115,7 +116,7 @@ class TestPep723Metadata:
         metadata = Pep723Metadata(**data)
         assert metadata.requires_python == ">=3.10"
         assert metadata.dependencies == ["numpy"]
-        assert metadata.exclude_newer == "2024-01-01T00:00:00Z"
+        assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_extra_fields_allowed(self):
         """Test that extra fields are preserved (extra='allow')."""
@@ -255,13 +256,13 @@ class TestDumpsPep723:
         """Test dumping metadata with tool.uv section."""
         metadata = Pep723Metadata(
             dependencies=[],
-            exclude_newer="2024-01-01T00:00:00Z",
+            tool={"uv": {"exclude-newer": "2024-01-01T00:00:00Z"}},
         )
         metadata.requires_python = ">=3.11"
         result = write_pep723(metadata)
 
         assert "# [tool.uv]" in result
-        assert '# exclude_newer = "2024-01-01T00:00:00Z"' in result
+        assert '# exclude-newer = "2024-01-01T00:00:00Z"' in result
 
     def test_dumps_preserves_extra_fields(self):
         """Test that extra fields are preserved when dumping."""
@@ -569,7 +570,7 @@ class TestToolMetadata:
 
     def test_create_with_hog_config(self):
         """Test creating ToolMetadata with hog endpoint configs."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig, ToolMetadata
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         tool = ToolMetadata(
             hog={
@@ -586,15 +587,14 @@ class TestToolMetadata:
 
     def test_create_with_uv_config(self):
         """Test creating ToolMetadata with uv config."""
-        from groundhog_hpc.configuration.pep723 import ToolMetadata
 
         tool = ToolMetadata(uv={"exclude-newer": "2024-01-01T00:00:00Z"})
 
-        assert tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
+        assert tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_create_with_both_hog_and_uv(self):
         """Test creating ToolMetadata with both hog and uv."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig, ToolMetadata
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         tool = ToolMetadata(
             hog={"anvil": EndpointConfig(endpoint="uuid")},
@@ -602,13 +602,11 @@ class TestToolMetadata:
         )
 
         assert "anvil" in tool.hog
-        assert tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
+        assert tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_parse_from_dict_validates_endpoint_configs(self):
         """Test that parsing from dict validates endpoint configs."""
         from pydantic import ValidationError
-
-        from groundhog_hpc.configuration.pep723 import ToolMetadata
 
         # Invalid walltime should raise validation error
         with pytest.raises(ValidationError) as exc_info:

@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 import tomli_w
-from pydantic import AliasPath, BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -20,46 +20,6 @@ else:
 INLINE_METADATA_REGEX = (
     r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 )
-
-
-def read_pep723(script: str) -> "Pep723Metadata | None":
-    """Extract and validate PEP 723 script metadata from a Python script.
-
-    Parses inline metadata blocks like:
-        # /// script
-        # requires-python = ">=3.11"
-        # dependencies = ["numpy"]
-        # ///
-
-    Args:
-        script: The full text content of a Python script
-
-    Returns:
-        A validated Pep723Metadata instance, or None if no metadata block found.
-
-    Raises:
-        ValueError: If multiple 'script' metadata blocks are found
-        ValidationError: If metadata contains invalid configuration (e.g., negative walltime)
-    """
-    name = "script"
-    matches = list(
-        filter(
-            lambda m: m.group("type") == name,
-            re.finditer(INLINE_METADATA_REGEX, script),
-        )
-    )
-    if len(matches) > 1:
-        raise ValueError(f"Multiple {name} blocks found")
-    elif len(matches) == 1:
-        content = "".join(
-            line[2:] if line.startswith("# ") else line[1:]
-            for line in matches[0].group("content").splitlines(keepends=True)
-        )
-        raw_dict = tomllib.loads(content)
-        # Validate through pydantic model
-        return Pep723Metadata(**raw_dict)
-    else:
-        return None
 
 
 def _default_requires_python() -> str:
@@ -139,6 +99,12 @@ class EndpointVariant(BaseModel, extra="allow"):
         return values
 
 
+class UvMetadata(BaseModel, extra="allow"):
+    exclude_newer: str | None = Field(
+        default_factory=_default_exclude_newer, alias="exclude-newer"
+    )
+
+
 class ToolMetadata(BaseModel, extra="allow"):
     """Metadata for [tool] section in PEP 723.
 
@@ -150,7 +116,7 @@ class ToolMetadata(BaseModel, extra="allow"):
     """
 
     hog: dict[str, EndpointConfig] | None = None
-    uv: dict | None = None
+    uv: UvMetadata | None = Field(default_factory=UvMetadata)
 
 
 class Pep723Metadata(BaseModel, extra="allow"):
@@ -158,16 +124,47 @@ class Pep723Metadata(BaseModel, extra="allow"):
         alias="requires-python", default_factory=_default_requires_python
     )
     dependencies: list[str] = Field(default_factory=list)
-    exclude_newer: str = Field(
-        default_factory=_default_exclude_newer,
-        validation_alias=AliasPath("tool", "uv", "exclude-newer"),
-        serialization_alias="tool",
-    )
-    tool: ToolMetadata | None = None
+    tool: ToolMetadata | None = Field(default_factory=ToolMetadata)
 
-    @field_serializer("exclude_newer")
-    def serialize_tool_uv_table(self, value: str) -> dict:
-        return {"uv": {"exclude-newer": value}}
+
+def read_pep723(script: str) -> Pep723Metadata | None:
+    """Extract and validate PEP 723 script metadata from a Python script.
+
+    Parses inline metadata blocks like:
+        # /// script
+        # requires-python = ">=3.11"
+        # dependencies = ["numpy"]
+        # ///
+
+    Args:
+        script: The full text content of a Python script
+
+    Returns:
+        A validated Pep723Metadata instance, or None if no metadata block found.
+
+    Raises:
+        ValueError: If multiple 'script' metadata blocks are found
+        ValidationError: If metadata contains invalid configuration (e.g., negative walltime)
+    """
+    name = "script"
+    matches = list(
+        filter(
+            lambda m: m.group("type") == name,
+            re.finditer(INLINE_METADATA_REGEX, script),
+        )
+    )
+    if len(matches) > 1:
+        raise ValueError(f"Multiple {name} blocks found")
+    elif len(matches) == 1:
+        content = "".join(
+            line[2:] if line.startswith("# ") else line[1:]
+            for line in matches[0].group("content").splitlines(keepends=True)
+        )
+        raw_dict = tomllib.loads(content)
+        # Validate through pydantic model
+        return Pep723Metadata(**raw_dict)
+    else:
+        return None
 
 
 def write_pep723(metadata: Pep723Metadata) -> str:
