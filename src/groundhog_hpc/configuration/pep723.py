@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 import tomli_w
-from pydantic import AliasPath, BaseModel, Field, field_serializer
+from pydantic import AliasPath, BaseModel, Field, field_serializer, model_validator
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -94,6 +94,47 @@ class EndpointConfig(BaseModel, extra="allow"):
     qos: str | None = None
     scheduler_options: str | None = None
     worker_init: str | None = None
+
+
+class EndpointVariant(BaseModel, extra="allow"):
+    """Configuration for an endpoint variant (inherits from base).
+
+    Variants customize base endpoint configurations but cannot define their
+    own endpoint UUID - they must inherit it from the base configuration.
+    The endpoint field is explicitly forbidden (set to Literal[None]) to
+    catch configuration errors early.
+
+    Like EndpointConfig, nested dicts in extra fields may represent
+    sub-variants (e.g., anvil.gpu.debug) and are validated at resolution time.
+
+    Attributes:
+        endpoint: Always None (variants must inherit endpoint from base)
+        account: Account/allocation name override
+        partition: Partition override
+        walltime: Walltime override (must be positive)
+        qos: QoS override
+        scheduler_options: Scheduler options override
+        worker_init: Additional worker init commands (concatenated with base)
+    """
+
+    endpoint: None = None
+    account: str | None = None
+    partition: str | None = None
+    walltime: int | None = Field(None, gt=0)
+    qos: str | None = None
+    scheduler_options: str | None = None
+    worker_init: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def forbid_endpoint_in_variant(cls, values):
+        """Ensure endpoint field is not set in variant configs."""
+        if isinstance(values, dict) and values.get("endpoint") is not None:
+            raise ValueError(
+                "Variant configurations cannot define 'endpoint' - "
+                "they must inherit the endpoint UUID from the base configuration"
+            )
+        return values
 
 
 class Pep723Metadata(BaseModel, extra="allow"):

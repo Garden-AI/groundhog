@@ -427,3 +427,60 @@ class TestEndpointConfig:
         # Nested dict should remain a plain dict in model_extra
         assert isinstance(config.model_extra["gpu"], dict)
         assert config.model_extra["gpu"]["partition"] == "gpu-debug"
+
+
+class TestEndpointVariant:
+    """Test EndpointVariant model validation."""
+
+    def test_create_variant_without_endpoint(self):
+        """Test creating variant config without endpoint field."""
+        from groundhog_hpc.configuration.pep723 import EndpointVariant
+
+        variant = EndpointVariant(
+            partition="gpu-debug",
+            qos="gpu",
+            worker_init="module load cuda",
+        )
+
+        assert variant.partition == "gpu-debug"
+        assert variant.qos == "gpu"
+        assert variant.worker_init == "module load cuda"
+        assert variant.endpoint is None
+
+    def test_variant_rejects_endpoint_field(self):
+        """Test that variants cannot set endpoint (must inherit from base)."""
+        from pydantic import ValidationError
+
+        from groundhog_hpc.configuration.pep723 import EndpointVariant
+
+        with pytest.raises(ValidationError) as exc_info:
+            EndpointVariant(
+                endpoint="uuid-here",  # Not allowed in variants
+                partition="gpu",
+            )
+
+        # Should contain validation error about endpoint
+        assert "endpoint" in str(exc_info.value).lower()
+
+    def test_variant_supports_nested_sub_variants(self):
+        """Test that variants can have nested sub-variants."""
+        from groundhog_hpc.configuration.pep723 import EndpointVariant
+
+        variant = EndpointVariant(
+            partition="gpu",
+            debug={"walltime": 60, "qos": "debug"},
+        )
+
+        # Nested dict should stay as dict (sub-variant)
+        assert isinstance(variant.model_extra["debug"], dict)
+        assert variant.model_extra["debug"]["walltime"] == 60
+
+    def test_variant_worker_init_accessible(self):
+        """Test that worker_init is directly accessible for merging."""
+        from groundhog_hpc.configuration.pep723 import EndpointVariant
+
+        variant = EndpointVariant(worker_init="module load cuda")
+
+        # worker_init should be a typed field, not in model_extra
+        assert variant.worker_init == "module load cuda"
+        assert "worker_init" not in variant.model_extra
