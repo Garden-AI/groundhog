@@ -135,6 +135,87 @@ class TestPep723Metadata:
         expected = f">={sys.version_info.major}.{sys.version_info.minor},<{sys.version_info.major}.{sys.version_info.minor + 1}"
         assert metadata.requires_python == expected
 
+    def test_parse_with_tool_hog_section(self):
+        """Test parsing PEP 723 metadata with [tool.hog] endpoint configs."""
+        data = {
+            "requires-python": ">=3.10",
+            "dependencies": ["numpy"],
+            "tool": {
+                "hog": {
+                    "anvil": {
+                        "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+                        "account": "my-account",
+                        "walltime": 300,
+                    }
+                }
+            },
+        }
+
+        metadata = Pep723Metadata(**data)
+
+        assert metadata.requires_python == ">=3.10"
+        assert metadata.tool is not None
+        assert metadata.tool.hog is not None
+        assert "anvil" in metadata.tool.hog
+        assert (
+            metadata.tool.hog["anvil"].endpoint
+            == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        )
+        assert metadata.tool.hog["anvil"].account == "my-account"
+        assert metadata.tool.hog["anvil"].walltime == 300
+
+    def test_parse_with_nested_variants(self):
+        """Test parsing with nested variant configurations."""
+        data = {
+            "requires-python": ">=3.10",
+            "dependencies": [],
+            "tool": {
+                "hog": {
+                    "anvil": {
+                        "endpoint": "uuid-here",
+                        "account": "my-account",
+                        "gpu": {  # Nested variant
+                            "partition": "gpu-debug",
+                            "qos": "gpu",
+                        },
+                    }
+                }
+            },
+        }
+
+        metadata = Pep723Metadata(**data)
+
+        # Base config should be validated
+        anvil = metadata.tool.hog["anvil"]
+        assert anvil.endpoint == "uuid-here"
+        assert anvil.account == "my-account"
+
+        # Nested variant should stay as dict (not validated yet)
+        assert isinstance(anvil.model_extra["gpu"], dict)
+        assert anvil.model_extra["gpu"]["partition"] == "gpu-debug"
+
+    def test_validation_error_on_invalid_endpoint_config(self):
+        """Test that invalid endpoint config raises validation error."""
+        from pydantic import ValidationError
+
+        data = {
+            "requires-python": ">=3.10",
+            "dependencies": [],
+            "tool": {
+                "hog": {
+                    "anvil": {
+                        "endpoint": "uuid",
+                        "walltime": -10,  # Invalid: must be positive
+                    }
+                }
+            },
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            Pep723Metadata(**data)
+
+        assert "walltime" in str(exc_info.value).lower()
+
 
 class TestDumpsPep723:
     """Test serializing Pep723Metadata to PEP 723 format."""

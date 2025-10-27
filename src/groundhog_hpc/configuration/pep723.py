@@ -161,6 +161,7 @@ class Pep723Metadata(BaseModel, extra="allow"):
         validation_alias=AliasPath("tool", "uv", "exclude-newer"),
         serialization_alias="tool",
     )
+    tool: ToolMetadata | None = None
 
     @field_serializer("exclude_newer")
     def serialize_tool_uv_table(self, value: str) -> dict:
