@@ -26,8 +26,8 @@ import numpy as np
 """
         metadata = read_pep723(script)
         assert metadata is not None
-        assert metadata["requires-python"] == ">=3.10"
-        assert metadata["dependencies"] == ["numpy", "pandas"]
+        assert metadata.requires_python == ">=3.10"
+        assert metadata.dependencies == ["numpy", "pandas"]
 
     def test_read_metadata_with_tool_section(self):
         """Test reading metadata with nested tool.uv section."""
@@ -41,8 +41,8 @@ import numpy as np
 """
         metadata = read_pep723(script)
         assert metadata is not None
-        assert metadata["requires-python"] == ">=3.11"
-        assert metadata["tool"]["uv"]["exclude-newer"] == "2024-01-01T00:00:00Z"
+        assert metadata.requires_python == ">=3.11"
+        assert metadata.tool.uv["exclude-newer"] == "2024-01-01T00:00:00Z"
 
     def test_read_no_metadata_returns_none(self):
         """Test that scripts without metadata return None."""
@@ -79,8 +79,8 @@ def main():
 """
         metadata = read_pep723(script)
         assert metadata is not None
-        assert metadata["requires-python"] == ">=3.10"
-        assert metadata["custom-field"] == "custom-value"
+        assert metadata.requires_python == ">=3.10"
+        assert metadata.model_extra["custom-field"] == "custom-value"
 
 
 class TestPep723Metadata:
@@ -286,12 +286,9 @@ class TestDumpsPep723:
         # Dump to string
         dumped = write_pep723(original_metadata)
 
-        # Read back
-        parsed_dict = read_pep723(dumped)
-        assert parsed_dict is not None
-
-        # Create new metadata from parsed dict
-        roundtrip_metadata = Pep723Metadata(**parsed_dict)
+        # Read back (now returns Pep723Metadata, not dict)
+        roundtrip_metadata = read_pep723(dumped)
+        assert roundtrip_metadata is not None
 
         # Should match original
         assert roundtrip_metadata.requires_python == original_metadata.requires_python
@@ -430,7 +427,7 @@ class TestEdgeCases:
 """
         metadata = read_pep723(script)
         assert metadata is not None
-        assert metadata["requires-python"] == ">=3.10"
+        assert metadata.requires_python == ">=3.10"
 
     def test_metadata_with_multiline_arrays(self):
         """Test reading metadata with multiline dependency arrays."""
@@ -444,8 +441,8 @@ class TestEdgeCases:
 """
         metadata = read_pep723(script)
         assert metadata is not None
-        assert "numpy>=1.20" in metadata["dependencies"]
-        assert "pandas>=2.0" in metadata["dependencies"]
+        assert "numpy>=1.20" in metadata.dependencies
+        assert "pandas>=2.0" in metadata.dependencies
 
 
 class TestEndpointConfig:

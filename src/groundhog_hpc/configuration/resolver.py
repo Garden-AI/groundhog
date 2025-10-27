@@ -107,27 +107,89 @@ class ConfigResolver:
     ) -> dict[str, Any]:
         """Resolve final config by merging all sources in priority order.
 
+        Walks the dotted endpoint path (e.g., "anvil.gpu.debug") hierarchically,
+        validating and merging configs at each level:
+        1. DEFAULT_USER_CONFIG
+        2. Base endpoint config (e.g., "anvil")
+        3. Each variant in the path (e.g., "gpu", then "debug")
+        4. Decorator config
+        5. Call-time config
+
         Args:
-            endpoint: Endpoint name or UUID. Can be a base name like "anvil" or
-                a variant like "anvil.gpu".
+            endpoint_name: Endpoint name or dotted variant path (e.g., "anvil.gpu.debug")
             decorator_config: Configuration from @hog.function(**config)
             call_time_config: Configuration from .remote(user_endpoint_config={...})
 
         Returns:
             Merged configuration dictionary with all sources applied in order.
-            The 'endpoint' field (if present in PEP 723) is included in the
-            returned config for Function.submit() to extract and use.
+
+        Raises:
+            ValueError: If variant path is invalid (variant not found or not a dict)
+            ValidationError: If any config level has invalid fields (e.g., negative walltime)
         """
+        from groundhog_hpc.configuration.pep723 import EndpointVariant
+
         # Layer 1: Start with DEFAULT_USER_CONFIG
         config = DEFAULT_USER_CONFIG.copy()
 
-        # Layer 2: [tool.hog.<base>] from PEP 723
-        if base_config := self._get_pep723_base_config(endpoint_name):
+        # Split endpoint path into base and variant parts
+        parts = endpoint_name.split(".")
+        base_name = parts[0]
+        variant_path = parts[1:] if len(parts) > 1 else []
+
+        # Layer 2: Load and merge base endpoint config
+        base_config = self._get_pep723_base_config(base_name)
+        if base_config:
             config = _merge_endpoint_configs(config, base_config)
 
-        # Layer 3: [tool.hog.<base>.<variant>] from PEP 723
-        if variant_config := self._get_pep723_variant_config(endpoint_name):
-            config = _merge_endpoint_configs(config, variant_config)
+        # Layer 3: Walk variant path hierarchically
+        if variant_path:
+            # Start from base config to traverse variants
+            metadata = self._load_pep723_metadata()
+            if not metadata:
+                raise ValueError(
+                    f"Variant path '{endpoint_name}' specified but no PEP 723 metadata found"
+                )
+
+            # Get base endpoint config from tool.hog
+            tool_hog = metadata.get("tool", {}).get("hog", {})
+            if base_name not in tool_hog:
+                raise ValueError(
+                    f"Base endpoint '{base_name}' not found in [tool.hog] configuration"
+                )
+
+            current_dict = tool_hog[base_name]
+
+            # Walk each variant in the path
+            for i, variant_name in enumerate(variant_path):
+                # Check if variant exists in current config
+                if variant_name not in current_dict:
+                    path_so_far = ".".join([base_name] + variant_path[: i + 1])
+                    raise ValueError(
+                        f"Variant '{variant_name}' not found in endpoint path '{path_so_far}'"
+                    )
+
+                variant_value = current_dict[variant_name]
+
+                # Validate it's a dict (not a config value)
+                if not isinstance(variant_value, dict):
+                    path_so_far = ".".join([base_name] + variant_path[: i + 1])
+                    raise ValueError(
+                        f"'{variant_name}' in path '{path_so_far}' is not a valid variant "
+                        f"(expected dict, got {type(variant_value).__name__})"
+                    )
+
+                # Validate and convert to EndpointVariant
+                # This raises ValidationError if config is invalid
+                variant_config = EndpointVariant(**variant_value)
+
+                # Merge variant config into accumulated config
+                config = _merge_endpoint_configs(
+                    config, variant_config.model_dump(exclude_none=True)
+                )
+
+                # Move to next level for nested sub-variants
+                current_dict = variant_value
 
         # Layer 4: Merge decorator config
         config = _merge_endpoint_configs(config, decorator_config)
@@ -142,7 +204,7 @@ class ConfigResolver:
         """Extract [tool.hog.<base>] config from PEP 723 metadata.
 
         Args:
-            endpoint: Endpoint name (may include variant, e.g., "anvil.gpu")
+            endpoint_name: Endpoint name (may include variant, e.g., "anvil.gpu")
 
         Returns:
             Base configuration dict or None if not found
@@ -156,44 +218,29 @@ class ConfigResolver:
 
         base_endpoint = endpoint_name.split(".")[0]
 
-        return metadata.get("tool", {}).get("hog", {}).get(base_endpoint)
-
-    def _get_pep723_variant_config(self, endpoint_name: str) -> dict[str, Any] | None:
-        """Extract [tool.hog.<base>.<variant>] config from PEP 723 metadata.
-
-        Variants do NOT inherit from base - inheritance is handled by the caller
-        which first loads base config, then merges variant config on top.
-
-        Args:
-            endpoint: Endpoint name (must include variant, e.g., "anvil.gpu")
-
-        Returns:
-            Variant configuration dict or None if endpoint has no variant or
-            variant config not found
-        """
-        if "." not in endpoint_name:
+        # Access tool.hog section
+        tool_hog = metadata.get("tool", {}).get("hog", {})
+        if base_endpoint not in tool_hog:
             return None
 
-        if not self.script_path:
-            return None
+        # Get the base config dict
+        base_config_dict = tool_hog[base_endpoint]
 
-        metadata = self._load_pep723_metadata()
-        if not metadata:
-            return None
+        # Filter out nested variant dicts - only return top-level config fields
+        # Variant fields are nested dicts that will be handled by resolve()
+        result = {}
+        for key, value in base_config_dict.items():
+            # Don't include nested dicts (variants) in base config
+            if not isinstance(value, dict):
+                result[key] = value
 
-        parts = endpoint_name.split(".", 1)
-        base_endpoint, variant = parts[0], parts[1]
-
-        # Look for [tool.hog.anvil.gpu]
-        # Note: TOML spec means [tool.hog.anvil.gpu] creates nested dict structure
-        base_section = metadata.get("tool", {}).get("hog", {}).get(base_endpoint, {})
-        return base_section.get(variant)
+        return result if result else None
 
     def _load_pep723_metadata(self) -> dict | None:
         """Load and cache PEP 723 metadata from script.
 
         Returns:
-            Parsed TOML metadata dictionary or empty dict if no metadata found
+            Parsed metadata as dict (for backward compatibility) or empty dict if no metadata found
         """
         if self._pep723_cache is not None:
             return self._pep723_cache
@@ -203,5 +250,16 @@ class ConfigResolver:
             return self._pep723_cache
 
         script_content = Path(self.script_path).read_text()
-        self._pep723_cache = read_pep723(script_content) or {}
+        pep723_model = read_pep723(script_content)
+
+        # Convert model to dict for resolution logic
+        # This preserves nested EndpointConfig instances in tool.hog
+        if pep723_model is None:
+            self._pep723_cache = {}
+        else:
+            # Use model_dump but keep mode='python' to preserve model instances
+            self._pep723_cache = pep723_model.model_dump(
+                mode="python", exclude_none=True
+            )
+
         return self._pep723_cache

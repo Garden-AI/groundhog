@@ -22,8 +22,8 @@ INLINE_METADATA_REGEX = (
 )
 
 
-def read_pep723(script: str) -> dict | None:
-    """Extract PEP 723 script metadata from a Python script.
+def read_pep723(script: str) -> "Pep723Metadata | None":
+    """Extract and validate PEP 723 script metadata from a Python script.
 
     Parses inline metadata blocks like:
         # /// script
@@ -35,11 +35,11 @@ def read_pep723(script: str) -> dict | None:
         script: The full text content of a Python script
 
     Returns:
-        A dictionary containing the parsed TOML metadata, or None if no metadata block
-        is found.
+        A validated Pep723Metadata instance, or None if no metadata block found.
 
     Raises:
         ValueError: If multiple 'script' metadata blocks are found
+        ValidationError: If metadata contains invalid configuration (e.g., negative walltime)
     """
     name = "script"
     matches = list(
@@ -55,7 +55,9 @@ def read_pep723(script: str) -> dict | None:
             line[2:] if line.startswith("# ") else line[1:]
             for line in matches[0].group("content").splitlines(keepends=True)
         )
-        return tomllib.loads(content)
+        raw_dict = tomllib.loads(content)
+        # Validate through pydantic model
+        return Pep723Metadata(**raw_dict)
     else:
         return None
 
