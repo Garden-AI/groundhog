@@ -365,3 +365,65 @@ class TestEdgeCases:
         assert metadata is not None
         assert "numpy>=1.20" in metadata["dependencies"]
         assert "pandas>=2.0" in metadata["dependencies"]
+
+
+class TestEndpointConfig:
+    """Test EndpointConfig model validation."""
+
+    def test_create_with_valid_fields(self):
+        """Test creating EndpointConfig with all known fields."""
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
+
+        config = EndpointConfig(
+            endpoint="5aafb4c1-27b2-40d8-a038-a0277611868f",
+            account="my-account",
+            partition="shared",
+            walltime=300,
+            qos="cpu",
+            scheduler_options="#SBATCH --nodes=1",
+            worker_init="module load gcc",
+        )
+
+        assert config.endpoint == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert config.account == "my-account"
+        assert config.walltime == 300
+
+    def test_walltime_validation_rejects_negative(self):
+        """Test that walltime must be positive."""
+        from pydantic import ValidationError
+
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
+
+        with pytest.raises(ValidationError) as exc_info:
+            EndpointConfig(walltime=-10)
+
+        # Should contain validation error about walltime
+        assert "walltime" in str(exc_info.value).lower()
+
+    def test_extra_fields_allowed(self):
+        """Test that unknown fields are preserved for endpoint-specific config."""
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
+
+        config = EndpointConfig(
+            endpoint="uuid-here",
+            custom_field="custom-value",
+            nested_config={"key": "value"},
+        )
+
+        # Extra fields stored in model_extra
+        assert config.model_extra["custom_field"] == "custom-value"
+        assert config.model_extra["nested_config"] == {"key": "value"}
+
+    def test_nested_dict_stays_as_dict(self):
+        """Test that nested dicts (potential variants) stay as dicts until resolution."""
+        from groundhog_hpc.configuration.pep723 import EndpointConfig
+
+        config = EndpointConfig(
+            endpoint="uuid-here",
+            account="my-account",
+            gpu={"partition": "gpu-debug", "qos": "gpu"},
+        )
+
+        # Nested dict should remain a plain dict in model_extra
+        assert isinstance(config.model_extra["gpu"], dict)
+        assert config.model_extra["gpu"]["partition"] == "gpu-debug"

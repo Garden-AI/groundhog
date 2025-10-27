@@ -68,6 +68,34 @@ def _default_exclude_newer() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+class EndpointConfig(BaseModel, extra="allow"):
+    """Configuration for a single endpoint (base configuration).
+
+    Known fields are type-checked and validated. Unknown fields are allowed
+    via extra="allow" to support endpoint-specific custom configuration.
+    Nested dicts in extra fields may represent variant configurations, but
+    are not validated until resolution time when the dotted path disambiguates
+    them from regular dict-valued config fields.
+
+    Attributes:
+        endpoint: Globus Compute endpoint UUID (required for base configs)
+        account: Account/allocation name for compute resource
+        partition: Scheduler partition/queue name
+        walltime: Maximum execution time in seconds (must be positive)
+        qos: Quality of Service level
+        scheduler_options: Additional scheduler directives (e.g., SBATCH flags)
+        worker_init: Shell commands to run in worker initialization
+    """
+
+    endpoint: str | None = None
+    account: str | None = None
+    partition: str | None = None
+    walltime: int | None = Field(None, gt=0)
+    qos: str | None = None
+    scheduler_options: str | None = None
+    worker_init: str | None = None
+
+
 class Pep723Metadata(BaseModel, extra="allow"):
     requires_python: str = Field(
         alias="requires-python", default_factory=_default_requires_python
