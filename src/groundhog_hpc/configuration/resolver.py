@@ -187,41 +187,6 @@ class ConfigResolver:
 
         return config
 
-    def _get_pep723_base_config(self, endpoint_name: str) -> dict[str, Any] | None:
-        """Extract [tool.hog.<base>] config from PEP 723 metadata.
-
-        Args:
-            endpoint_name: Endpoint name (may include variant, e.g., "anvil.gpu")
-
-        Returns:
-            Base configuration dict or None if not found
-        """
-        if not self.script_path:
-            return None
-
-        metadata = self._load_pep723_metadata()
-        if not metadata:
-            return None
-
-        base_endpoint = endpoint_name.split(".")[0]
-
-        # Access tool.hog section
-        hog_tool_config = metadata.get("tool", {}).get("hog", {})
-        if base_endpoint not in hog_tool_config:
-            return None
-
-        # Get the base config dict
-        base_endpoint_config = hog_tool_config[base_endpoint]
-
-        # Filter out nested variant dicts - only return top-level config fields
-        # Variant fields are nested dicts that will be handled by resolve()
-        result = {}
-        for key, value in base_endpoint_config.items():
-            if not isinstance(value, dict):
-                result[key] = value
-
-        return result or None
-
     def _load_pep723_metadata(self) -> dict[str, Any]:
         """Load and cache PEP 723 metadata from script.
 
