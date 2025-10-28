@@ -3,10 +3,15 @@
 import sys
 
 import pytest
+from pydantic import ValidationError
 
-from groundhog_hpc.configuration.pep723 import (
+from groundhog_hpc.configuration.models import (
+    EndpointConfig,
+    EndpointVariant,
     Pep723Metadata,
     ToolMetadata,
+)
+from groundhog_hpc.configuration.pep723 import (
     insert_or_update_metadata,
     read_pep723,
     write_pep723,
@@ -43,6 +48,8 @@ import numpy as np
         metadata = read_pep723(script)
         assert metadata is not None
         assert metadata.requires_python == ">=3.11"
+        assert metadata.tool is not None
+        assert metadata.tool.uv is not None
         assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_read_no_metadata_returns_none(self):
@@ -92,6 +99,8 @@ class TestPep723Metadata:
         metadata = Pep723Metadata()
         assert metadata.requires_python is not None
         assert metadata.dependencies == []
+        assert metadata.tool is not None
+        assert metadata.tool.uv is not None
         assert metadata.tool.uv.exclude_newer is not None
 
     def test_create_with_explicit_values(self):
@@ -104,18 +113,8 @@ class TestPep723Metadata:
         metadata = Pep723Metadata.model_validate(data)
         assert metadata.requires_python == ">=3.11"
         assert metadata.dependencies == ["numpy", "pandas"]
-        assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
-
-    def test_create_from_dict_with_aliases(self):
-        """Test creating metadata from dict using aliases."""
-        data = {
-            "requires-python": ">=3.10",
-            "dependencies": ["numpy"],
-            "tool": {"uv": {"exclude-newer": "2024-01-01T00:00:00Z"}},
-        }
-        metadata = Pep723Metadata(**data)
-        assert metadata.requires_python == ">=3.10"
-        assert metadata.dependencies == ["numpy"]
+        assert metadata.tool is not None
+        assert metadata.tool.uv is not None
         assert metadata.tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
 
     def test_extra_fields_allowed(self):
@@ -187,6 +186,8 @@ class TestPep723Metadata:
         metadata = Pep723Metadata(**data)
 
         # Base config should be validated
+        assert metadata.tool is not None
+        assert metadata.tool.hog
         anvil = metadata.tool.hog["anvil"]
         assert anvil.endpoint == "uuid-here"
         assert anvil.account == "my-account"
@@ -197,7 +198,6 @@ class TestPep723Metadata:
 
     def test_validation_error_on_invalid_endpoint_config(self):
         """Test that invalid endpoint config raises validation error."""
-        from pydantic import ValidationError
 
         data = {
             "requires-python": ">=3.10",
@@ -225,7 +225,6 @@ class TestDumpsPep723:
         """Test dumping basic metadata to PEP 723 format."""
         metadata = Pep723Metadata(
             dependencies=["numpy", "pandas"],
-            exclude_newer=None,
         )
         metadata.requires_python = ">=3.10"
 
@@ -245,7 +244,6 @@ class TestDumpsPep723:
         """Test dumping metadata with empty dependencies."""
         metadata = Pep723Metadata(
             dependencies=[],
-            exclude_newer=None,
         )
         metadata.requires_python = ">=3.10"
         result = write_pep723(metadata)
@@ -255,8 +253,10 @@ class TestDumpsPep723:
     def test_dumps_with_tool_section(self):
         """Test dumping metadata with tool.uv section."""
         metadata = Pep723Metadata(
-            dependencies=[],
-            tool={"uv": {"exclude-newer": "2024-01-01T00:00:00Z"}},
+            **{
+                "dependencies": [],
+                "tool": {"uv": {"exclude-newer": "2024-01-01T00:00:00Z"}},
+            }
         )
         metadata.requires_python = ">=3.11"
         result = write_pep723(metadata)
@@ -281,7 +281,7 @@ class TestDumpsPep723:
         """Test that dumping and reading produces equivalent metadata."""
         original_metadata = Pep723Metadata(
             dependencies=["numpy", "pandas"],
-            exclude_newer="2024-01-01T00:00:00Z",
+            tool={"uv": {"exclude-newer": "2024-01-01T00:00:00Z"}},
         )
         original_metadata.requires_python = ">=3.11"
         # Dump to string
@@ -294,7 +294,10 @@ class TestDumpsPep723:
         # Should match original
         assert roundtrip_metadata.requires_python == original_metadata.requires_python
         assert roundtrip_metadata.dependencies == original_metadata.dependencies
-        assert roundtrip_metadata.exclude_newer == original_metadata.exclude_newer
+        assert (
+            roundtrip_metadata.tool.uv.exclude_newer
+            == original_metadata.tool.uv.exclude_newer
+        )
 
 
 class TestInsertOrUpdateMetadata:
@@ -451,7 +454,6 @@ class TestEndpointConfig:
 
     def test_create_with_valid_fields(self):
         """Test creating EndpointConfig with all known fields."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         config = EndpointConfig(
             endpoint="5aafb4c1-27b2-40d8-a038-a0277611868f",
@@ -469,9 +471,6 @@ class TestEndpointConfig:
 
     def test_walltime_validation_rejects_negative(self):
         """Test that walltime must be positive."""
-        from pydantic import ValidationError
-
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         with pytest.raises(ValidationError) as exc_info:
             EndpointConfig(walltime=-10)
@@ -481,7 +480,6 @@ class TestEndpointConfig:
 
     def test_extra_fields_allowed(self):
         """Test that unknown fields are preserved for endpoint-specific config."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         config = EndpointConfig(
             endpoint="uuid-here",
@@ -495,7 +493,6 @@ class TestEndpointConfig:
 
     def test_nested_dict_stays_as_dict(self):
         """Test that nested dicts (potential variants) stay as dicts until resolution."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         config = EndpointConfig(
             endpoint="uuid-here",
@@ -513,7 +510,6 @@ class TestEndpointVariant:
 
     def test_create_variant_without_endpoint(self):
         """Test creating variant config without endpoint field."""
-        from groundhog_hpc.configuration.pep723 import EndpointVariant
 
         variant = EndpointVariant(
             partition="gpu-debug",
@@ -528,9 +524,6 @@ class TestEndpointVariant:
 
     def test_variant_rejects_endpoint_field(self):
         """Test that variants cannot set endpoint (must inherit from base)."""
-        from pydantic import ValidationError
-
-        from groundhog_hpc.configuration.pep723 import EndpointVariant
 
         with pytest.raises(ValidationError) as exc_info:
             EndpointVariant(
@@ -543,7 +536,6 @@ class TestEndpointVariant:
 
     def test_variant_supports_nested_sub_variants(self):
         """Test that variants can have nested sub-variants."""
-        from groundhog_hpc.configuration.pep723 import EndpointVariant
 
         variant = EndpointVariant(
             partition="gpu",
@@ -556,7 +548,6 @@ class TestEndpointVariant:
 
     def test_variant_worker_init_accessible(self):
         """Test that worker_init is directly accessible for merging."""
-        from groundhog_hpc.configuration.pep723 import EndpointVariant
 
         variant = EndpointVariant(worker_init="module load cuda")
 
@@ -570,7 +561,6 @@ class TestToolMetadata:
 
     def test_create_with_hog_config(self):
         """Test creating ToolMetadata with hog endpoint configs."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         tool = ToolMetadata(
             hog={
@@ -594,7 +584,6 @@ class TestToolMetadata:
 
     def test_create_with_both_hog_and_uv(self):
         """Test creating ToolMetadata with both hog and uv."""
-        from groundhog_hpc.configuration.pep723 import EndpointConfig
 
         tool = ToolMetadata(
             hog={"anvil": EndpointConfig(endpoint="uuid")},
@@ -606,7 +595,6 @@ class TestToolMetadata:
 
     def test_parse_from_dict_validates_endpoint_configs(self):
         """Test that parsing from dict validates endpoint configs."""
-        from pydantic import ValidationError
 
         # Invalid walltime should raise validation error
         with pytest.raises(ValidationError) as exc_info:

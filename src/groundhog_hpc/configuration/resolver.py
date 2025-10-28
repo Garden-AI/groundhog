@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
+from groundhog_hpc.configuration.models import EndpointConfig, EndpointVariant
 from groundhog_hpc.configuration.pep723 import read_pep723
 
 
@@ -127,76 +128,62 @@ class ConfigResolver:
             ValueError: If variant path is invalid (variant not found or not a dict)
             ValidationError: If any config level has invalid fields (e.g., negative walltime)
         """
-        from groundhog_hpc.configuration.pep723 import EndpointVariant
 
         # Layer 1: Start with DEFAULT_USER_CONFIG
         config = DEFAULT_USER_CONFIG.copy()
+        base_name, *variant_path = endpoint_name.split(".")
 
-        # Split endpoint path into base and variant parts
-        parts = endpoint_name.split(".")
-        base_name = parts[0]
-        variant_path = parts[1:] if len(parts) > 1 else []
+        # Layer 2-3: walk base[.variant[.sub]] path hierarchically
+        metadata: dict = self._load_pep723_metadata()
+        base_variant: dict = (
+            metadata.get("tool", {}).get("hog", {}).get(base_name, {}).copy()
+        )
+        if base_variant:
+            EndpointConfig.model_validate(base_variant)
+            config["endpoint"] = base_variant.pop("endpoint")
 
-        # Layer 2: Load and merge base endpoint config
-        base_endpoint_config = self._get_pep723_base_config(base_name)
-        if base_endpoint_config:
-            config = _merge_endpoint_configs(config, base_endpoint_config)
+        def _merge_variant_path(
+            variant_names: list[str], current_variant: dict, accumulated_config: dict
+        ) -> dict:
+            # filter out sibling sub-variants we shouldn't include in config
+            current_variant = {
+                k: v
+                for k, v in current_variant.items()
+                if not isinstance(v, dict) or k in variant_names[:1]
+            }
+            accumulated_config = _merge_endpoint_configs(
+                accumulated_config,
+                EndpointVariant(**current_variant).model_dump(exclude_none=True),
+            )
+            # base case
+            if not variant_names:
+                return accumulated_config
 
-        # Layer 3: Walk variant path hierarchically
-        if variant_path:
-            # Start from base config to traverse variants
-            metadata = self._load_pep723_metadata()
-            if not metadata:
-                raise ValueError(
-                    f"Variant path '{endpoint_name}' specified but no PEP 723 metadata found"
+            next_name, *remaining_names = variant_names
+            next_variant = current_variant.get(next_name)
+            if not isinstance(next_variant, dict):
+                path_so_far = ".".join(
+                    [base_name]
+                    + variant_path[: len(variant_path) - len(remaining_names)]
                 )
-
-            # Get base endpoint config from tool.hog
-            hog_tool_config = metadata.get("tool", {}).get("hog", {})
-            if base_name not in hog_tool_config:
-                raise ValueError(
-                    f"Base endpoint '{base_name}' not found in [tool.hog] configuration"
-                )
-
-            current_dict = hog_tool_config[base_name]
-
-            # Walk each variant in the path
-            for i, variant_name in enumerate(variant_path):
-                # Check if variant exists in current config
-                if variant_name not in current_dict:
-                    path_so_far = ".".join([base_name] + variant_path[: i + 1])
+                if next_variant is None:
+                    raise ValueError(f"Variant {next_name} not found in {path_so_far}")
+                else:
                     raise ValueError(
-                        f"Variant '{variant_name}' not found in endpoint path '{path_so_far}'"
+                        f"Variant {next_name} in {path_so_far} is not a valid variant "
+                        f"(expected dict, got {type(next_variant).__name__})"
                     )
+            return _merge_variant_path(
+                remaining_names, next_variant, accumulated_config
+            )
 
-                variant_value = current_dict[variant_name]
-
-                # Validate it's a dict (not a config value)
-                if not isinstance(variant_value, dict):
-                    path_so_far = ".".join([base_name] + variant_path[: i + 1])
-                    raise ValueError(
-                        f"'{variant_name}' in path '{path_so_far}' is not a valid variant "
-                        f"(expected dict, got {type(variant_value).__name__})"
-                    )
-
-                # Validate and convert to EndpointVariant
-                # This raises ValidationError if config is invalid
-                variant_config = EndpointVariant(**variant_value)
-
-                # Merge variant config into accumulated config
-                config = _merge_endpoint_configs(
-                    config, variant_config.model_dump(exclude_none=True)
-                )
-
-                # Move to next level for nested sub-variants
-                current_dict = variant_value
+        config = _merge_variant_path(variant_path, base_variant, config)
 
         # Layer 4: Merge decorator config
         config = _merge_endpoint_configs(config, decorator_config)
 
         # Layer 5: Call-time overrides
-        if call_time_config:
-            config = _merge_endpoint_configs(config, call_time_config)
+        config = _merge_endpoint_configs(config, call_time_config)
 
         return config
 
@@ -226,41 +213,33 @@ class ConfigResolver:
         # Get the base config dict
         base_endpoint_config = hog_tool_config[base_endpoint]
 
-        # TODO is this even necessary? Does globus compute ignore extra config fields?
         # Filter out nested variant dicts - only return top-level config fields
         # Variant fields are nested dicts that will be handled by resolve()
         result = {}
         for key, value in base_endpoint_config.items():
-            # Don't include nested dicts (variants) in base config
             if not isinstance(value, dict):
                 result[key] = value
 
         return result or None
 
-    def _load_pep723_metadata(self) -> dict | None:
+    def _load_pep723_metadata(self) -> dict[str, Any]:
         """Load and cache PEP 723 metadata from script.
 
         Returns:
             Parsed metadata as dict (for backward compatibility) or empty dict if no metadata found
         """
-        if self._pep723_cache is not None:
-            return self._pep723_cache
+        if self._pep723_cache:
+            return self._pep723_cache.copy()
 
         if not self.script_path or not Path(self.script_path).exists():
             self._pep723_cache = {}
             return self._pep723_cache
 
         script_content = Path(self.script_path).read_text()
-        pep723_model = read_pep723(script_content)
 
-        # Convert model to dict for resolution logic
-        # This preserves nested EndpointConfig instances in tool.hog
-        if pep723_model is None:
-            self._pep723_cache = {}
+        if (pep723_model := read_pep723(script_content)) is not None:
+            self._pep723_cache = pep723_model.model_dump(exclude_none=True)
         else:
-            # Use model_dump but keep mode='python' to preserve model instances
-            self._pep723_cache = pep723_model.model_dump(
-                mode="python", exclude_none=True
-            )
+            self._pep723_cache = {}
 
-        return self._pep723_cache
+        return self._pep723_cache.copy()

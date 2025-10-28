@@ -109,6 +109,7 @@ import groundhog_hpc as hog
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "pep723-account"
 # qos = "cpu"
 # ///
@@ -133,6 +134,186 @@ import groundhog_hpc as hog
             assert result["account"] == "decorator-account"
             # PEP 723 field not in decorator should remain
             assert result["qos"] == "cpu"
+        finally:
+            Path(script_path).unlink()
+
+    def test_base_config_excludes_nested_variants(self):
+        """Test that nested variant configs are NOT included in base config resolution.
+
+        Regression test: Previously, when resolving just the base endpoint (e.g., "anvil"),
+        nested variant dicts (e.g., "gpu") would leak into the resolved config as keys:
+        {'account': 'my-account', 'qos': 'cpu', 'gpu': {...}}
+
+        This was incorrect - variant configs should only be included when explicitly
+        requested via the variant path (e.g., "anvil.gpu").
+        """
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "my-account"
+# qos = "cpu"
+# partition = "shared"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu"
+# qos = "gpu"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            result = resolver.resolve(
+                endpoint_name="anvil",  # Base endpoint only, no variant
+                decorator_config={},
+            )
+
+            # Base config fields should be present
+            assert result["account"] == "my-account"
+            assert result["qos"] == "cpu"
+            assert result["partition"] == "shared"
+
+            # Variant name should NOT be a key in the resolved config
+            assert "gpu" not in result
+
+            # Verify no dict values leaked into result (all values should be primitives)
+            for key, value in result.items():
+                if key == "worker_init":
+                    # worker_init is expected to be a string
+                    continue
+                # No nested dicts should be present
+                assert not isinstance(value, dict), (
+                    f"Found nested dict at key '{key}': {value}"
+                )
+
+        finally:
+            Path(script_path).unlink()
+
+    def test_base_config_excludes_multiple_nested_variants(self):
+        """Test that multiple nested variants are all excluded from base config.
+
+        Regression test for multi-level variant hierarchies.
+        """
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "my-account"
+# partition = "shared"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu"
+#
+# [tool.hog.anvil.gpu.debug]
+# walltime = 60
+#
+# [tool.hog.anvil.cpu]
+# partition = "cpu"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            result = resolver.resolve(
+                endpoint_name="anvil",  # Base endpoint only
+                decorator_config={},
+            )
+
+            # Base config fields should be present
+            assert result["account"] == "my-account"
+            assert result["partition"] == "shared"
+
+            # None of the variant names should be keys in the resolved config
+            assert "gpu" not in result
+            assert "cpu" not in result
+            assert "debug" not in result
+
+        finally:
+            Path(script_path).unlink()
+
+    def test_dict_valued_keys_preserved_from_decorator_and_callsite(self):
+        """Test that dict-valued keys in decorator/call-time config are preserved.
+
+        Unlike PEP 723 base configs where dicts are filtered out (they represent variants),
+        dict values in decorator or call-time config are intentional configuration data
+        that should be passed through to the Executor.
+        """
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "my-account"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            # Decorator config with dict-valued key
+            decorator_config = {
+                "qos": "debug",
+                "custom_options": {"option1": "value1", "option2": "value2"},
+            }
+
+            # Call-time config with dict-valued key
+            call_time_config = {
+                "env_vars": {"CUDA_VISIBLE_DEVICES": "0", "OMP_NUM_THREADS": "4"}
+            }
+
+            result = resolver.resolve(
+                endpoint_name="anvil",
+                decorator_config=decorator_config,
+                call_time_config=call_time_config,
+            )
+
+            # PEP 723 config should be included
+            assert result["account"] == "my-account"
+
+            # Decorator config with dict value should be preserved
+            assert result["qos"] == "debug"
+            assert result["custom_options"] == {
+                "option1": "value1",
+                "option2": "value2",
+            }
+
+            # Call-time config with dict value should be preserved
+            assert result["env_vars"] == {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "OMP_NUM_THREADS": "4",
+            }
+
+            # PEP 723 variant should still be excluded
+            assert "gpu" not in result
+
         finally:
             Path(script_path).unlink()
 
@@ -187,10 +368,13 @@ import groundhog_hpc as hog
             Path(script_path).unlink()
 
     def test_resolve_variant_without_base(self):
-        """Test variant config when base is empty (implicit table)."""
+        """Test variant config when base has only endpoint (minimal base config)."""
         script_content = """# /// script
 # requires-python = ">=3.10"
 # dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 #
 # [tool.hog.anvil.gpu]
 # qos = "gpu"
@@ -212,10 +396,10 @@ import groundhog_hpc as hog
                 decorator_config={},
             )
 
-            # Should only have variant fields
+            # Should have endpoint from base and variant fields
+            assert result["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
             assert result["qos"] == "gpu"
             assert result["partition"] == "gpu-debug"
-            assert "endpoint" not in result
         finally:
             Path(script_path).unlink()
 
@@ -230,6 +414,7 @@ class TestConfigResolverPrecedence:
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "pep723-base-account"
 # qos = "cpu"
 # partition = "shared"
@@ -286,6 +471,7 @@ class TestConfigResolverWorkerInit:
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # worker_init = "module load gcc"
 # ///
 
@@ -322,6 +508,7 @@ import groundhog_hpc as hog
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # worker_init = "module load gcc"
 #
 # [tool.hog.anvil.gpu]
@@ -410,6 +597,7 @@ class TestConfigResolverEdgeCases:
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "anvil-account"
 # ///
 
@@ -443,6 +631,7 @@ import groundhog_hpc as hog
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "anvil-account"
 # qos = "cpu"
 # ///
@@ -478,6 +667,7 @@ import groundhog_hpc as hog
 # dependencies = []
 #
 # [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "my-account"
 # ///
 
