@@ -1,7 +1,5 @@
 """Tests for the PEP 723 metadata parsing and serialization module."""
 
-import sys
-
 import pytest
 from pydantic import ValidationError
 
@@ -131,6 +129,8 @@ class TestPep723Metadata:
 
     def test_default_requires_python_matches_current_version(self):
         """Test that default requires-python matches current Python version."""
+        import sys
+
         metadata = Pep723Metadata()
         expected = f">={sys.version_info.major}.{sys.version_info.minor},<{sys.version_info.major}.{sys.version_info.minor + 1}"
         assert metadata.requires_python == expected
