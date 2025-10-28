@@ -15,8 +15,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from types import FrameType, ModuleType
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from types import FrameType, FunctionType, ModuleType
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
@@ -53,7 +53,7 @@ class Function:
 
     def __init__(
         self,
-        func: Callable,
+        func: FunctionType,
         endpoint: str | None = None,
         walltime: int | None = None,
         **user_endpoint_config: Any,
@@ -72,7 +72,7 @@ class Function:
         self.walltime: int | None = walltime
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
-        self._local_function: Callable = func
+        self._local_function: FunctionType = func
         self._shell_function: ShellFunction | None = None
         self._config_resolver: ConfigResolver | None = None
 
