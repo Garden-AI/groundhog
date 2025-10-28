@@ -8,7 +8,8 @@ environment to allow remote function calls.
 
 import inspect
 import os
-from typing import Any, Callable
+from types import FunctionType
+from typing import Any
 
 
 class Harness:
@@ -22,7 +23,7 @@ class Harness:
         func: The wrapped orchestrator function
     """
 
-    def __init__(self, func: Callable[..., Any]):
+    def __init__(self, func: FunctionType):
         """Initialize a Harness wrapper.
 
         Args:
@@ -31,7 +32,7 @@ class Harness:
         Raises:
             TypeError: If the function accepts any arguments
         """
-        self.func = func
+        self.func: FunctionType = func
         self._validate_signature()
 
     def __call__(self) -> Any:

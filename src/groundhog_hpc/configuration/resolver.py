@@ -23,20 +23,21 @@ from pathlib import Path
 from typing import Any
 
 from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
+from groundhog_hpc.configuration.models import EndpointConfig, EndpointVariant
 from groundhog_hpc.configuration.pep723 import read_pep723
 
 
 def _merge_endpoint_configs(
-    base_config: dict, override_config: dict | None = None
+    base_endpoint_config: dict, override_config: dict | None = None
 ) -> dict:
     """Merge endpoint configurations, ensuring worker_init commands are combined.
 
     The worker_init field is special-cased: if both configs provide it, the
     override's worker_init is executed first, followed by the base's worker_init.
-    All other fields from override_config simply replace fields from base_config.
+    All other fields from override_config simply replace fields from base_endpoint_config.
 
     Args:
-        base_config: Base configuration dict (e.g., from decorator defaults)
+        base_endpoint_config: Base configuration dict (e.g., from decorator defaults)
         override_config: Override configuration dict (e.g., from .remote() call)
 
     Returns:
@@ -49,12 +50,12 @@ def _merge_endpoint_configs(
         {'worker_init': 'module load gcc\\npip install uv', 'cores': 4}
     """
     if not override_config:
-        return base_config.copy()
+        return base_endpoint_config.copy()
 
-    merged = base_config.copy()
+    merged = base_endpoint_config.copy()
 
     # Special handling for worker_init: append base to override
-    if "worker_init" in override_config and "worker_init" in base_config:
+    if "worker_init" in override_config and "worker_init" in base_endpoint_config:
         override_config = override_config.copy()
         override_config["worker_init"] += f"\n{merged.pop('worker_init')}"
 
@@ -107,101 +108,103 @@ class ConfigResolver:
     ) -> dict[str, Any]:
         """Resolve final config by merging all sources in priority order.
 
+        Walks the dotted endpoint path (e.g., "anvil.gpu.debug") hierarchically,
+        validating and merging configs at each level:
+        1. DEFAULT_USER_CONFIG
+        2. Base endpoint config (e.g., "anvil")
+        3. Each variant in the path (e.g., "gpu", then "debug")
+        4. Decorator config
+        5. Call-time config
+
         Args:
-            endpoint: Endpoint name or UUID. Can be a base name like "anvil" or
-                a variant like "anvil.gpu".
+            endpoint_name: Endpoint name or dotted variant path (e.g., "anvil.gpu.debug")
             decorator_config: Configuration from @hog.function(**config)
             call_time_config: Configuration from .remote(user_endpoint_config={...})
 
         Returns:
             Merged configuration dictionary with all sources applied in order.
-            The 'endpoint' field (if present in PEP 723) is included in the
-            returned config for Function.submit() to extract and use.
+
+        Raises:
+            ValueError: If variant path is invalid (variant not found or not a dict)
+            ValidationError: If any config level has invalid fields (e.g., negative walltime)
         """
+
         # Layer 1: Start with DEFAULT_USER_CONFIG
         config = DEFAULT_USER_CONFIG.copy()
+        base_name, *variant_path = endpoint_name.split(".")
 
-        # Layer 2: [tool.hog.<base>] from PEP 723
-        if base_config := self._get_pep723_base_config(endpoint_name):
-            config = _merge_endpoint_configs(config, base_config)
+        # Layer 2-3: walk base[.variant[.sub]] path hierarchically
+        metadata: dict = self._load_pep723_metadata()
+        base_variant: dict = (
+            metadata.get("tool", {}).get("hog", {}).get(base_name, {}).copy()
+        )
+        if base_variant:
+            EndpointConfig.model_validate(base_variant)
+            config["endpoint"] = base_variant.pop("endpoint")
 
-        # Layer 3: [tool.hog.<base>.<variant>] from PEP 723
-        if variant_config := self._get_pep723_variant_config(endpoint_name):
-            config = _merge_endpoint_configs(config, variant_config)
+        def _merge_variant_path(
+            variant_names: list[str], current_variant: dict, accumulated_config: dict
+        ) -> dict:
+            # filter out sibling sub-variants we shouldn't include in config
+            current_variant = {
+                k: v
+                for k, v in current_variant.items()
+                if not isinstance(v, dict) or k in variant_names[:1]
+            }
+            accumulated_config = _merge_endpoint_configs(
+                accumulated_config,
+                EndpointVariant(**current_variant).model_dump(exclude_none=True),
+            )
+            # base case
+            if not variant_names:
+                return accumulated_config
+
+            next_name, *remaining_names = variant_names
+            next_variant = current_variant.get(next_name)
+            if not isinstance(next_variant, dict):
+                path_so_far = ".".join(
+                    [base_name]
+                    + variant_path[: len(variant_path) - len(remaining_names)]
+                )
+                if next_variant is None:
+                    raise ValueError(f"Variant {next_name} not found in {path_so_far}")
+                else:
+                    raise ValueError(
+                        f"Variant {next_name} in {path_so_far} is not a valid variant "
+                        f"(expected dict, got {type(next_variant).__name__})"
+                    )
+            return _merge_variant_path(
+                remaining_names, next_variant, accumulated_config
+            )
+
+        config = _merge_variant_path(variant_path, base_variant, config)
 
         # Layer 4: Merge decorator config
         config = _merge_endpoint_configs(config, decorator_config)
 
         # Layer 5: Call-time overrides
-        if call_time_config:
-            config = _merge_endpoint_configs(config, call_time_config)
+        config = _merge_endpoint_configs(config, call_time_config)
 
         return config
 
-    def _get_pep723_base_config(self, endpoint_name: str) -> dict[str, Any] | None:
-        """Extract [tool.hog.<base>] config from PEP 723 metadata.
-
-        Args:
-            endpoint: Endpoint name (may include variant, e.g., "anvil.gpu")
-
-        Returns:
-            Base configuration dict or None if not found
-        """
-        if not self.script_path:
-            return None
-
-        metadata = self._load_pep723_metadata()
-        if not metadata:
-            return None
-
-        base_endpoint = endpoint_name.split(".")[0]
-
-        return metadata.get("tool", {}).get("hog", {}).get(base_endpoint)
-
-    def _get_pep723_variant_config(self, endpoint_name: str) -> dict[str, Any] | None:
-        """Extract [tool.hog.<base>.<variant>] config from PEP 723 metadata.
-
-        Variants do NOT inherit from base - inheritance is handled by the caller
-        which first loads base config, then merges variant config on top.
-
-        Args:
-            endpoint: Endpoint name (must include variant, e.g., "anvil.gpu")
-
-        Returns:
-            Variant configuration dict or None if endpoint has no variant or
-            variant config not found
-        """
-        if "." not in endpoint_name:
-            return None
-
-        if not self.script_path:
-            return None
-
-        metadata = self._load_pep723_metadata()
-        if not metadata:
-            return None
-
-        parts = endpoint_name.split(".", 1)
-        base_endpoint, variant = parts[0], parts[1]
-
-        # Look for [tool.hog.anvil.gpu]
-        # Note: TOML spec means [tool.hog.anvil.gpu] creates nested dict structure
-        base_section = metadata.get("tool", {}).get("hog", {}).get(base_endpoint, {})
-        return base_section.get(variant)
-
-    def _load_pep723_metadata(self) -> dict | None:
+    def _load_pep723_metadata(self) -> dict[str, Any]:
         """Load and cache PEP 723 metadata from script.
 
         Returns:
-            Parsed TOML metadata dictionary or empty dict if no metadata found
+            Parsed metadata as dict (for backward compatibility) or empty dict if no metadata found
         """
-        if self._pep723_cache is not None:
-            return self._pep723_cache
+        if self._pep723_cache:
+            return self._pep723_cache.copy()
 
         if not self.script_path or not Path(self.script_path).exists():
             self._pep723_cache = {}
             return self._pep723_cache
 
         script_content = Path(self.script_path).read_text()
-        self._pep723_cache = read_pep723(script_content) or {}
-        return self._pep723_cache
+
+        if (pep723_model := read_pep723(script_content)) is not None:
+            self._pep723_cache = pep723_model.model_dump(exclude_none=True)
+        else:
+            self._pep723_cache = {}
+
+        return self._pep723_cache.copy()

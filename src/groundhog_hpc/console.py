@@ -152,7 +152,7 @@ def _get_status_display(
         display.append(exec_time_str, style="blue")
         display.append(")", style="dim")
 
-    display.append(" | ")
+    display.append(" | ", style="dim")
     display.append(spinner.render(current_time))
 
     return display

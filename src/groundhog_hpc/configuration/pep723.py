@@ -6,10 +6,10 @@ using the PEP 723 inline script metadata format (# /// script ... # ///).
 
 import re
 import sys
-from datetime import datetime, timezone
 
 import tomli_w
-from pydantic import AliasPath, BaseModel, Field, field_serializer
+
+from groundhog_hpc.configuration.models import Pep723Metadata
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -22,8 +22,8 @@ INLINE_METADATA_REGEX = (
 )
 
 
-def read_pep723(script: str) -> dict | None:
-    """Extract PEP 723 script metadata from a Python script.
+def read_pep723(script: str) -> Pep723Metadata | None:
+    """Extract and validate PEP 723 script metadata from a Python script.
 
     Parses inline metadata blocks like:
         # /// script
@@ -35,11 +35,11 @@ def read_pep723(script: str) -> dict | None:
         script: The full text content of a Python script
 
     Returns:
-        A dictionary containing the parsed TOML metadata, or None if no metadata block
-        is found.
+        A validated Pep723Metadata instance, or None if no metadata block found.
 
     Raises:
         ValueError: If multiple 'script' metadata blocks are found
+        ValidationError: If metadata contains invalid configuration (e.g., negative walltime)
     """
     name = "script"
     matches = list(
@@ -55,33 +55,11 @@ def read_pep723(script: str) -> dict | None:
             line[2:] if line.startswith("# ") else line[1:]
             for line in matches[0].group("content").splitlines(keepends=True)
         )
-        return tomllib.loads(content)
+        raw_dict = tomllib.loads(content)
+        # Validate through pydantic model
+        return Pep723Metadata(**raw_dict)
     else:
         return None
-
-
-def _default_requires_python() -> str:
-    return f">={sys.version_info.major}.{sys.version_info.minor},<{sys.version_info.major}.{sys.version_info.minor + 1}"
-
-
-def _default_exclude_newer() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-class Pep723Metadata(BaseModel, extra="allow"):
-    requires_python: str = Field(
-        alias="requires-python", default_factory=_default_requires_python
-    )
-    dependencies: list[str] = Field(default_factory=list)
-    exclude_newer: str = Field(
-        default_factory=_default_exclude_newer,
-        validation_alias=AliasPath("tool", "uv", "exclude-newer"),
-        serialization_alias="tool",
-    )
-
-    @field_serializer("exclude_newer")
-    def serialize_tool_uv_table(self, value: str) -> dict:
-        return {"uv": {"exclude-newer": value}}
 
 
 def write_pep723(metadata: Pep723Metadata) -> str:
