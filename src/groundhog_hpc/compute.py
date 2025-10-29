@@ -122,3 +122,18 @@ def get_task_status(task_id: str | UUID | None) -> dict[str, Any]:
 
     client = _get_compute_client()
     return client.get_task(task_id)
+
+
+@lru_cache
+def get_endpoint_schema(endpoint: str | UUID) -> dict[str, Any]:
+    """Fetch and cache the user_config_schema for an endpoint.
+
+    Args:
+        endpoint: UUID of the Globus Compute endpoint
+
+    Returns:
+        JSON schema dict describing accepted config fields, or empty dict if unavailable
+    """
+    client = _get_compute_client()
+    metadata = client.get_endpoint_metadata(endpoint)
+    return metadata.get("user_config_schema", {})

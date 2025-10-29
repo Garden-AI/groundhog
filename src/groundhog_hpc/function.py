@@ -19,7 +19,11 @@ from types import FrameType, FunctionType, ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.compute import (
+    get_endpoint_schema,
+    script_to_submittable,
+    submit_to_executor,
+)
 from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
@@ -173,6 +177,13 @@ class Function:
         if walltime is None:
             walltime = DEFAULT_WALLTIME_SEC
 
+        # sanity check with endpoint metadata that we're not sending unrecognized user config
+        if schema := get_endpoint_schema(endpoint):
+            unexpected_keys = set(config.keys()) - set(
+                schema.get("properties", {}).keys()
+            )
+            config = {k: v for k, v in config.items() if k not in unexpected_keys}
+
         if self._shell_function is None:
             self._shell_function = script_to_submittable(
                 self.script_path, self._local_function.__qualname__, walltime
@@ -273,8 +284,10 @@ class Function:
     def local(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the function locally, using subprocess only when crossing module boundaries.
 
-        Falls back to direct execution (__call__) if called from within the same module
+        Falls back to direct execution (__call__) if called from within the same module*
         where the function is defined, preventing infinite recursion from top-level calls.
+
+        *Calling .local() from a harness, even in the same module, will isolate the process.
 
         Args:
             *args: Positional arguments to pass to the function
@@ -288,7 +301,7 @@ class Function:
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
 
-        if not self._local_subprocess_safe():
+        if not (self._local_subprocess_safe() or self._running_in_harness()):
             # Same module or uncertain - use direct call for safety
             # Wrap the call to capture and prefix any stdout/stderr
             with prefix_output(prefix="[local]", prefix_color="blue"):
