@@ -82,7 +82,7 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
         metadata = Pep723Metadata()
     else:
         # Preserve existing metadata, fill in defaults for missing fields
-        metadata = Pep723Metadata.model_validate(metadata_dict)
+        metadata = Pep723Metadata(**metadata_dict)
 
     # Show proposed metadata
     typer.echo("\nProposed metadata block:", err=True)
@@ -93,7 +93,7 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
     if typer.confirm("Would you like to update the script with this metadata?"):
         updated_contents = insert_or_update_metadata(contents, metadata)
         script_path.write_text(updated_contents)
-        typer.echo(f"✓ Updated {script_path}", err=True)
+        typer.echo(f"Updated {script_path}", err=True)
         typer.echo()
         return updated_contents
     else:
@@ -133,8 +133,8 @@ def run(
     contents = _check_and_update_metadata(script_path, contents)
 
     metadata = read_pep723(contents)
-    if metadata and "requires-python" in metadata:
-        requires_python = metadata["requires-python"]
+    if metadata and metadata.requires_python:
+        requires_python = metadata.requires_python
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
         if not _python_version_matches(current_version, requires_python):
@@ -211,12 +211,32 @@ def init(
         console.print(f"[red]Error: {filename} already exists[/red]")
         raise typer.Exit(1)
 
+    # Validate Python version specifier if provided
+    if python:
+        try:
+            SpecifierSet(python)
+        except Exception as e:
+            console.print(
+                f"[red]Error: Invalid Python version specifier '{python}': {e}[/red]"
+            )
+            raise typer.Exit(1)
+
+    default_meta = Pep723Metadata()
+    python = python or default_meta.requires_python
+
+    assert default_meta.tool and default_meta.tool.uv
+    exclude_newer = default_meta.tool.uv.exclude_newer
+
     env = Environment(loader=PackageLoader("groundhog_hpc", "templates"))
     template = env.get_template("init_script.py.jinja")
-    content = template.render(filename=filename)
+    content = template.render(
+        filename=filename,
+        python=python,
+        exclude_newer=exclude_newer,
+    )
     Path(filename).write_text(content)
 
-    # Add dependencies/python version via uv if requested
+    # Add dependencies via uv if requested
     if requirements:
         for req_file in requirements:
             try:
@@ -236,22 +256,6 @@ def init(
             except subprocess.CalledProcessError as e:
                 console.print(f"[red]Error adding dependencies: {e.stderr}[/red]")
                 raise typer.Exit(1)
-
-    if python:
-        try:
-            # Read the current content
-            content = Path(filename).read_text()
-            metadata = read_pep723(content) or Pep723Metadata()
-            metadata_dict = metadata.model_dump(
-                mode="python", exclude_none=True, exclude_unset=True
-            )
-            metadata_dict["requires-python"] = python
-            updated_metadata = Pep723Metadata(**metadata_dict)
-            updated_content = insert_or_update_metadata(content, updated_metadata)
-            Path(filename).write_text(updated_content)
-        except Exception as e:
-            console.print(f"[red]Error updating Python version: {e}[/red]")
-            raise typer.Exit(1)
 
     console.print(f"[green]Created {filename}[/green]")
     console.print("\nNext steps:")

@@ -1,6 +1,9 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = "{{ python }}"
 # dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "{{ exclude_newer }}"
 #
 # [tool.hog.my_endpoint]
 # endpoint = "TODO: Add Globus Compute endpoint UUID here"
