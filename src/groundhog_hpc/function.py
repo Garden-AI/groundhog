@@ -19,7 +19,11 @@ from types import FrameType, FunctionType, ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.compute import (
+    get_endpoint_schema,
+    script_to_submittable,
+    submit_to_executor,
+)
 from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
@@ -172,6 +176,13 @@ class Function:
         # Use default walltime if still not specified
         if walltime is None:
             walltime = DEFAULT_WALLTIME_SEC
+
+        # sanity check with endpoint metadata that we're not sending unrecognized user config
+        if schema := get_endpoint_schema(endpoint):
+            unexpected_keys = set(config.keys()) - set(
+                schema.get("properties", {}).keys()
+            )
+            config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
         if self._shell_function is None:
             self._shell_function = script_to_submittable(

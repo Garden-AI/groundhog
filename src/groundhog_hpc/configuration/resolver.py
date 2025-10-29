@@ -145,12 +145,6 @@ class ConfigResolver:
         def _merge_variant_path(
             variant_names: list[str], current_variant: dict, accumulated_config: dict
         ) -> dict:
-            # filter out sibling sub-variants we shouldn't include in config
-            current_variant = {
-                k: v
-                for k, v in current_variant.items()
-                if not isinstance(v, dict) or k in variant_names[:1]
-            }
             accumulated_config = _merge_endpoint_configs(
                 accumulated_config,
                 EndpointVariant(**current_variant).model_dump(exclude_none=True),
