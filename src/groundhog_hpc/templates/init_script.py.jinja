@@ -1,0 +1,33 @@
+# /// script
+# requires-python = "{{ python }}"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "{{ exclude_newer }}"
+#
+# [tool.hog.my_endpoint]
+# endpoint = "TODO: Add Globus Compute endpoint UUID here"
+# # Uncomment and configure default options for "my_endpoint" here (available options vary by endpoint):
+# # account = "my-account"
+# # partition = "standard"
+# # walltime = 300
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function(endpoint="my_endpoint")
+def hello_world(name: str = "World") -> str:
+    """Example function that can be run remotely on your HPC cluster. """
+    return f"Hello, {name}!"
+
+@hog.harness()
+def main():
+    """Main harness that orchestrates remote function calls.
+
+    Run the 'main' harness with: hog run {{ filename }}
+    Run another harness with: hog run {{ filename }} [harness]
+    """
+    # .remote() blocks until the function completes
+    # use .submit() to return a future instead
+    result = hello_world.remote("World")
+    print(f"Result: {result}")

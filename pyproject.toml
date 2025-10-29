@@ -43,6 +43,15 @@ cache-keys = [
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/groundhog_hpc"]
+
+[tool.hatch.build]
+include = [
+  "src/groundhog_hpc/**/*.py",
+  "src/groundhog_hpc/templates/**/*.jinja",
+]
+
 [tool.uv-dynamic-versioning]
 fallback-version = "0.0.0"
 pattern = "default-unprefixed"

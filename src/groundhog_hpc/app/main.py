@@ -6,16 +6,19 @@ Python version validation, and error reporting.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
+import uv
+from jinja2 import Environment, PackageLoader
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
+from rich.console import Console
 
 import groundhog_hpc
-from groundhog_hpc.compute import pre_register_shell_function
 from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
     insert_or_update_metadata,
@@ -23,11 +26,11 @@ from groundhog_hpc.configuration.pep723 import (
     write_pep723,
 )
 from groundhog_hpc.errors import RemoteExecutionError
-from groundhog_hpc.function import Function
 from groundhog_hpc.harness import Harness
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 app = typer.Typer()
+console = Console()
 
 
 def _check_and_update_metadata(script_path: Path, contents: str) -> str:
@@ -79,7 +82,7 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
         metadata = Pep723Metadata()
     else:
         # Preserve existing metadata, fill in defaults for missing fields
-        metadata = Pep723Metadata.model_validate(metadata_dict)
+        metadata = Pep723Metadata(**metadata_dict)
 
     # Show proposed metadata
     typer.echo("\nProposed metadata block:", err=True)
@@ -90,7 +93,7 @@ def _check_and_update_metadata(script_path: Path, contents: str) -> str:
     if typer.confirm("Would you like to update the script with this metadata?"):
         updated_contents = insert_or_update_metadata(contents, metadata)
         script_path.write_text(updated_contents)
-        typer.echo(f"✓ Updated {script_path}", err=True)
+        typer.echo(f"Updated {script_path}", err=True)
         typer.echo()
         return updated_contents
     else:
@@ -130,8 +133,8 @@ def run(
     contents = _check_and_update_metadata(script_path, contents)
 
     metadata = read_pep723(contents)
-    if metadata and "requires-python" in metadata:
-        requires_python = metadata["requires-python"]
+    if metadata and metadata.requires_python:
+        requires_python = metadata.requires_python
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
         if not _python_version_matches(current_version, requires_python):
@@ -183,69 +186,132 @@ def run(
         raise typer.Exit(1)
 
 
-@app.command(no_args_is_help=True, hidden=True)
-def register(
-    script: Path = typer.Argument(
-        ...,
-        help="Python script with decorated functions to pre-register with Globus Compute.",
+@app.command()
+def init(
+    filename: str = typer.Argument(..., help="Name of the script to create"),
+    requirements: Optional[List[Path]] = typer.Option(
+        None,
+        "--requirements",
+        "--requirement",
+        "-r",
+        help="Add dependencies from file (requirements.txt, pyproject.toml, etc.)",
     ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Print detailed information about registered functions",
+    python: Optional[str] = typer.Option(
+        None,
+        "--python",
+        "-p",
+        help="Python version specifier (e.g., '>=3.11' or '3.11')",
     ),
 ) -> None:
-    """Register all @hog.function decorated functions in a script and print their UUIDs."""
+    """Create a new groundhog script with PEP 723 metadata and example code."""
+    if not filename.endswith(".py"):
+        filename += ".py"
 
-    script_path = script.resolve()
-    if not script_path.exists():
-        typer.echo(f"Error: Script '{script_path}' not found", err=True)
+    if Path(filename).exists():
+        console.print(f"[red]Error: {filename} already exists[/red]")
         raise typer.Exit(1)
 
-    # Set script path for Function instances
-    os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-
-    contents = script_path.read_text()
-
-    try:
-        # Execute in a temporary module namespace
-        import __main__
-
-        exec(contents, __main__.__dict__, __main__.__dict__)
-
-        # Find all Function instances
-        functions_found = []
-        for name, obj in __main__.__dict__.items():
-            if isinstance(obj, Function):
-                functions_found.append((name, obj))
-
-        if not functions_found:
-            typer.echo("No @hog.function decorated functions found in script", err=True)
+    # Normalize Python version using uv's parsing logic
+    default_meta = Pep723Metadata()
+    if python:
+        try:
+            python = _normalize_python_version_with_uv(python)
+        except subprocess.CalledProcessError as e:
+            # Re-raise uv's error message as-is
+            console.print(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
+    else:
+        python = default_meta.requires_python
 
-        # Register each function
-        typer.echo(f"Registering {len(functions_found)} function(s)...")
+    assert default_meta.tool and default_meta.tool.uv
+    exclude_newer = default_meta.tool.uv.exclude_newer
 
-        for name, func in functions_found:
-            function_id = pre_register_shell_function(
-                str(script_path), name, walltime=func.walltime
-            )
-            typer.echo(f"{name}: {function_id}")
+    env = Environment(loader=PackageLoader("groundhog_hpc", "templates"))
+    template = env.get_template("init_script.py.jinja")
+    content = template.render(
+        filename=filename,
+        python=python,
+        exclude_newer=exclude_newer,
+    )
+    Path(filename).write_text(content)
 
-            if verbose:
-                from pprint import pprint
+    # Add dependencies via uv if requested
+    if requirements:
+        for req_file in requirements:
+            try:
+                subprocess.run(
+                    [
+                        f"{uv.find_uv_bin()}",
+                        "add",
+                        "--script",
+                        filename,
+                        "-r",
+                        str(req_file),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                console.print(f"[red]Error adding dependencies: {e.stderr}[/red]")
+                raise typer.Exit(1)
 
-                import globus_compute_sdk as gc
+    console.print(f"[green]Created {filename}[/green]")
+    console.print("\nNext steps:")
+    console.print("  1. Edit the endpoint configuration in the PEP 723 block")
+    console.print(f"  2. Run with: [bold]hog run {filename} main[/bold]")
 
-                client = gc.Client()
 
-                func_info = client.get_function(function_id)
-                pprint(func_info)
+def _normalize_python_version_with_uv(python: str) -> str:
+    """Normalize a Python version string using uv's parsing logic.
 
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    First tries to validate as a PEP 440 specifier. If valid, returns as-is
+    to preserve the exact specifier. Otherwise, delegates to `uv init` which
+    accepts formats like '3.11' and converts them to '>=3.11'.
+
+    Args:
+        python: Python version string (e.g., '3.11', '>=3.11', '3.11.5')
+
+    Returns:
+        Normalized Python version specifier
+
+    Raises:
+        subprocess.CalledProcessError: If uv rejects the version string
+    """
+    # Try validating as a SpecifierSet first
+    try:
+        SpecifierSet(python)
+        # Valid specifier, return as-is
+        return python
+    except Exception:
+        # Not a valid specifier, delegate to uv for normalization
+        pass
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpfile = Path(tmpdir) / "tmp.py"
+        subprocess.run(
+            [
+                f"{uv.find_uv_bin()}",
+                "init",
+                "--script",
+                str(tmpfile),
+                "--python",
+                python,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        # Parse the metadata from the temp file to get the normalized version
+        tmp_content = tmpfile.read_text()
+        tmp_metadata = read_pep723(tmp_content)
+        if tmp_metadata and tmp_metadata.requires_python:
+            return tmp_metadata.requires_python
+        else:
+            # Fallback to user input if parsing fails
+            return python
 
 
 def _python_version_matches(current: str, spec: str) -> bool:
