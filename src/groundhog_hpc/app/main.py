@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
+import uv
 from jinja2 import Environment, PackageLoader
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -203,38 +204,31 @@ def init(
     ),
 ) -> None:
     """Create a new groundhog script with PEP 723 metadata and example code."""
-    # 1. Normalize filename
     if not filename.endswith(".py"):
         filename += ".py"
 
-    # 2. Check for conflicts
     if Path(filename).exists():
         console.print(f"[red]Error: {filename} already exists[/red]")
         raise typer.Exit(1)
 
-    # 3. Validate requirements files exist
-    if requirements:
-        for req_file in requirements:
-            if not req_file.exists():
-                console.print(
-                    f"[red]Error: Requirements file not found: {req_file}[/red]"
-                )
-                raise typer.Exit(1)
-
-    # 4. Load and render template
     env = Environment(loader=PackageLoader("groundhog_hpc", "templates"))
     template = env.get_template("init_script.py.jinja")
     content = template.render(filename=filename)
-
-    # 5. Write file
     Path(filename).write_text(content)
 
-    # 6. Add dependencies via uv if requested
+    # Add dependencies/python version via uv if requested
     if requirements:
         for req_file in requirements:
             try:
                 subprocess.run(
-                    ["uv", "add", "--script", filename, "-r", str(req_file)],
+                    [
+                        f"{uv.find_uv_bin()}",
+                        "add",
+                        "--script",
+                        filename,
+                        "-r",
+                        str(req_file),
+                    ],
                     check=True,
                     capture_output=True,
                     text=True,
@@ -243,27 +237,23 @@ def init(
                 console.print(f"[red]Error adding dependencies: {e.stderr}[/red]")
                 raise typer.Exit(1)
 
-    # 7. Update python version if requested
     if python:
         try:
             # Read the current content
             content = Path(filename).read_text()
-            metadata = read_pep723(content)
-            if metadata:
-                # Update requires-python field
-                metadata_dict = metadata.model_dump(
-                    mode="python", exclude_none=True, exclude_unset=True
-                )
-                metadata_dict["requires-python"] = python
-                updated_metadata = Pep723Metadata.model_validate(metadata_dict)
-                updated_content = insert_or_update_metadata(content, updated_metadata)
-                Path(filename).write_text(updated_content)
+            metadata = read_pep723(content) or Pep723Metadata()
+            metadata_dict = metadata.model_dump(
+                mode="python", exclude_none=True, exclude_unset=True
+            )
+            metadata_dict["requires-python"] = python
+            updated_metadata = Pep723Metadata(**metadata_dict)
+            updated_content = insert_or_update_metadata(content, updated_metadata)
+            Path(filename).write_text(updated_content)
         except Exception as e:
             console.print(f"[red]Error updating Python version: {e}[/red]")
             raise typer.Exit(1)
 
-    # 8. Success message
-    console.print(f"[green]✓ Created {filename}[/green]")
+    console.print(f"[green]Created {filename}[/green]")
     console.print("\nNext steps:")
     console.print("  1. Edit the endpoint configuration in the PEP 723 block")
     console.print(f"  2. Run with: [bold]hog run {filename} main[/bold]")
