@@ -284,8 +284,10 @@ class Function:
     def local(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the function locally, using subprocess only when crossing module boundaries.
 
-        Falls back to direct execution (__call__) if called from within the same module
+        Falls back to direct execution (__call__) if called from within the same module*
         where the function is defined, preventing infinite recursion from top-level calls.
+
+        *Calling .local() from a harness, even in the same module, will isolate the process.
 
         Args:
             *args: Positional arguments to pass to the function
@@ -299,7 +301,7 @@ class Function:
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
 
-        if not self._local_subprocess_safe():
+        if not (self._local_subprocess_safe() or self._running_in_harness()):
             # Same module or uncertain - use direct call for safety
             # Wrap the call to capture and prefix any stdout/stderr
             with prefix_output(prefix="[local]", prefix_color="blue"):
