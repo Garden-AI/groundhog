@@ -137,124 +137,12 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
 
-    def test_base_config_excludes_nested_variants(self):
-        """Test that nested variant configs are NOT included in base config resolution.
-
-        Regression test: Previously, when resolving just the base endpoint (e.g., "anvil"),
-        nested variant dicts (e.g., "gpu") would leak into the resolved config as keys:
-        {'account': 'my-account', 'qos': 'cpu', 'gpu': {...}}
-
-        This was incorrect - variant configs should only be included when explicitly
-        requested via the variant path (e.g., "anvil.gpu").
-        """
-        script_content = """# /// script
-# requires-python = ">=3.10"
-# dependencies = []
-#
-# [tool.hog.anvil]
-# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
-# account = "my-account"
-# qos = "cpu"
-# partition = "shared"
-#
-# [tool.hog.anvil.gpu]
-# partition = "gpu"
-# qos = "gpu"
-# ///
-
-import groundhog_hpc as hog
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(script_content)
-            f.flush()
-            script_path = f.name
-
-        try:
-            resolver = ConfigResolver(script_path=script_path)
-
-            result = resolver.resolve(
-                endpoint_name="anvil",  # Base endpoint only, no variant
-                decorator_config={},
-            )
-
-            # Base config fields should be present
-            assert result["account"] == "my-account"
-            assert result["qos"] == "cpu"
-            assert result["partition"] == "shared"
-
-            # Variant name should NOT be a key in the resolved config
-            assert "gpu" not in result
-
-            # Verify no dict values leaked into result (all values should be primitives)
-            for key, value in result.items():
-                if key == "worker_init":
-                    # worker_init is expected to be a string
-                    continue
-                # No nested dicts should be present
-                assert not isinstance(value, dict), (
-                    f"Found nested dict at key '{key}': {value}"
-                )
-
-        finally:
-            Path(script_path).unlink()
-
-    def test_base_config_excludes_multiple_nested_variants(self):
-        """Test that multiple nested variants are all excluded from base config.
-
-        Regression test for multi-level variant hierarchies.
-        """
-        script_content = """# /// script
-# requires-python = ">=3.10"
-# dependencies = []
-#
-# [tool.hog.anvil]
-# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
-# account = "my-account"
-# partition = "shared"
-#
-# [tool.hog.anvil.gpu]
-# partition = "gpu"
-#
-# [tool.hog.anvil.gpu.debug]
-# walltime = 60
-#
-# [tool.hog.anvil.cpu]
-# partition = "cpu"
-# ///
-
-import groundhog_hpc as hog
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(script_content)
-            f.flush()
-            script_path = f.name
-
-        try:
-            resolver = ConfigResolver(script_path=script_path)
-
-            result = resolver.resolve(
-                endpoint_name="anvil",  # Base endpoint only
-                decorator_config={},
-            )
-
-            # Base config fields should be present
-            assert result["account"] == "my-account"
-            assert result["partition"] == "shared"
-
-            # None of the variant names should be keys in the resolved config
-            assert "gpu" not in result
-            assert "cpu" not in result
-            assert "debug" not in result
-
-        finally:
-            Path(script_path).unlink()
-
     def test_dict_valued_keys_preserved_from_decorator_and_callsite(self):
         """Test that dict-valued keys in decorator/call-time config are preserved.
 
-        Unlike PEP 723 base configs where dicts are filtered out (they represent variants),
-        dict values in decorator or call-time config are intentional configuration data
-        that should be passed through to the Executor.
+        All dict-valued keys (from PEP 723, decorator, or call-time) are preserved
+        by the resolver. At submit time, any keys not in the endpoint schema
+        (including nested variants) will be filtered out.
         """
         script_content = """# /// script
 # requires-python = ">=3.10"
@@ -311,8 +199,9 @@ import groundhog_hpc as hog
                 "OMP_NUM_THREADS": "4",
             }
 
-            # PEP 723 variant should still be excluded
-            assert "gpu" not in result
+            # PEP 723 variant is also included (will be filtered at submit time)
+            assert "gpu" in result
+            assert isinstance(result["gpu"], dict)
 
         finally:
             Path(script_path).unlink()

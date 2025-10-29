@@ -57,6 +57,13 @@ def test_func():
             mock_future = MagicMock()
             mock_future.result.return_value = "result"
 
+            # Mock schema that includes the fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "qos": {"type": "string"},
+                }
+            }
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -65,7 +72,11 @@ def test_func():
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        func.submit()
 
             # Verify submit_to_executor was called with PEP 723 config
             call_kwargs = mock_submit.call_args[1]
@@ -124,6 +135,14 @@ def test_func():
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
 
+            # Mock schema that includes all fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "qos": {"type": "string"},
+                    "partition": {"type": "string"},
+                }
+            }
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -132,7 +151,11 @@ def test_func():
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        func.submit()
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
@@ -188,6 +211,14 @@ import groundhog_hpc as hog
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
 
+            # Mock schema that includes all fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "qos": {"type": "string"},
+                    "cores": {"type": "integer"},
+                }
+            }
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -196,7 +227,11 @@ import groundhog_hpc as hog
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        func.submit()
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
@@ -245,6 +280,13 @@ import groundhog_hpc as hog
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
 
+            # Mock schema that includes all fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "qos": {"type": "string"},
+                }
+            }
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -253,8 +295,12 @@ import groundhog_hpc as hog
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Call-time override
-                    func.submit(user_endpoint_config={"qos": "runtime-qos"})
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Call-time override
+                        func.submit(user_endpoint_config={"qos": "runtime-qos"})
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
@@ -303,6 +349,8 @@ import groundhog_hpc as hog
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
 
+            # Mock schema that includes worker_init
+            mock_schema = {"properties": {"worker_init": {"type": "string"}}}
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -311,7 +359,13 @@ import groundhog_hpc as hog
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    func.submit(user_endpoint_config={"worker_init": "export DEBUG=1"})
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        func.submit(
+                            user_endpoint_config={"worker_init": "export DEBUG=1"}
+                        )
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
@@ -365,6 +419,14 @@ import groundhog_hpc as hog
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
 
+            # Mock schema that includes all fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "partition": {"type": "string"},
+                    "qos": {"type": "string"},
+                }
+            }
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
                 return_value=mock_shell_func,
@@ -373,8 +435,12 @@ import groundhog_hpc as hog
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Switch to GPU variant at runtime
-                    func.submit(endpoint="anvil.gpu")
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Switch to GPU variant at runtime
+                        func.submit(endpoint="anvil.gpu")
 
             config = mock_submit.call_args[1]["user_endpoint_config"]
 

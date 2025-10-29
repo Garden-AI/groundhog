@@ -228,7 +228,10 @@ class TestSubmitMethod:
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ):
-                    result = func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                    ):
+                        result = func.submit()
 
             assert result is mock_future
         finally:
@@ -254,8 +257,12 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch("groundhog_hpc.function.serialize") as mock_serialize:
-                        mock_serialize.return_value = "serialized_payload"
-                        func.submit(1, 2, kwarg1="value1")
+                        with patch(
+                            "groundhog_hpc.function.get_endpoint_schema",
+                            return_value={},
+                        ):
+                            mock_serialize.return_value = "serialized_payload"
+                            func.submit(1, 2, kwarg1="value1")
 
             # Verify serialize was called with args and kwargs
             mock_serialize.assert_called_once()
@@ -281,12 +288,18 @@ class TestSubmitMethod:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid, account="test")
 
             mock_future = MagicMock()
+            # Mock schema that includes the "account" field
+            mock_schema = {"properties": {"account": {"type": "string"}}}
             with patch("groundhog_hpc.function.script_to_submittable"):
                 with patch(
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        func.submit()
 
             # Verify endpoint was passed
             from uuid import UUID
@@ -321,7 +334,10 @@ class TestSubmitMethod:
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ):
-                    result = func.remote()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                    ):
+                        result = func.remote()
 
             # Verify that result() was called on the future
             mock_future.result.assert_called_once()
@@ -349,8 +365,11 @@ class TestSubmitMethod:
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Call with override endpoint
-                    func.submit(endpoint=mock_endpoint_uuid)
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                    ):
+                        # Call with override endpoint
+                        func.submit(endpoint=mock_endpoint_uuid)
 
             # Verify the override endpoint was used
             from uuid import UUID
@@ -374,8 +393,11 @@ class TestSubmitMethod:
 
             with patch("groundhog_hpc.function.script_to_submittable") as mock_s2s:
                 with patch("groundhog_hpc.function.submit_to_executor"):
-                    # Call with override walltime
-                    func.submit(walltime=120)
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                    ):
+                        # Call with override walltime
+                        func.submit(walltime=120)
 
             # Verify script_to_submittable was called with override walltime
             # Called as: script_to_submittable(script_path, function_name, walltime)
@@ -402,18 +424,30 @@ class TestSubmitMethod:
             )
 
             mock_future = MagicMock()
+            # Mock schema that includes the config fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "cores_per_node": {"type": "integer"},
+                    "queue": {"type": "string"},
+                }
+            }
             with patch("groundhog_hpc.function.script_to_submittable"):
                 with patch(
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Call with override config
-                    func.submit(
-                        user_endpoint_config={
-                            "account": "override_account",
-                            "queue": "gpu",
-                        }
-                    )
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Call with override config
+                        func.submit(
+                            user_endpoint_config={
+                                "account": "override_account",
+                                "queue": "gpu",
+                            }
+                        )
 
             # Verify the override config was used
             config = mock_submit.call_args[1]["user_endpoint_config"]
@@ -443,16 +477,22 @@ class TestSubmitMethod:
             )
 
             mock_future = MagicMock()
+            # Mock schema that includes worker_init
+            mock_schema = {"properties": {"worker_init": {"type": "string"}}}
             with patch("groundhog_hpc.function.script_to_submittable"):
                 with patch(
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Call with custom worker_init
-                    custom_worker_init = "module load custom"
-                    func.submit(
-                        user_endpoint_config={"worker_init": custom_worker_init}
-                    )
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Call with custom worker_init
+                        custom_worker_init = "module load custom"
+                        func.submit(
+                            user_endpoint_config={"worker_init": custom_worker_init}
+                        )
 
             # Verify all are present (call-time + decorator + DEFAULT)
             config = mock_submit.call_args[1]["user_endpoint_config"]
@@ -487,13 +527,19 @@ class TestSubmitMethod:
             )
 
             mock_future = MagicMock()
+            # Mock schema that includes worker_init
+            mock_schema = {"properties": {"worker_init": {"type": "string"}}}
             with patch("groundhog_hpc.function.script_to_submittable"):
                 with patch(
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ) as mock_submit:
-                    # Call without any override
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Call without any override
+                        func.submit()
 
             # Verify decorator worker_init + DEFAULT_USER_CONFIG are in the config
             config = mock_submit.call_args[1]["user_endpoint_config"]
