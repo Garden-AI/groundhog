@@ -200,7 +200,7 @@ def init(
         None,
         "--python",
         "-p",
-        help="Python version specifier (e.g., '>=3.11')",
+        help="Python version specifier (e.g., '>=3.11' or '3.11')",
     ),
 ) -> None:
     """Create a new groundhog script with PEP 723 metadata and example code."""
@@ -211,18 +211,17 @@ def init(
         console.print(f"[red]Error: {filename} already exists[/red]")
         raise typer.Exit(1)
 
-    # Validate Python version specifier if provided
+    # Normalize Python version using uv's parsing logic
+    default_meta = Pep723Metadata()
     if python:
         try:
-            SpecifierSet(python)
-        except Exception as e:
-            console.print(
-                f"[red]Error: Invalid Python version specifier '{python}': {e}[/red]"
-            )
+            python = _normalize_python_version_with_uv(python)
+        except subprocess.CalledProcessError as e:
+            # Re-raise uv's error message as-is
+            console.print(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
-
-    default_meta = Pep723Metadata()
-    python = python or default_meta.requires_python
+    else:
+        python = default_meta.requires_python
 
     assert default_meta.tool and default_meta.tool.uv
     exclude_newer = default_meta.tool.uv.exclude_newer
@@ -261,6 +260,58 @@ def init(
     console.print("\nNext steps:")
     console.print("  1. Edit the endpoint configuration in the PEP 723 block")
     console.print(f"  2. Run with: [bold]hog run {filename} main[/bold]")
+
+
+def _normalize_python_version_with_uv(python: str) -> str:
+    """Normalize a Python version string using uv's parsing logic.
+
+    First tries to validate as a PEP 440 specifier. If valid, returns as-is
+    to preserve the exact specifier. Otherwise, delegates to `uv init` which
+    accepts formats like '3.11' and converts them to '>=3.11'.
+
+    Args:
+        python: Python version string (e.g., '3.11', '>=3.11', '3.11.5')
+
+    Returns:
+        Normalized Python version specifier
+
+    Raises:
+        subprocess.CalledProcessError: If uv rejects the version string
+    """
+    # Try validating as a SpecifierSet first
+    try:
+        SpecifierSet(python)
+        # Valid specifier, return as-is
+        return python
+    except Exception:
+        # Not a valid specifier, delegate to uv for normalization
+        pass
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpfile = Path(tmpdir) / "tmp.py"
+        subprocess.run(
+            [
+                f"{uv.find_uv_bin()}",
+                "init",
+                "--script",
+                str(tmpfile),
+                "--python",
+                python,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        # Parse the metadata from the temp file to get the normalized version
+        tmp_content = tmpfile.read_text()
+        tmp_metadata = read_pep723(tmp_content)
+        if tmp_metadata and tmp_metadata.requires_python:
+            return tmp_metadata.requires_python
+        else:
+            # Fallback to user input if parsing fails
+            return python
 
 
 def _python_version_matches(current: str, spec: str) -> bool:
