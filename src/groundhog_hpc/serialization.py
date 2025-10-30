@@ -4,6 +4,9 @@ import os
 import pickle
 from typing import Any
 
+from proxystore.connectors.file import FileConnector
+from proxystore.store import Store
+
 from groundhog_hpc.errors import PayloadTooLargeError
 
 # Globus Compute payload size limit (10 MB)
@@ -15,7 +18,6 @@ def serialize(
 ) -> str:
     """Serialize an object to a string.
 
-    First attempts JSON serialization for efficiency and human-readability.
     Falls back to pickle + base64 encoding for non-JSON-serializable types.
 
     If GROUNDHOG_NO_SIZE_LIMIT environment variable is set, no size limit is enforced.
@@ -23,14 +25,11 @@ def serialize(
     Raises:
         PayloadTooLargeError: If the serialized payload exceeds the size limit.
     """
-    try:
-        result = json.dumps(obj)
-    except (TypeError, ValueError):
-        # Fall back to pickle for non-JSON-serializable types
-        pickled = pickle.dumps(obj)
-        b64_encoded = base64.b64encode(pickled).decode("ascii")
-        # Prefix with marker to indicate pickle encoding
-        result = f"__PICKLE__:{b64_encoded}"
+
+    pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    b64_encoded = base64.b64encode(pickled).decode("ascii")
+    # Prefix with marker to indicate pickle encoding
+    result = f"__PICKLE__:{b64_encoded}"
 
     # Check payload size (unless disabled via environment variable)
     if not os.environ.get("GROUNDHOG_NO_SIZE_LIMIT"):
@@ -82,3 +81,9 @@ def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
         return user_output, deserialize(serialized_result)
     else:
         return None, deserialize(stdout)
+
+
+def proxy_serialize(obj: Any) -> str:
+    store = Store("groundhog-file-store", FileConnector("/tmp/groundhog-file-store"))
+    p = store.proxy(obj)
+    return serialize(p)

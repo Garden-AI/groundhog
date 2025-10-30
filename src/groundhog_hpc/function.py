@@ -29,7 +29,7 @@ from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import LocalExecutionError
 from groundhog_hpc.future import GroundhogFuture
-from groundhog_hpc.serialization import deserialize_stdout, serialize
+from groundhog_hpc.serialization import deserialize_stdout, proxy_serialize, serialize
 from groundhog_hpc.templating import template_shell_command
 from groundhog_hpc.utils import prefix_output
 
@@ -313,12 +313,12 @@ class Function:
                 self.script_path, self._local_function.__qualname__
             )
 
-            payload = serialize((args, kwargs))
-            shell_command = shell_command_template.format(payload=payload)
-
             # disable size limit since this is all local
             env = os.environ.copy()
             env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
+
+            payload = proxy_serialize((args, kwargs))
+            shell_command = shell_command_template.format(payload=payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 try:
