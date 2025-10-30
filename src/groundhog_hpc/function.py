@@ -329,14 +329,13 @@ class Function:
                 cwd=tmpdir,
                 env=env,
             )
-
-        with prefix_output(prefix="[local]", prefix_color="blue"):
-            user_stdout, deserialized_result = deserialize_stdout(result.stdout)
-            if result.stderr:
-                print(result.stderr, file=sys.stderr)
-            if user_stdout:
-                print(user_stdout)
-            return deserialized_result
+            with prefix_output(prefix="[local]", prefix_color="blue"):
+                user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                if user_stdout:
+                    print(user_stdout)
+                return deserialized_result
 
     @property
     def script_path(self) -> str:

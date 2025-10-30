@@ -6,10 +6,11 @@
 #
 # [tool.hog.anvil]
 # endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
-# account = "cis250461-gpu"  # Replace with your GPU allocation
-# qos = "gpu"
+# account = "cis250461"
 #
 # [tool.hog.anvil.gpu-debug]
+# account = "cis250461-gpu"  # Replace with your GPU allocation
+# qos = "gpu"
 # partition = "gpu-debug"
 # scheduler_options = "#SBATCH --gpus-per-node=1"
 # ///
