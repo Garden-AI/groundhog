@@ -2,10 +2,9 @@
 
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
-import uv
 from jinja2 import Environment, PackageLoader
 from rich.console import Console
 
@@ -16,14 +15,7 @@ console = Console()
 
 
 def init(
-    filename: str = typer.Argument(..., help="Name of the script to create"),
-    requirements: Optional[List[Path]] = typer.Option(
-        None,
-        "--requirements",
-        "--requirement",
-        "-r",
-        help="Add dependencies from file (requirements.txt, pyproject.toml, etc.)",
-    ),
+    filename: str = typer.Argument(..., help="File to create"),
     python: Optional[str] = typer.Option(
         None,
         "--python",
@@ -59,27 +51,6 @@ def init(
         exclude_newer=exclude_newer,
     )
     Path(filename).write_text(content)
-
-    # Add dependencies via uv if requested
-    if requirements:
-        for req_file in requirements:
-            try:
-                subprocess.run(
-                    [
-                        f"{uv.find_uv_bin()}",
-                        "add",
-                        "--script",
-                        filename,
-                        "-r",
-                        str(req_file),
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as e:
-                console.print(f"[red]Error adding dependencies: {e.stderr}[/red]")
-                raise typer.Exit(1)
 
     console.print(f"[green]Created {filename}[/green]")
     console.print("\nNext steps:")

@@ -163,7 +163,7 @@ def update_requires_python(script_path: Path, python: str) -> None:
 
     if metadata is None:
         # No metadata, create with defaults
-        metadata = Pep723Metadata(requires_python=python)
+        metadata = Pep723Metadata.model_validate({"requires-python": python})
     else:
         # Update existing metadata
         metadata.requires_python = python

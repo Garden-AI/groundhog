@@ -18,7 +18,7 @@ def run(
         ..., help="Path to script with PEP 723 dependencies to deploy to the endpoint"
     ),
     harness: str = typer.Argument(
-        "main", help="Name of harness function to invoke from script (default 'main')"
+        "main", help="Name of harness function to invoke from script"
     ),
     no_fun_allowed: bool = typer.Option(
         False,
@@ -89,6 +89,13 @@ def run(
         result = __main__.__dict__[harness]()
         typer.echo(result)
     except RemoteExecutionError as e:
+        if e.returncode == 124:
+            typer.echo(
+                "Remote execution failed (timed out - try "
+                "increasing walltime for long running jobs)",
+                err=True,
+            )
+            raise typer.Exit(1)
         typer.echo(f"Remote execution failed (exit code {e.returncode})", err=True)
         raise typer.Exit(1)
     except Exception as e:
