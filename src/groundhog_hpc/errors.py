@@ -47,6 +47,12 @@ class RemoteExecutionError(Exception):
         return msg
 
 
+class LocalExecutionError(Exception):
+    """Raised when a local isolated function returns a nonzero exit code."""
+
+    pass
+
+
 class PayloadTooLargeError(Exception):
     """Raised when a serialized payload exceeds Globus Compute's 10MB size limit.
 

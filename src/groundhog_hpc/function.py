@@ -27,6 +27,7 @@ from groundhog_hpc.compute import (
 from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
+from groundhog_hpc.errors import LocalExecutionError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.templating import template_shell_command
@@ -301,42 +302,48 @@ class Function:
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
 
-        if not (self._local_subprocess_safe() or self._running_in_harness()):
-            # Same module or uncertain - use direct call for safety
-            # Wrap the call to capture and prefix any stdout/stderr
-            with prefix_output(prefix="[local]", prefix_color="blue"):
+        with prefix_output(prefix="[local]", prefix_color="blue"):
+            if not (self._local_subprocess_safe() or self._running_in_harness()):
+                # Same module or uncertain - use direct call for safety
+                # Wrap the call to capture and prefix any stdout/stderr
                 return self._local_function(*args, **kwargs)
 
-        # different module - use subprocess for isolation
-        shell_command_template = template_shell_command(
-            self.script_path, self._local_function.__qualname__
-        )
-
-        payload = serialize((args, kwargs))
-        shell_command = shell_command_template.format(payload=payload)
-
-        # disable size limit since this is all local
-        env = os.environ.copy()
-        env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = subprocess.run(
-                shell_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=tmpdir,
-                env=env,
+            # different module - use subprocess for isolation
+            shell_command_template = template_shell_command(
+                self.script_path, self._local_function.__qualname__
             )
 
-        with prefix_output(prefix="[local]", prefix_color="blue"):
-            user_stdout, deserialized_result = deserialize_stdout(result.stdout)
-            if result.stderr:
-                print(result.stderr, file=sys.stderr)
-            if user_stdout:
-                print(user_stdout)
-            return deserialized_result
+            payload = serialize((args, kwargs))
+            shell_command = shell_command_template.format(payload=payload)
+
+            # disable size limit since this is all local
+            env = os.environ.copy()
+            env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                try:
+                    result = subprocess.run(
+                        shell_command,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        cwd=tmpdir,
+                        env=env,
+                    )
+                except subprocess.CalledProcessError as e:
+                    if e.stderr:
+                        print(e.stderr, file=sys.stderr)
+                    if e.stdout:
+                        print(e.stdout, file=sys.stdout)
+                    raise LocalExecutionError("Local subprocess failed") from e
+                else:
+                    user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                    if result.stderr:
+                        print(result.stderr, file=sys.stderr)
+                    if user_stdout:
+                        print(user_stdout)
+                    return deserialized_result
 
     @property
     def script_path(self) -> str:

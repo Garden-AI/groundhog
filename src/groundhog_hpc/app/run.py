@@ -1,0 +1,103 @@
+"""Run command for executing Groundhog scripts on Globus Compute endpoints."""
+
+import os
+import sys
+from pathlib import Path
+
+import typer
+
+from groundhog_hpc.app.utils import check_and_update_metadata, python_version_matches
+from groundhog_hpc.configuration.pep723 import read_pep723
+from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.harness import Harness
+from groundhog_hpc.utils import get_groundhog_version_spec
+
+
+def run(
+    script: Path = typer.Argument(
+        ..., help="Path to script with PEP 723 dependencies to deploy to the endpoint"
+    ),
+    harness: str = typer.Argument(
+        "main", help="Name of harness function to invoke from script"
+    ),
+    no_fun_allowed: bool = typer.Option(
+        False,
+        "--no-fun-allowed",
+        help="Suppress emoji output\n\n[env: GROUNDHOG_NO_FUN_ALLOWED=]",
+    ),
+) -> None:
+    """Run a Python script on a Globus Compute endpoint."""
+    if no_fun_allowed:
+        os.environ["GROUNDHOG_NO_FUN_ALLOWED"] = str(no_fun_allowed)
+
+    script_path = script.resolve()
+    if not script_path.exists():
+        typer.echo(f"Error: Script '{script_path}' not found", err=True)
+        raise typer.Exit(1)
+    else:
+        # used by Function to build callable
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+
+    contents = script_path.read_text()
+
+    # Check for missing/incomplete metadata and offer to update
+    contents = check_and_update_metadata(script_path, contents)
+
+    metadata = read_pep723(contents)
+    if metadata and metadata.requires_python:
+        requires_python = metadata.requires_python
+        current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
+        if not python_version_matches(current_version, requires_python):
+            groundhog_spec = get_groundhog_version_spec()
+            uv_cmd = (
+                f"uv run --with {groundhog_spec} "
+                f"--python {requires_python} "
+                f"hog run {script_path} {harness}"
+            )
+
+            typer.echo(
+                f"Warning: Script requires Python {requires_python}, "
+                f"but current version is {current_version}. This may "
+                "cause issues with serialization.",
+                err=True,
+            )
+            typer.echo(
+                f"\nTo run with matching Python version, use:\n  {uv_cmd}",
+                err=True,
+            )
+
+    try:
+        # Execute in the actual __main__ module so that classes defined in the script
+        # can be properly pickled (pickle requires classes to be importable from their
+        # __module__, and for __main__.ClassName to work it must be in sys.modules["__main__"])
+        import __main__
+
+        exec(contents, __main__.__dict__, __main__.__dict__)
+
+        if harness not in __main__.__dict__:
+            typer.echo(f"Error: Function '{harness}' not found in script")
+            raise typer.Exit(1)
+        elif not isinstance(__main__.__dict__[harness], Harness):
+            typer.echo(
+                f"Error: Function '{harness}' must be decorated with `@hog.harness`",
+            )
+            raise typer.Exit(1)
+
+        # signal to harness obj that invocation is allowed
+        os.environ[f"GROUNDHOG_RUN_{harness}".upper()] = str(True)
+        result = __main__.__dict__[harness]()
+        typer.echo(result)
+    except RemoteExecutionError as e:
+        if e.returncode == 124:
+            typer.echo(
+                "Remote execution failed (timed out - try "
+                "increasing walltime for long running jobs)",
+                err=True,
+            )
+            raise typer.Exit(1)
+        typer.echo(f"Remote execution failed (exit code {e.returncode})", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
