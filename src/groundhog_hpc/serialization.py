@@ -1,7 +1,11 @@
+import atexit
 import base64
 import json
 import os
 import pickle
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from proxystore.connectors.file import FileConnector
@@ -12,20 +16,74 @@ from groundhog_hpc.errors import PayloadTooLargeError
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
 
+# Module-level store and directory management
+_STORE_DIR: Path | None = None
+_STORE: Store | None = None
 
-def serialize(
+
+def _get_store_dir() -> Path:
+    """Get or create the persistent proxystore directory for this process."""
+    global _STORE_DIR
+    if _STORE_DIR is None:
+        _STORE_DIR = Path(tempfile.mkdtemp(prefix="groundhog-proxystore-"))
+        # Register cleanup on exit
+        atexit.register(lambda: shutil.rmtree(_STORE_DIR, ignore_errors=True))
+    return _STORE_DIR
+
+
+def _get_store() -> Store:
+    """Get or create the global proxystore Store instance."""
+    global _STORE
+    if _STORE is None:
+        store_dir = _get_store_dir()
+        _STORE = Store(
+            "groundhog-file-store",
+            FileConnector(str(store_dir)),
+            register=True,
+        )
+    return _STORE
+
+
+def _get_serialized_size_mb(obj: Any) -> float:
+    """Get the serialized size of an object in MB (using pickle)."""
+    pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    return len(pickled) / (1024 * 1024)
+
+
+def _proxy_serialize(obj: Any) -> str:
+    """Serialize an object using proxystore.
+
+    Creates a proxy object and serializes that instead of the full object.
+    The proxy is evicted from the store after first resolution (one-time use).
+
+    Args:
+        obj: The object to serialize
+
+    Returns:
+        Serialized proxy string (prefixed with __PICKLE__:)
+    """
+    store = _get_store()
+    # evict=True for auto-cleanup after first access
+    # skip_nonproxiable=True to handle primitives gracefully
+    proxy = store.proxy(obj, evict=True, skip_nonproxiable=True)
+    return _direct_serialize(proxy, size_limit_bytes=float("inf"))
+
+
+def _direct_serialize(
     obj: Any, size_limit_bytes: int | float = PAYLOAD_SIZE_LIMIT_BYTES
 ) -> str:
-    """Serialize an object to a string.
+    """Serialize an object directly using pickle + base64.
 
-    Falls back to pickle + base64 encoding for non-JSON-serializable types.
+    Args:
+        obj: The object to serialize
+        size_limit_bytes: Maximum allowed payload size in bytes
 
-    If GROUNDHOG_NO_SIZE_LIMIT environment variable is set, no size limit is enforced.
+    Returns:
+        Serialized string (prefixed with __PICKLE__:)
 
     Raises:
         PayloadTooLargeError: If the serialized payload exceeds the size limit.
     """
-
     pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
     b64_encoded = base64.b64encode(pickled).decode("ascii")
     # Prefix with marker to indicate pickle encoding
@@ -39,6 +97,60 @@ def serialize(
             raise PayloadTooLargeError(size_mb)
 
     return result
+
+
+def serialize(
+    obj: Any,
+    use_proxy: bool = False,
+    proxy_threshold_mb: float | None = None,
+    size_limit_bytes: int | float = PAYLOAD_SIZE_LIMIT_BYTES,
+) -> str:
+    """Serialize an object to a string.
+
+    Supports two serialization strategies:
+    1. Direct serialization: pickle + base64 encoding (default)
+    2. Proxy serialization: uses proxystore to write object to disk and serialize
+       a small proxy instead (useful for large objects)
+
+    The proxy strategy can be enabled explicitly via `use_proxy=True` or automatically
+    via `proxy_threshold_mb`. When a threshold is set, objects exceeding that size
+    will automatically use proxy serialization.
+
+    Args:
+        obj: The object to serialize
+        use_proxy: If True, always use proxystore proxy serialization
+        proxy_threshold_mb: If set, automatically use proxy for objects exceeding
+                           this size in MB. Overrides use_proxy if threshold is exceeded.
+        size_limit_bytes: Maximum allowed payload size for direct serialization
+
+    Returns:
+        Serialized string (prefixed with __PICKLE__:)
+
+    Raises:
+        PayloadTooLargeError: If direct serialization payload exceeds the size limit.
+
+    Examples:
+        >>> # Direct serialization (default)
+        >>> serialize({"key": "value"})
+
+        >>> # Force proxy serialization
+        >>> serialize(large_array, use_proxy=True)
+
+        >>> # Automatic proxy for objects > 5 MB
+        >>> serialize(maybe_large_obj, proxy_threshold_mb=5)
+    """
+    # Determine whether to use proxy serialization
+    should_use_proxy = use_proxy
+
+    if proxy_threshold_mb is not None:
+        obj_size_mb = _get_serialized_size_mb(obj)
+        if obj_size_mb > proxy_threshold_mb:
+            should_use_proxy = True
+
+    if should_use_proxy:
+        return _proxy_serialize(obj)
+    else:
+        return _direct_serialize(obj, size_limit_bytes)
 
 
 def deserialize(payload: str) -> Any:
@@ -81,9 +193,3 @@ def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
         return user_output, deserialize(serialized_result)
     else:
         return None, deserialize(stdout)
-
-
-def proxy_serialize(obj: Any) -> str:
-    store = Store("groundhog-file-store", FileConnector("/tmp/groundhog-file-store"))
-    p = store.proxy(obj)
-    return serialize(p)
