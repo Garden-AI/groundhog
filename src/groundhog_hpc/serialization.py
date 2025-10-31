@@ -9,39 +9,55 @@ from pathlib import Path
 from typing import Any
 
 from proxystore.connectors.file import FileConnector
-from proxystore.store import Store
+from proxystore.store import Store, get_store
 
 from groundhog_hpc.errors import PayloadTooLargeError
 
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
 
-# Module-level store and directory management
-_STORE_DIR: Path | None = None
-_STORE: Store | None = None
+# Store name for proxystore global registry
+STORE_NAME = "groundhog-file-store"
 
 
 def _get_store_dir() -> Path:
-    """Get or create the persistent proxystore directory for this process."""
-    global _STORE_DIR
-    if _STORE_DIR is None:
-        _STORE_DIR = Path(tempfile.mkdtemp(prefix="groundhog-proxystore-"))
-        # Register cleanup on exit
-        atexit.register(lambda: shutil.rmtree(_STORE_DIR, ignore_errors=True))
-    return _STORE_DIR
+    """Get or create the persistent proxystore directory for this process.
+
+    Uses GROUNDHOG_PROXYSTORE_DIR environment variable to communicate the
+    store location between parent and subprocess (needed for .local() execution).
+    """
+    if "GROUNDHOG_PROXYSTORE_DIR" in os.environ:
+        return Path(os.environ["GROUNDHOG_PROXYSTORE_DIR"])
+
+    # Create new tempdir and set in environment for subprocess access
+    store_dir = Path(tempfile.mkdtemp(prefix="groundhog-proxystore-"))
+    os.environ["GROUNDHOG_PROXYSTORE_DIR"] = str(store_dir)
+
+    # Register cleanup on exit
+    atexit.register(lambda: shutil.rmtree(store_dir, ignore_errors=True))
+
+    return store_dir
 
 
 def _get_store() -> Store:
-    """Get or create the global proxystore Store instance."""
-    global _STORE
-    if _STORE is None:
+    """Get or create the global proxystore Store instance.
+
+    Uses proxystore's built-in global registry to retrieve existing store
+    or creates a new one if not already registered.
+    """
+    # Try to get existing registered store
+    store = get_store(STORE_NAME)
+
+    if store is None:
+        # Create and register new store
         store_dir = _get_store_dir()
-        _STORE = Store(
-            "groundhog-file-store",
+        store = Store(
+            STORE_NAME,
             FileConnector(str(store_dir)),
             register=True,
         )
-    return _STORE
+
+    return store
 
 
 def _get_serialized_size_mb(obj: Any) -> float:
