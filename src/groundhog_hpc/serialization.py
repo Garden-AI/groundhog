@@ -60,10 +60,16 @@ def _get_store() -> Store:
     return store
 
 
-def _get_serialized_size_mb(obj: Any) -> float:
-    """Get the serialized size of an object in MB (using pickle)."""
+def _get_payload_size_mb(obj: Any) -> float:
+    """Get the actual payload size in MB (pickle + base64 + prefix).
+
+    This measures the final encoded payload size, which is what counts toward
+    the Globus Compute size limit. Base64 encoding increases size by ~33%.
+    """
     pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-    return len(pickled) / (1024 * 1024)
+    b64_encoded = base64.b64encode(pickled).decode("ascii")
+    payload = f"__PICKLE__:{b64_encoded}"
+    return len(payload.encode("utf-8")) / (1024 * 1024)
 
 
 def _proxy_serialize(obj: Any) -> str:
@@ -154,15 +160,12 @@ def serialize(
         >>> # Automatic proxy for objects > 5 MB
         >>> serialize(maybe_large_obj, proxy_threshold_mb=5)
     """
-    # Determine whether to use proxy serialization
-    should_use_proxy = use_proxy
-
     if proxy_threshold_mb is not None:
-        obj_size_mb = _get_serialized_size_mb(obj)
+        obj_size_mb = _get_payload_size_mb(obj)
         if obj_size_mb > proxy_threshold_mb:
-            should_use_proxy = True
+            use_proxy = True
 
-    if should_use_proxy:
+    if use_proxy:
         return _proxy_serialize(obj)
     else:
         return _direct_serialize(obj, size_limit_bytes)
