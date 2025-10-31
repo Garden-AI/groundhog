@@ -313,10 +313,6 @@ class Function:
                 self.script_path, self._local_function.__qualname__
             )
 
-            # disable size limit since this is all local
-            env = os.environ.copy()
-            env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
-
             # Use proxystore to avoid holding full object in memory during serialization
             payload = serialize((args, kwargs), use_proxy=True)
             shell_command = shell_command_template.format(payload=payload)
@@ -330,7 +326,6 @@ class Function:
                         text=True,
                         check=True,
                         cwd=tmpdir,
-                        env=env,
                     )
                 except subprocess.CalledProcessError as e:
                     if e.stderr:

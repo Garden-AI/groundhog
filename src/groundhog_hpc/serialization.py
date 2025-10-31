@@ -105,12 +105,11 @@ def _direct_serialize(
     # Prefix with marker to indicate pickle encoding
     result = f"__PICKLE__:{b64_encoded}"
 
-    # Check payload size (unless disabled via environment variable)
-    if not os.environ.get("GROUNDHOG_NO_SIZE_LIMIT"):
-        payload_size = len(result.encode("utf-8"))
-        if payload_size > size_limit_bytes:
-            size_mb = payload_size / (1024 * 1024)
-            raise PayloadTooLargeError(size_mb)
+    # Check payload size against limit
+    payload_size = len(result.encode("utf-8"))
+    if payload_size > size_limit_bytes:
+        size_mb = payload_size / (1024 * 1024)
+        raise PayloadTooLargeError(size_mb)
 
     return result
 
