@@ -190,7 +190,7 @@ class Function:
                 self.script_path, self._local_function.__qualname__, walltime
             )
 
-        payload = serialize((args, kwargs))
+        payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
@@ -313,12 +313,9 @@ class Function:
                 self.script_path, self._local_function.__qualname__
             )
 
-            payload = serialize((args, kwargs))
+            # use proxystore to avoid duplicating large objects in memory
+            payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
             shell_command = shell_command_template.format(payload=payload)
-
-            # disable size limit since this is all local
-            env = os.environ.copy()
-            env["GROUNDHOG_NO_SIZE_LIMIT"] = "1"
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 try:
@@ -329,7 +326,6 @@ class Function:
                         text=True,
                         check=True,
                         cwd=tmpdir,
-                        env=env,
                     )
                 except subprocess.CalledProcessError as e:
                     if e.stderr:

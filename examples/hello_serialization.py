@@ -52,17 +52,22 @@ def hello_dataclass(person: Person):
 def main():
     # Test JSON-serializable types
     json_arg = {"a": 1, "b": 2, "c": 3}
-    json_result = hello_arguments_json.remote(json_arg, 10)
+    json_result = hello_arguments_json.local(json_arg, 10)
     print(f"JSON test: {json_arg} -> {json_result}")
 
     # Test non-JSON-serializable types (set)
     pickle_arg = {"apple", "banana", "cherry"}
-    pickle_result = hello_arguments_pkl.remote(pickle_arg)
+    pickle_result = hello_arguments_pkl.local(pickle_arg)
     print(f"Pickle test: {pickle_arg} -> {pickle_result}")
 
     # Test custom dataclass
     dataclass_arg = Person(name="Alice", age=30, hobbies=["reading", "hiking"])
-    dataclass_result = hello_dataclass.remote(dataclass_arg)
+    dataclass_result = hello_dataclass.local(dataclass_arg)
     print(f"Dataclass test: {dataclass_arg} -> {dataclass_result}")
+
+    # test large data
+
+    json_arg = {"a": "A", "b": "B", "c": "C"}
+    json_result = hello_arguments_json.local(json_arg, 10 * 1024 * 1024)
 
     return json_result, pickle_result, dataclass_result

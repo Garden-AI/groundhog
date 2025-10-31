@@ -121,7 +121,10 @@ def main():
                 "groundhog_hpc.function.submit_to_executor",
                 return_value=mock_future,
             ) as mock_submit:
-                result = func.remote()
+                with patch(
+                    "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                ):
+                    result = func.remote()
 
         # After calling .remote(), _shell_function should be initialized
         assert func._shell_function is not None
@@ -186,7 +189,10 @@ def main():
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
                 ):
-                    func.submit()
+                    with patch(
+                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                    ):
+                        func.submit()
 
             # Verify script_to_submittable was called with correct arguments
             mock_script_to_submittable.assert_called_once()
@@ -586,7 +592,7 @@ def add(a, b):
         mock_deserialize.assert_called_once_with('{"result": 5}')
 
     def test_local_serializes_arguments(self, tmp_path):
-        """Test that local() serializes arguments correctly and disables size limit via env var."""
+        """Test that local() serializes arguments correctly using proxy mode."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -601,21 +607,19 @@ def add(a, b):
         ) as mock_serialize:
             with patch(
                 "groundhog_hpc.function.subprocess.run", return_value=mock_result
-            ) as mock_run:
+            ):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout",
                     return_value=(None, "success"),
                 ):
                     func.local(1, 2, key="value")
 
-        # Verify serialize was called with args and kwargs
+        # Verify serialize was called with args, kwargs, and use_proxy=True
         mock_serialize.assert_called_once()
         call_args = mock_serialize.call_args[0][0]
+        call_kwargs = mock_serialize.call_args[1]
         assert call_args == ((1, 2), {"key": "value"})
-
-        # Verify GROUNDHOG_NO_SIZE_LIMIT env var was set in subprocess
-        call_env = mock_run.call_args[1]["env"]
-        assert call_env.get("GROUNDHOG_NO_SIZE_LIMIT") == "1"
+        assert call_kwargs.get("proxy_threshold_mb") == 1.0
 
     def test_local_runs_in_temporary_directory(self, tmp_path):
         """Test that local() runs subprocess in a temporary directory."""
@@ -752,31 +756,6 @@ def add(a, b):
                     result = func.local()
 
         assert result == 42
-
-    def test_local_sets_no_size_limit_env_var(self, tmp_path):
-        """Test that local() sets GROUNDHOG_NO_SIZE_LIMIT environment variable."""
-        script_path = tmp_path / "test_local.py"
-        script_path.write_text("# test")
-
-        func = Function(dummy_function)
-        func._script_path = str(script_path)
-
-        mock_result = MagicMock()
-        mock_result.stdout = "result"
-
-        with patch(
-            "groundhog_hpc.function.subprocess.run", return_value=mock_result
-        ) as mock_run:
-            with patch(
-                "groundhog_hpc.function.deserialize_stdout",
-                return_value=(None, "result"),
-            ):
-                func.local()
-
-        # Verify the environment variable was set
-        env = mock_run.call_args[1]["env"]
-        assert "GROUNDHOG_NO_SIZE_LIMIT" in env
-        assert env["GROUNDHOG_NO_SIZE_LIMIT"] == "1"
 
 
 class TestLocalSubprocessDetection:
