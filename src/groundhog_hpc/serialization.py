@@ -16,7 +16,7 @@ from groundhog_hpc.errors import PayloadTooLargeError
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
 
-# Store name for proxystore global registry
+# store name for proxystore global registry
 STORE_NAME = "groundhog-file-store"
 
 
@@ -58,18 +58,6 @@ def _get_store() -> Store:
         )
 
     return store
-
-
-def _get_payload_size_mb(obj: Any) -> float:
-    """Get the actual payload size in MB (pickle + base64 + prefix).
-
-    This measures the final encoded payload size, which is what counts toward
-    the Globus Compute size limit. Base64 encoding increases size by ~33%.
-    """
-    pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-    b64_encoded = base64.b64encode(pickled).decode("ascii")
-    payload = f"__PICKLE__:{b64_encoded}"
-    return len(payload.encode("utf-8")) / (1024 * 1024)
 
 
 def _proxy_serialize(obj: Any) -> str:
@@ -160,15 +148,20 @@ def serialize(
         >>> # Automatic proxy for objects > 5 MB
         >>> serialize(maybe_large_obj, proxy_threshold_mb=5)
     """
-    if proxy_threshold_mb is not None:
-        obj_size_mb = _get_payload_size_mb(obj)
-        if obj_size_mb > proxy_threshold_mb:
-            use_proxy = True
-
+    # If proxy is explicitly requested, use it immediately
     if use_proxy:
         return _proxy_serialize(obj)
-    else:
-        return _direct_serialize(obj, size_limit_bytes)
+
+    # Otherwise, try direct serialization
+    result = _direct_serialize(obj, size_limit_bytes)
+
+    # Check if we should have used proxy instead (based on threshold)
+    if proxy_threshold_mb is not None:
+        payload_size_mb = len(result.encode("utf-8")) / (1024 * 1024)
+        if payload_size_mb > proxy_threshold_mb:
+            return _proxy_serialize(obj)
+
+    return result
 
 
 def deserialize(payload: str) -> Any:

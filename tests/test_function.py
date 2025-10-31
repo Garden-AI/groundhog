@@ -619,7 +619,7 @@ def add(a, b):
         call_args = mock_serialize.call_args[0][0]
         call_kwargs = mock_serialize.call_args[1]
         assert call_args == ((1, 2), {"key": "value"})
-        assert call_kwargs.get("use_proxy") is True
+        assert call_kwargs.get("proxy_threshold_mb") == 1.0
 
     def test_local_runs_in_temporary_directory(self, tmp_path):
         """Test that local() runs subprocess in a temporary directory."""

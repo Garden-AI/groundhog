@@ -212,7 +212,9 @@ class TestProxyStoreSerialization:
         # With threshold of 0.01 MB (10KB), large object should use proxy
         large_serialized = serialize(large_obj, proxy_threshold_mb=0.01)
         # Proxy serialization should be much smaller
-        direct_large = serialize(large_obj, size_limit_bytes=float("inf"))
+        direct_large = serialize(
+            large_obj, proxy_threshold_mb=None, size_limit_bytes=float("inf")
+        )
         assert len(large_serialized) < len(direct_large) / 10
 
         # Both should roundtrip
@@ -319,33 +321,34 @@ class TestProxyStoreSerialization:
         assert result.value == 42
 
     def test_payload_size_measurement_accuracy(self):
-        """Test that _get_payload_size_mb accurately measures encoded payload size."""
-        from groundhog_hpc.serialization import _get_payload_size_mb
+        """Test that payload size calculation is accurate for threshold checks."""
+        # Create a large enough object where proxy overhead is negligible
+        obj = {"data": "x" * 100000}
 
-        # Create a test object
-        obj = {"data": "x" * 1000}
-
-        # Get measured size
-        measured_size_mb = _get_payload_size_mb(obj)
-
-        # Get actual serialized size
+        # Serialize directly
         serialized = serialize(obj)
         actual_size_mb = len(serialized.encode("utf-8")) / (1024 * 1024)
 
-        # Should match (within floating point precision)
-        assert abs(measured_size_mb - actual_size_mb) < 0.0001
+        # When threshold is just below actual size, should use proxy
+        proxy_result = serialize(obj, proxy_threshold_mb=actual_size_mb - 0.0001)
+        # Proxy should be much smaller than direct serialization
+        assert len(proxy_result) < len(serialized) / 2
+
+        # When threshold is just above actual size, should use direct
+        direct_result = serialize(obj, proxy_threshold_mb=actual_size_mb + 0.0001)
+        assert direct_result == serialized
 
     def test_threshold_uses_encoded_size(self):
-        """Test that proxy threshold is based on the encoded payload size."""
-        from groundhog_hpc.serialization import _get_payload_size_mb
-
+        """Test that proxy threshold is based on the encoded payload size (not raw pickle)."""
         # Create an object that's right at the threshold
         obj = {"data": "x" * 100000}
-        size_mb = _get_payload_size_mb(obj)
+
+        # Get the actual encoded size
+        direct_serialized = serialize(obj)
+        size_mb = len(direct_serialized.encode("utf-8")) / (1024 * 1024)
 
         # Set threshold just below the size - should use proxy
         proxy_serialized = serialize(obj, proxy_threshold_mb=size_mb - 0.001)
-        direct_serialized = serialize(obj)
         assert len(proxy_serialized) < len(direct_serialized) / 2
 
         # Set threshold just above the size - should use direct

@@ -15,5 +15,5 @@ DEFAULT_ENDPOINTS = {
     "anvil": "5aafb4c1-27b2-40d8-a038-a0277611868f",  # Anvil multi-user endpoint
 }
 
-# Default maximum execution time for remote functions (in seconds)
-DEFAULT_WALLTIME_SEC = 60
+# default maximum execution time for remote functions (in seconds)
+DEFAULT_WALLTIME_SEC = 300
