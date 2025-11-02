@@ -384,8 +384,11 @@ import groundhog_hpc as hog
             )
 
             # All worker_init commands should be concatenated
-            # Order: call-time, decorator, PEP 723, DEFAULT (reverse precedence)
-            expected = "export CUDA_VISIBLE_DEVICES=0\npip install uv\nmodule load gcc\npip show -qq uv || pip install uv"
+            # Order: PEP 723, decorator, call-time (natural precedence)
+            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
+            expected = (
+                "module load gcc\npip install uv\nexport CUDA_VISIBLE_DEVICES=0\n"
+            )
             assert result["worker_init"] == expected
         finally:
             Path(script_path).unlink()
@@ -419,10 +422,9 @@ import groundhog_hpc as hog
                 decorator_config={},
             )
 
-            # Variant worker_init should come before base, then DEFAULT
-            expected = (
-                "module load cuda\nmodule load gcc\npip show -qq uv || pip install uv"
-            )
+            # Base worker_init should come before variant (natural precedence)
+            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
+            expected = "module load gcc\nmodule load cuda\n"
             assert result["worker_init"] == expected
         finally:
             Path(script_path).unlink()

@@ -500,15 +500,15 @@ class TestSubmitMethod:
                             user_endpoint_config={"worker_init": custom_worker_init}
                         )
 
-            # Verify all are present (call-time + decorator + DEFAULT)
+            # Verify all are present (decorator + call-time)
+            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
-            # Should have call-time, decorator, and DEFAULT_USER_CONFIG
+            # Should have decorator and call-time values concatenated
             assert custom_worker_init in config["worker_init"]
             assert default_worker_init in config["worker_init"]
-            assert "pip show -qq uv || pip install uv" in config["worker_init"]
-            # Verify order: call-time + "\n" + decorator + "\n" + DEFAULT
-            assert config["worker_init"].startswith(custom_worker_init)
+            # Verify order: decorator first (natural precedence), then call-time
+            assert config["worker_init"].startswith(default_worker_init)
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
@@ -547,11 +547,11 @@ class TestSubmitMethod:
                         # Call without any override
                         func.submit()
 
-            # Verify decorator worker_init + DEFAULT_USER_CONFIG are in the config
+            # Verify decorator worker_init is in the config
+            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert "worker_init" in config
             assert default_worker_init in config["worker_init"]
-            assert "pip show -qq uv || pip install uv" in config["worker_init"]
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]

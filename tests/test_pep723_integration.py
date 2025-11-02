@@ -370,8 +370,9 @@ import groundhog_hpc as hog
             config = mock_submit.call_args[1]["user_endpoint_config"]
 
             # All worker_init should be concatenated
-            # Order: call-time, decorator, PEP 723, DEFAULT (reverse precedence)
-            expected = "export DEBUG=1\npip install uv\nmodule load gcc\npip show -qq uv || pip install uv"
+            # Order: PEP 723, decorator, call-time (natural precedence)
+            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
+            expected = "module load gcc\npip install uv\nexport DEBUG=1\n"
             assert config["worker_init"] == expected
 
         finally:

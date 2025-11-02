@@ -32,8 +32,8 @@ def _merge_endpoint_configs(
 ) -> dict:
     """Merge endpoint configurations, ensuring worker_init commands are combined.
 
-    The worker_init field is special-cased: if both configs provide it, the
-    override's worker_init is executed first, followed by the base's worker_init.
+    The worker_init field is special-cased: if both configs provide it, they are
+    concatenated with the base's worker_init executed first, followed by the override's.
     All other fields from override_config simply replace fields from base_endpoint_config.
 
     Args:
@@ -47,17 +47,19 @@ def _merge_endpoint_configs(
         >>> base = {"worker_init": "pip install uv"}
         >>> override = {"worker_init": "module load gcc", "cores": 4}
         >>> _merge_endpoint_configs(base, override)
-        {'worker_init': 'module load gcc\\npip install uv', 'cores': 4}
+        {'worker_init': 'pip install uv\\nmodule load gcc', 'cores': 4}
     """
     if not override_config:
         return base_endpoint_config.copy()
 
     merged = base_endpoint_config.copy()
 
-    # Special handling for worker_init: append base to override
+    # Special handling for worker_init: prepend base to override
     if "worker_init" in override_config and "worker_init" in base_endpoint_config:
         override_config = override_config.copy()
-        override_config["worker_init"] += f"\n{merged.pop('worker_init')}"
+        override_config["worker_init"] = (
+            f"{merged.pop('worker_init').strip()}\n{override_config['worker_init'].strip()}\n"
+        )
 
     merged.update(override_config)
     return merged
