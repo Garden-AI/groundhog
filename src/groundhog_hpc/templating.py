@@ -15,15 +15,30 @@ from jinja2 import Template
 from groundhog_hpc.utils import get_groundhog_version_spec
 
 SHELL_COMMAND_TEMPLATE = """
-cat > {{ script_name }}.py << 'EOF'
+set -euo pipefail
+
+# Ensure uv is installed
+python3 -c 'import uv' 2>/dev/null || pip3 install uv
+UV_BIN=$(python3 -c 'import uv; print(uv.find_uv_bin())')
+
+# Write user script
+cat > {{ script_name }}.py << 'SCRIPT_EOF'
 {{ script_contents }}
-EOF
-cat > {{ script_name }}.in << 'END'
+SCRIPT_EOF
+
+# Write serialized arguments
+cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {payload}
-END
-$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python --with {{ version_spec }} \\
-  {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout \\
-  && cat {{ script_name }}.stdout && echo "__GROUNDHOG_RESULT__" && cat {{ script_name }}.out
+PAYLOAD_EOF
+
+# Execute and capture results
+"$UV_BIN" run --managed-python --with {{ version_spec }} \\
+  {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout
+
+# Output results
+cat {{ script_name }}.stdout
+echo "__GROUNDHOG_RESULT__"
+cat {{ script_name }}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
@@ -114,7 +129,7 @@ if __name__ == "__main__":
         args, kwargs = deserialize(payload)
 
     results = {function_name}(*args, **kwargs)
-    with open('{outfile_path}', 'w+') as f_out:
+    with open('{outfile_path}', 'w') as f_out:
         contents = serialize(results)
         f_out.write(contents)
 """

@@ -174,9 +174,9 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func")
 
-        # Check for uv.find_uv_bin() and run command
+        # Check for uv installation and run command
         assert "uv.find_uv_bin()" in shell_command
-        assert ") run" in shell_command
+        assert '"$UV_BIN" run' in shell_command
 
     def test_escapes_user_code_curly_braces(self, tmp_path):
         """Test that curly braces in user code are escaped in final command."""
