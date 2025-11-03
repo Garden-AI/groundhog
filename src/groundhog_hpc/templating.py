@@ -7,6 +7,7 @@ to enable remote execution. It creates shell commands that:
 3. Execute the script with uv, deserialize args, call the function, serialize results
 """
 
+import uuid
 from hashlib import sha1
 from pathlib import Path
 
@@ -38,9 +39,8 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 PAYLOAD_EOF
 
 "$UV_BIN" run --managed-python --with {{ version_spec }} \\
-  {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout
+  {{ script_name }}.py {{ function_name }} {{ script_name }}.in
 
-cat {{ script_name }}.stdout
 echo "__GROUNDHOG_RESULT__"
 cat {{ script_name }}.out
 """
@@ -69,7 +69,8 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
 
     script_hash = _script_hash_prefix(user_script)
     script_basename = _extract_script_basename(script_path)
-    script_name = f"{script_basename}-{script_hash}"
+    random_suffix = uuid.uuid4().hex[:8]
+    script_name = f"{script_basename}-{script_hash}-{random_suffix}"
     script_contents = _inject_script_boilerplate(
         user_script, function_name, script_name
     )
