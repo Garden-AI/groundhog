@@ -29,21 +29,17 @@ set -euo pipefail
 
 UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
 
-# Write user script
 cat > {{ script_name }}.py << 'SCRIPT_EOF'
 {{ script_contents | escape_braces }}
 SCRIPT_EOF
 
-# Write serialized arguments
 cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
 
-# Execute and capture results
 "$UV_BIN" run --managed-python --with {{ version_spec }} \\
   {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout
 
-# Output results
 cat {{ script_name }}.stdout
 echo "__GROUNDHOG_RESULT__"
 cat {{ script_name }}.out
