@@ -53,13 +53,14 @@ def _merge_endpoint_configs(
         return base_endpoint_config.copy()
 
     merged = base_endpoint_config.copy()
+    override_config = override_config.copy()
 
     # Special handling for worker_init: prepend base to override
     if "worker_init" in override_config and "worker_init" in base_endpoint_config:
-        override_config = override_config.copy()
-        override_config["worker_init"] = (
-            f"{merged.pop('worker_init').strip()}\n{override_config['worker_init'].strip()}\n"
-        )
+        base_init = base_endpoint_config["worker_init"]
+        # pop worker_init so update doesn't clobber concatenated value
+        override_init = override_config.pop("worker_init")
+        merged["worker_init"] = f"{base_init.strip()}\n{override_init.strip()}\n"
 
     merged.update(override_config)
     return merged
