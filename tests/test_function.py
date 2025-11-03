@@ -21,7 +21,6 @@ class TestFunctionInitialization:
         func = Function(dummy_function)
 
         assert func._local_function == dummy_function
-        assert func._shell_function is None
         assert func.endpoint is None
         assert func.walltime is None
 
@@ -82,59 +81,6 @@ class TestRemoteExecution:
             assert func._running_in_harness()
         finally:
             del os.environ["GROUNDHOG_IN_HARNESS"]
-
-    def test_remote_call_lazy_initialization(self, tmp_path, mock_endpoint_uuid):
-        """Test that _shell_function is lazily initialized on first .remote() call."""
-
-        # Create a temporary script file
-        script_path = tmp_path / "test_script.py"
-        script_content = """import groundhog_hpc as hog
-
-@hog.function()
-def dummy_function():
-    return "result"
-
-@hog.harness()
-def main():
-    return dummy_function.remote()
-"""
-        script_path.write_text(script_content)
-
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
-        func = Function(dummy_function, endpoint=mock_endpoint_uuid)
-
-        # Initially, shell function is not initialized
-        assert func._shell_function is None
-
-        # Mock the new architecture
-        mock_shell_func = MagicMock()
-        mock_future = MagicMock()
-        mock_future.result.return_value = "remote_result"
-
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
-            return_value=mock_shell_func,
-        ) as mock_script_to_submittable:
-            with patch(
-                "groundhog_hpc.function.submit_to_executor",
-                return_value=mock_future,
-            ) as mock_submit:
-                with patch(
-                    "groundhog_hpc.function.get_endpoint_schema", return_value={}
-                ):
-                    result = func.remote()
-
-        # After calling .remote(), _shell_function should be initialized
-        assert func._shell_function is not None
-        mock_script_to_submittable.assert_called_once()
-        mock_submit.assert_called_once()
-        assert result == "remote_result"
-
-        # Clean up
-        del os.environ["GROUNDHOG_SCRIPT_PATH"]
-        del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_submit_uses_fallback_when_script_path_is_none(self, mock_endpoint_uuid):
         """Test that submit can use inspection fallback when _script_path is None."""

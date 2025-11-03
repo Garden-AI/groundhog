@@ -78,7 +78,6 @@ class Function:
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
         self._local_function: FunctionType = func
-        self._shell_function: ShellFunction | None = None
         self._config_resolver: ConfigResolver | None = None
 
     def __call__(self, *args, **kwargs) -> Any:
@@ -185,16 +184,13 @@ class Function:
             )
             config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
-        if self._shell_function is None:
-            self._shell_function = script_to_submittable(
-                self.script_path, self._local_function.__qualname__, walltime
-            )
-
+        shell_function = script_to_submittable(self.script_path, self.name, walltime)
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
+
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
-            shell_function=self._shell_function,
+            shell_function=shell_function,
             payload=payload,
         )
         future.endpoint = endpoint
@@ -374,3 +370,7 @@ class Function:
         if self._config_resolver is None:
             self._config_resolver = ConfigResolver(self.script_path)
         return self._config_resolver
+
+    @property
+    def name(self) -> str:
+        return self._local_function.__qualname__
