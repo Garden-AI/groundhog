@@ -10,9 +10,19 @@ to enable remote execution. It creates shell commands that:
 from hashlib import sha1
 from pathlib import Path
 
-from jinja2 import Template
+from jinja2 import Environment
 
 from groundhog_hpc.utils import get_groundhog_version_spec
+
+
+def escape_braces(text: str) -> str:
+    """Escape curly braces for Globus Compute's .format() call.
+
+    ShellFunction.cmd.format() is called by Globus Compute, so any curly
+    braces in user code must be doubled to avoid KeyError.
+    """
+    return text.replace("{", "{{").replace("}", "}}")
+
 
 SHELL_COMMAND_TEMPLATE = """
 set -euo pipefail
@@ -23,7 +33,7 @@ UV_BIN=$(python3 -c 'import uv; print(uv.find_uv_bin())')
 
 # Write user script
 cat > {{ script_name }}.py << 'SCRIPT_EOF'
-{{ script_contents }}
+{{ script_contents | escape_braces }}
 SCRIPT_EOF
 
 # Write serialized arguments
@@ -72,7 +82,10 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
 
     version_spec = get_groundhog_version_spec()
 
-    template = Template(SHELL_COMMAND_TEMPLATE)
+    # Create Jinja2 environment with custom filter for escaping braces
+    env = Environment()
+    env.filters["escape_braces"] = escape_braces
+    template = env.from_string(SHELL_COMMAND_TEMPLATE)
 
     shell_command_string = template.render(
         script_name=script_name,

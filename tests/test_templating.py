@@ -60,7 +60,7 @@ if __name__ == "__main__":
         assert "my_script-hashyhash.out" in injected
 
     def test_preserves_curly_braces_in_user_code(self):
-        """Test that curly braces in user code are preserved (not escaped)."""
+        """Test that curly braces in user code are preserved in the boilerplate."""
         script = """import groundhog_hpc as hog
 
 @hog.function()
@@ -69,9 +69,10 @@ def process_dict():
     return data
 """
         injected = _inject_script_boilerplate(script, "process_dict", "test-abc123")
-        # Curly braces should be preserved as-is (no escaping needed with Jinja2)
+        # Curly braces should NOT be escaped in _inject_script_boilerplate
+        # (escaping happens later via Jinja2 filter in template_shell_command)
         assert '{"key": "value"}' in injected
-        # Should not be doubled
+        # Should not be doubled at this stage
         assert '{{"key": "value"}}' not in injected
 
 
@@ -185,8 +186,8 @@ def func():
         assert "uv.find_uv_bin()" in shell_command
         assert '"$UV_BIN" run' in shell_command
 
-    def test_preserves_user_code_curly_braces(self, tmp_path):
-        """Test that curly braces in user code are preserved (not escaped) in final command."""
+    def test_escapes_user_code_curly_braces(self, tmp_path):
+        """Test that curly braces in user code are escaped in final shell command."""
         script_path = tmp_path / "script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -204,10 +205,49 @@ def dict_func():
             str(script_path), "dict_func", "test_payload"
         )
 
-        # Curly braces in user code should be preserved as-is (no escaping with Jinja2)
-        assert '{"result": 42}' in shell_command
-        # Should not be doubled
-        assert '{{"result": 42}}' not in shell_command
+        # Curly braces in user code should be doubled (escaped via Jinja2 filter)
+        # This is needed because Globus Compute's ShellFunction calls .format()
+        assert '{{"result": 42}}' in shell_command
+
+    def test_shell_command_survives_format_call(self, tmp_path):
+        """Test that shell command can survive .format() call like ShellFunction does.
+
+        This is a regression test for the bug where curly braces in user code
+        (e.g., dict literals, f-strings) caused KeyError when Globus Compute's
+        ShellFunction called .format() on the command.
+        """
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def use_torch():
+    import torch
+    # This dict literal caused KeyError: 'torch' in the original bug
+    result = {"torch": torch.cuda.is_available()}
+    return result
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(
+            str(script_path), "use_torch", "test_payload"
+        )
+
+        # Simulate what Globus Compute's ShellFunction does:
+        # It calls .format() on the command (without any kwargs)
+        try:
+            # This should not raise KeyError if curly braces are properly escaped
+            formatted = shell_command.format()
+            # After .format(), the doubled braces should become single braces
+            assert '{"torch"' in formatted
+        except KeyError as e:
+            pytest.fail(
+                f"shell_command.format() raised KeyError: {e}. "
+                "This means curly braces in user code are not properly escaped!"
+            )
 
     def test_different_scripts_produce_different_hashes(self, tmp_path):
         """Test that different scripts produce different script names (hashes)."""
