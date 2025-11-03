@@ -136,7 +136,7 @@ class TestRemoteExecution:
                     return_value=mock_future,
                 ):
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
                         func.submit()
 
@@ -181,7 +181,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ):
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
                         result = func.submit()
 
@@ -203,14 +203,16 @@ class TestSubmitMethod:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
             mock_future = MagicMock()
-            with patch("groundhog_hpc.function.script_to_submittable"):
+            with patch(
+                "groundhog_hpc.function.script_to_submittable"
+            ) as mock_script_to_submittable:
                 with patch(
                     "groundhog_hpc.function.submit_to_executor",
                     return_value=mock_future,
-                ) as mock_submit:
+                ):
                     with patch("groundhog_hpc.function.serialize") as mock_serialize:
                         with patch(
-                            "groundhog_hpc.function.get_endpoint_schema",
+                            "groundhog_hpc.compute.get_endpoint_schema",
                             return_value={},
                         ):
                             mock_serialize.return_value = "serialized_payload"
@@ -221,8 +223,8 @@ class TestSubmitMethod:
             call_args = mock_serialize.call_args[0][0]
             assert call_args == ((1, 2), {"kwarg1": "value1"})
 
-            # Verify submit_to_executor received the serialized payload
-            assert mock_submit.call_args[1]["payload"] == "serialized_payload"
+            # Verify script_to_submittable received the serialized payload
+            assert mock_script_to_submittable.call_args[0][2] == "serialized_payload"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
@@ -248,7 +250,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         func.submit()
@@ -287,7 +289,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ):
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
                         result = func.remote()
 
@@ -318,7 +320,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
                         # Call with override endpoint
                         func.submit(endpoint=mock_endpoint_uuid)
@@ -343,17 +345,22 @@ class TestSubmitMethod:
             # Initialize with default walltime
             func = Function(dummy_function, endpoint=mock_endpoint_uuid, walltime=60)
 
-            with patch("groundhog_hpc.function.script_to_submittable") as mock_s2s:
-                with patch("groundhog_hpc.function.submit_to_executor"):
+            mock_future = MagicMock()
+            with patch("groundhog_hpc.function.script_to_submittable"):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema", return_value={}
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
                         # Call with override walltime
                         func.submit(walltime=120)
 
-            # Verify script_to_submittable was called with override walltime
-            # Called as: script_to_submittable(script_path, function_name, walltime)
-            assert mock_s2s.call_args[0][2] == 120
+            # Verify submit_to_executor was called with override walltime in config
+            # Walltime should be in user_endpoint_config dict
+            config = mock_submit.call_args[1]["user_endpoint_config"]
+            assert config["walltime"] == 120
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
             del os.environ["GROUNDHOG_IN_HARNESS"]
@@ -390,7 +397,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         # Call with override config
@@ -437,7 +444,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         # Call with custom worker_init
@@ -487,7 +494,7 @@ class TestSubmitMethod:
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         # Call without any override
@@ -625,7 +632,7 @@ def add(a, b):
         with patch.object(func, "_local_subprocess_safe", return_value=True):
             with patch(
                 "groundhog_hpc.function.template_shell_command",
-                return_value="echo {payload}",
+                return_value="echo rendered_command",
             ) as mock_template:
                 with patch(
                     "groundhog_hpc.function.subprocess.run", return_value=mock_result
@@ -636,8 +643,13 @@ def add(a, b):
                     ):
                         func.local()
 
-        # Verify template_shell_command was called with script path and function name
-        mock_template.assert_called_once_with(str(script_path), "simple_function")
+        # Verify template_shell_command was called with script path, function name, and payload
+        # The third argument is the serialized payload
+        assert mock_template.call_count == 1
+        call_args = mock_template.call_args[0]
+        assert call_args[0] == str(script_path)
+        assert call_args[1] == "simple_function"
+        assert len(call_args) == 3  # script_path, function_name, payload
 
     def test_local_passes_shell_command_to_subprocess(self, tmp_path):
         """Test that local() passes the formatted shell command to subprocess."""
@@ -652,7 +664,7 @@ def add(a, b):
 
         with patch(
             "groundhog_hpc.function.template_shell_command",
-            return_value="uv run script.py {payload}",
+            return_value="uv run script.py with_rendered_payload",
         ):
             with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
                 with patch(
@@ -664,8 +676,9 @@ def add(a, b):
                     ):
                         func.local()
 
-        # Verify subprocess.run was called with the formatted command
-        assert mock_run.call_args[0][0] == "uv run script.py ABC123"
+        # Verify subprocess.run was called with the command returned by template_shell_command
+        # (payload is now rendered by Jinja2 in template_shell_command, not via .format())
+        assert mock_run.call_args[0][0] == "uv run script.py with_rendered_payload"
         assert mock_run.call_args[1]["shell"] is True
         assert mock_run.call_args[1]["capture_output"] is True
         assert mock_run.call_args[1]["text"] is True

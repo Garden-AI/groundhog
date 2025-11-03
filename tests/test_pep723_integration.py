@@ -73,7 +73,7 @@ def test_func():
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         func.submit()
@@ -152,7 +152,7 @@ def test_func():
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         func.submit()
@@ -228,7 +228,7 @@ import groundhog_hpc as hog
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         func.submit()
@@ -296,7 +296,7 @@ import groundhog_hpc as hog
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         # Call-time override
@@ -360,7 +360,7 @@ import groundhog_hpc as hog
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         func.submit(
@@ -437,7 +437,7 @@ import groundhog_hpc as hog
                     return_value=mock_future,
                 ) as mock_submit:
                     with patch(
-                        "groundhog_hpc.function.get_endpoint_schema",
+                        "groundhog_hpc.compute.get_endpoint_schema",
                         return_value=mock_schema,
                     ):
                         # Switch to GPU variant at runtime
