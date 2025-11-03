@@ -19,12 +19,7 @@ from types import FrameType, FunctionType, ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import (
-    get_endpoint_schema,
-    script_to_submittable,
-    submit_to_executor,
-)
-from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
+from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import LocalExecutionError
@@ -135,8 +130,7 @@ class Function:
             )
 
         endpoint = endpoint or self.endpoint
-        # handle walltime specially, because it's passed to the shell command
-        # not the executor (like the rest of the user_endpoing_config options)
+
         decorator_config = self.default_user_endpoint_config.copy()
         if self.walltime is not None:
             decorator_config["walltime"] = self.walltime
@@ -145,20 +139,16 @@ class Function:
         if walltime is not None:
             call_time_config["walltime"] = walltime
 
-        # Merge all config sources
+        # merge all config sources
         config = self.config_resolver.resolve(
             endpoint_name=endpoint or "",  # will validate below
             decorator_config=decorator_config,
             call_time_config=call_time_config,
         )
 
-        # extract endpoint uuid from config if specified
-        # this maps friendly names to actual uuids
+        # get endpoint UUID from config if specified (maps friendly names to UUIDs)
         if "endpoint" in config:
             endpoint = config.pop("endpoint")
-
-        if "walltime" in config:
-            walltime = config.pop("walltime")
 
         # Validate that we have an endpoint at this point
         if not endpoint:
@@ -173,29 +163,17 @@ class Function:
             else:
                 raise ValueError("No endpoint specified")
 
-        # Use default walltime if still not specified
-        if walltime is None:
-            walltime = DEFAULT_WALLTIME_SEC
-
-        # sanity check with endpoint metadata that we're not sending unrecognized user config
-        if schema := get_endpoint_schema(endpoint):
-            unexpected_keys = set(config.keys()) - set(
-                schema.get("properties", {}).keys()
-            )
-            config = {k: v for k, v in config.items() if k not in unexpected_keys}
-
-        shell_function = script_to_submittable(self.script_path, self.name, walltime)
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
+        shell_function = script_to_submittable(self.script_path, self.name, payload)
 
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
             shell_function=shell_function,
-            payload=payload,
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
-        future.function_name = self._local_function.__qualname__
+        future.function_name = self.name
         return future
 
     def remote(
@@ -305,13 +283,10 @@ class Function:
                 return self._local_function(*args, **kwargs)
 
             # different module - use subprocess for isolation
-            shell_command_template = template_shell_command(
-                self.script_path, self._local_function.__qualname__
-            )
-
             # use proxystore to avoid duplicating large objects in memory
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
-            shell_command = shell_command_template.format(payload=payload)
+
+            shell_command = template_shell_command(self.script_path, self.name, payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 try:
@@ -351,16 +326,17 @@ class Function:
             ValueError: If script path cannot be determined
         """
         # priority to env var set by CLI
-        self._script_path = os.environ.get("GROUNDHOG_SCRIPT_PATH", self._script_path)
+        self._script_path = self._script_path or os.environ.get("GROUNDHOG_SCRIPT_PATH")
         if self._script_path is not None:
             return self._script_path
 
         try:
             source_file = inspect.getfile(self._local_function)
-            return str(Path(source_file).resolve())
+            self._script_path = str(Path(source_file).resolve())
+            return self._script_path
         except (TypeError, OSError) as e:
             raise ValueError(
-                f"Could not determine script path for function {self._local_function.__qualname__}. "
+                f"Could not determine script path for function {self.name}. "
                 "Function must be defined in a file (not in interactive mode)."
             ) from e
 

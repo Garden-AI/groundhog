@@ -28,7 +28,7 @@ SCRIPT_EOF
 
 # Write serialized arguments
 cat > {{ script_name }}.in << 'PAYLOAD_EOF'
-{payload}
+{{ payload }}
 PAYLOAD_EOF
 
 # Execute and capture results
@@ -43,7 +43,7 @@ cat {{ script_name }}.out
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
 
-def template_shell_command(script_path: str, function_name: str) -> str:
+def template_shell_command(script_path: str, function_name: str, payload: str) -> str:
     """Generate a shell command to execute a user function on a remote endpoint.
 
     The generated shell command:
@@ -54,9 +54,11 @@ def template_shell_command(script_path: str, function_name: str) -> str:
     Args:
         script_path: Path to the user's Python script
         function_name: Name of the function to execute
+        payload: Serialized arguments string
 
     Returns:
-        A shell command string ready to be executed via Globus Compute
+        A fully-formed shell command string ready to be executed via Globus
+        Compute or local subprocess
     """
     with open(script_path, "r") as f_in:
         user_script = f_in.read()
@@ -77,6 +79,7 @@ def template_shell_command(script_path: str, function_name: str) -> str:
         script_contents=script_contents,
         function_name=function_name,
         version_spec=version_spec,
+        payload=payload,
     )
 
     return shell_command_string
@@ -133,6 +136,4 @@ if __name__ == "__main__":
         contents = serialize(results)
         f_out.write(contents)
 """
-    # Escape curly braces so they're treated as literals when
-    # expanded with .format(payload=payload)
-    return script.replace("{", "{{").replace("}", "}}")
+    return script
