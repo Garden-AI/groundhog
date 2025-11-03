@@ -182,6 +182,11 @@ class ConfigResolver:
         # Layer 5: Call-time overrides
         config = _merge_endpoint_configs(config, call_time_config)
 
+        # Layer 5 1/2: we want to ensure uv is installed *after* any user
+        # worker_init, e.g. activating a conda env, which might impact the
+        # templated shell command's ability to `uv.find_uv_bin()`
+        uv_init_config = {"worker_init": "pip show -qq uv || pip install uv"}
+        config = _merge_endpoint_configs(config, uv_init_config)
         return config
 
     def _load_pep723_metadata(self) -> dict[str, Any]:

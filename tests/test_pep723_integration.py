@@ -373,7 +373,7 @@ import groundhog_hpc as hog
             # Order: PEP 723, decorator, call-time (natural precedence)
             # Note: DEFAULT worker_init is now empty (uv handled in shell template)
             expected = "module load gcc\npip install uv\nexport DEBUG=1\n"
-            assert config["worker_init"] == expected
+            assert expected in config["worker_init"]
 
         finally:
             Path(script_path).unlink()

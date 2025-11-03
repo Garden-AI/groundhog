@@ -514,7 +514,7 @@ class TestLocalMethod:
     """Test the local() method for running functions in local subprocess."""
 
     def test_local_executes_function_and_returns_result(self, tmp_path):
-        """Test that local() executes the function in a subprocess and returns result."""
+        """Test that local() executes the function via ShellFunction and returns result."""
         # Create a test script
         script_path = tmp_path / "test_local.py"
         script_content = """import groundhog_hpc as hog
@@ -531,11 +531,20 @@ def add(a, b):
         func = Function(add)
         func._script_path = str(script_path)
 
-        # Mock subprocess.run to simulate successful execution
+        # Mock ShellFunction result
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = '{"result": 5}'
+        mock_result.stderr = ""
+        mock_result.exception_name = None
 
-        with patch("groundhog_hpc.function.subprocess.run", return_value=mock_result):
+        # Mock ShellFunction to return our mock result
+        mock_shell_function = MagicMock(return_value=mock_result)
+
+        with patch(
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_function,
+        ):
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 5)
             ) as mock_deserialize:
@@ -553,13 +562,19 @@ def add(a, b):
         func._script_path = str(script_path)
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = '{"result": "success"}'
+        mock_result.stderr = ""
+        mock_result.exception_name = None
+
+        mock_shell_function = MagicMock(return_value=mock_result)
 
         with patch(
             "groundhog_hpc.function.serialize", return_value="serialized"
         ) as mock_serialize:
             with patch(
-                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_function,
             ):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout",
@@ -567,7 +582,7 @@ def add(a, b):
                 ):
                     func.local(1, 2, key="value")
 
-        # Verify serialize was called with args, kwargs, and use_proxy=True
+        # Verify serialize was called with args, kwargs, and proxy_threshold_mb=1.0
         mock_serialize.assert_called_once()
         call_args = mock_serialize.call_args[0][0]
         call_kwargs = mock_serialize.call_args[1]
@@ -575,7 +590,7 @@ def add(a, b):
         assert call_kwargs.get("proxy_threshold_mb") == 1.0
 
     def test_local_runs_in_temporary_directory(self, tmp_path):
-        """Test that local() runs subprocess in a temporary directory."""
+        """Test that local() sets GC_TASK_SANDBOX_DIR to a temporary directory."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -583,22 +598,43 @@ def add(a, b):
         func._script_path = str(script_path)
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "result"
+        mock_result.stderr = ""
+        mock_result.exception_name = None
 
-        with patch(
-            "groundhog_hpc.function.subprocess.run", return_value=mock_result
-        ) as mock_run:
+        mock_shell_function = MagicMock(return_value=mock_result)
+
+        # Store original env var if it exists
+        original_sandbox_dir = os.environ.get("GC_TASK_SANDBOX_DIR")
+
+        try:
+            # Clear it for this test
+            if "GC_TASK_SANDBOX_DIR" in os.environ:
+                del os.environ["GC_TASK_SANDBOX_DIR"]
+
             with patch(
-                "groundhog_hpc.function.deserialize_stdout",
-                return_value=(None, "result"),
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_function,
             ):
-                func.local()
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout",
+                    return_value=(None, "result"),
+                ):
+                    func.local()
 
-        # Verify subprocess.run was called with a cwd parameter
-        assert mock_run.call_args[1]["cwd"] is not None
-        # Verify it's a valid directory path (starts with /tmp or similar)
-        cwd = mock_run.call_args[1]["cwd"]
-        assert isinstance(cwd, str)
+            # Verify GC_TASK_SANDBOX_DIR was set
+            assert "GC_TASK_SANDBOX_DIR" in os.environ
+            sandbox_dir = os.environ["GC_TASK_SANDBOX_DIR"]
+            assert isinstance(sandbox_dir, str)
+            assert len(sandbox_dir) > 0
+
+        finally:
+            # Restore original state
+            if original_sandbox_dir is not None:
+                os.environ["GC_TASK_SANDBOX_DIR"] = original_sandbox_dir
+            elif "GC_TASK_SANDBOX_DIR" in os.environ:
+                del os.environ["GC_TASK_SANDBOX_DIR"]
 
     def test_local_raises_if_script_path_unavailable(self):
         """Test that local() raises ValueError if script path cannot be determined."""
@@ -617,8 +653,8 @@ def add(a, b):
             with pytest.raises(ValueError, match="Could not determine script path"):
                 func.local()
 
-    def test_local_uses_template_shell_command(self, tmp_path):
-        """Test that local() uses template_shell_command to generate the command."""
+    def test_local_uses_script_to_submittable(self, tmp_path):
+        """Test that local() uses script_to_submittable to create ShellFunction."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -626,33 +662,34 @@ def add(a, b):
         func._script_path = str(script_path)
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "result"
+        mock_result.stderr = ""
+        mock_result.exception_name = None
+
+        mock_shell_function = MagicMock(return_value=mock_result)
 
         # Mock _local_subprocess_safe to ensure subprocess path is taken
         with patch.object(func, "_local_subprocess_safe", return_value=True):
             with patch(
-                "groundhog_hpc.function.template_shell_command",
-                return_value="echo rendered_command",
-            ) as mock_template:
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_function,
+            ) as mock_script_to_submittable:
                 with patch(
-                    "groundhog_hpc.function.subprocess.run", return_value=mock_result
+                    "groundhog_hpc.function.deserialize_stdout",
+                    return_value=(None, "result"),
                 ):
-                    with patch(
-                        "groundhog_hpc.function.deserialize_stdout",
-                        return_value=(None, "result"),
-                    ):
-                        func.local()
+                    func.local()
 
-        # Verify template_shell_command was called with script path, function name, and payload
-        # The third argument is the serialized payload
-        assert mock_template.call_count == 1
-        call_args = mock_template.call_args[0]
+        # Verify script_to_submittable was called with script path, function name, and payload
+        assert mock_script_to_submittable.call_count == 1
+        call_args = mock_script_to_submittable.call_args[0]
         assert call_args[0] == str(script_path)
         assert call_args[1] == "simple_function"
         assert len(call_args) == 3  # script_path, function_name, payload
 
-    def test_local_passes_shell_command_to_subprocess(self, tmp_path):
-        """Test that local() passes the formatted shell command to subprocess."""
+    def test_local_calls_shell_function(self, tmp_path):
+        """Test that local() calls the ShellFunction returned by script_to_submittable."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -660,29 +697,28 @@ def add(a, b):
         func._script_path = str(script_path)
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "result"
+        mock_result.stderr = ""
+        mock_result.exception_name = None
+
+        mock_shell_function = MagicMock(return_value=mock_result)
 
         with patch(
-            "groundhog_hpc.function.template_shell_command",
-            return_value="uv run script.py with_rendered_payload",
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_function,
         ):
             with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
                 with patch(
-                    "groundhog_hpc.function.subprocess.run", return_value=mock_result
-                ) as mock_run:
-                    with patch(
-                        "groundhog_hpc.function.deserialize_stdout",
-                        return_value=(None, "result"),
-                    ):
-                        func.local()
+                    "groundhog_hpc.function.deserialize_stdout",
+                    return_value=(None, "result"),
+                ):
+                    func.local()
 
-        # Verify subprocess.run was called with the command returned by template_shell_command
-        # (payload is now rendered by Jinja2 in template_shell_command, not via .format())
-        assert mock_run.call_args[0][0] == "uv run script.py with_rendered_payload"
-        assert mock_run.call_args[1]["shell"] is True
-        assert mock_run.call_args[1]["capture_output"] is True
-        assert mock_run.call_args[1]["text"] is True
-        assert mock_run.call_args[1]["check"] is True
+        # Verify ShellFunction was called (invoked via __call__)
+        mock_shell_function.assert_called_once()
+        # Verify it was called with no arguments (ShellFunction handles its own execution)
+        assert mock_shell_function.call_args[0] == ()
 
     def test_local_infers_script_path_from_function(self, tmp_path):
         """Test that local() can infer script path from function's source file."""
@@ -700,14 +736,20 @@ def add(a, b):
         func._script_path = None  # Force it to infer
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "42"
+        mock_result.stderr = ""
+        mock_result.exception_name = None
+
+        mock_shell_function = MagicMock(return_value=mock_result)
 
         # Mock inspect.getfile to return our test script
         with patch(
             "groundhog_hpc.function.inspect.getfile", return_value=str(script_path)
         ):
             with patch(
-                "groundhog_hpc.function.subprocess.run", return_value=mock_result
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_function,
             ):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout", return_value=(None, 42)
@@ -805,20 +847,27 @@ def cross_module_function(x):
         cross_module_function._script_path = str(script_path)
 
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "__GROUNDHOG_RESULT__\n84"
+        mock_result.stderr = ""
+        mock_result.exception_name = None
 
-        # Mock subprocess.run since we're not doing real execution
+        mock_shell_function = MagicMock(return_value=mock_result)
+
+        # Mock script_to_submittable since we're not doing real execution
         with patch(
-            "groundhog_hpc.function.subprocess.run", return_value=mock_result
-        ) as mock_run:
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_function,
+        ) as mock_script_to_submittable:
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
             ):
                 result = cross_module_function.local(42)
 
-        # Should have used subprocess (different module)
+        # Should have used ShellFunction (different module)
         assert result == 84
-        mock_run.assert_called_once()
+        mock_script_to_submittable.assert_called_once()
+        mock_shell_function.assert_called_once()
 
     def test_should_use_subprocess_walks_entire_call_stack(self):
         """Test that the frame walker checks all <module> frames in the stack."""

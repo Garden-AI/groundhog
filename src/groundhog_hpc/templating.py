@@ -27,9 +27,7 @@ def escape_braces(text: str) -> str:
 SHELL_COMMAND_TEMPLATE = """
 set -euo pipefail
 
-# Ensure uv is installed
-python3 -c 'import uv' 2>/dev/null || pip3 install uv
-UV_BIN=$(python3 -c 'import uv; print(uv.find_uv_bin())')
+UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
 
 # Write user script
 cat > {{ script_name }}.py << 'SCRIPT_EOF'
