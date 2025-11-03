@@ -7,28 +7,47 @@ to enable remote execution. It creates shell commands that:
 3. Execute the script with uv, deserialize args, call the function, serialize results
 """
 
+import uuid
 from hashlib import sha1
 from pathlib import Path
 
-from jinja2 import Template
+from jinja2 import Environment
 
 from groundhog_hpc.utils import get_groundhog_version_spec
 
+
+def escape_braces(text: str) -> str:
+    """Escape curly braces for Globus Compute's .format() call.
+
+    ShellFunction.cmd.format() is called by Globus Compute, so any curly
+    braces in user code must be doubled to avoid KeyError.
+    """
+    return text.replace("{", "{{").replace("}", "}}")
+
+
 SHELL_COMMAND_TEMPLATE = """
-cat > {{ script_name }}.py << 'EOF'
-{{ script_contents }}
-EOF
-cat > {{ script_name }}.in << 'END'
-{payload}
-END
-$(python -c 'import uv; print(uv.find_uv_bin())') run --managed-python --with {{ version_spec }} \\
-  {{ script_name }}.py {{ function_name }} {{ script_name }}.in > {{ script_name }}.stdout \\
-  && cat {{ script_name }}.stdout && echo "__GROUNDHOG_RESULT__" && cat {{ script_name }}.out
+set -euo pipefail
+
+UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
+
+cat > {{ script_name }}.py << 'SCRIPT_EOF'
+{{ script_contents | escape_braces }}
+SCRIPT_EOF
+
+cat > {{ script_name }}.in << 'PAYLOAD_EOF'
+{{ payload }}
+PAYLOAD_EOF
+
+"$UV_BIN" run --managed-python --with {{ version_spec }} \\
+  {{ script_name }}.py {{ function_name }} {{ script_name }}.in
+
+echo "__GROUNDHOG_RESULT__"
+cat {{ script_name }}.out
 """
 # note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
 
 
-def template_shell_command(script_path: str, function_name: str) -> str:
+def template_shell_command(script_path: str, function_name: str, payload: str) -> str:
     """Generate a shell command to execute a user function on a remote endpoint.
 
     The generated shell command:
@@ -39,29 +58,36 @@ def template_shell_command(script_path: str, function_name: str) -> str:
     Args:
         script_path: Path to the user's Python script
         function_name: Name of the function to execute
+        payload: Serialized arguments string
 
     Returns:
-        A shell command string ready to be executed via Globus Compute
+        A fully-formed shell command string ready to be executed via Globus
+        Compute or local subprocess
     """
     with open(script_path, "r") as f_in:
         user_script = f_in.read()
 
     script_hash = _script_hash_prefix(user_script)
     script_basename = _extract_script_basename(script_path)
-    script_name = f"{script_basename}-{script_hash}"
+    random_suffix = uuid.uuid4().hex[:8]
+    script_name = f"{script_basename}-{script_hash}-{random_suffix}"
     script_contents = _inject_script_boilerplate(
         user_script, function_name, script_name
     )
 
     version_spec = get_groundhog_version_spec()
 
-    template = Template(SHELL_COMMAND_TEMPLATE)
+    # Create Jinja2 environment with custom filter for escaping braces
+    env = Environment()
+    env.filters["escape_braces"] = escape_braces
+    template = env.from_string(SHELL_COMMAND_TEMPLATE)
 
     shell_command_string = template.render(
         script_name=script_name,
         script_contents=script_contents,
         function_name=function_name,
         version_spec=version_spec,
+        payload=payload,
     )
 
     return shell_command_string
@@ -114,10 +140,8 @@ if __name__ == "__main__":
         args, kwargs = deserialize(payload)
 
     results = {function_name}(*args, **kwargs)
-    with open('{outfile_path}', 'w+') as f_out:
+    with open('{outfile_path}', 'w') as f_out:
         contents = serialize(results)
         f_out.write(contents)
 """
-    # Escape curly braces so they're treated as literals when
-    # expanded with .format(payload=payload)
-    return script.replace("{", "{{").replace("}", "}}")
+    return script

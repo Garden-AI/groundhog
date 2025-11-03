@@ -59,8 +59,8 @@ if __name__ == "__main__":
         assert "my_script-hashyhash.in" in injected
         assert "my_script-hashyhash.out" in injected
 
-    def test_escapes_curly_braces_in_user_code(self):
-        """Test that curly braces in user code are escaped for .format() compatibility."""
+    def test_preserves_curly_braces_in_user_code(self):
+        """Test that curly braces in user code are preserved in the boilerplate."""
         script = """import groundhog_hpc as hog
 
 @hog.function()
@@ -69,8 +69,11 @@ def process_dict():
     return data
 """
         injected = _inject_script_boilerplate(script, "process_dict", "test-abc123")
-        # Curly braces should be doubled to escape them
-        assert '{{"key": "value"}}' in injected
+        # Curly braces should NOT be escaped in _inject_script_boilerplate
+        # (escaping happens later via Jinja2 filter in template_shell_command)
+        assert '{"key": "value"}' in injected
+        # Should not be doubled at this stage
+        assert '{{"key": "value"}}' not in injected
 
 
 class TestTemplateShellCommand:
@@ -92,7 +95,7 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo")
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
 
         # Check that it's a non-empty string
         assert isinstance(shell_command, str)
@@ -113,7 +116,9 @@ def test_func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "test_func")
+        shell_command = template_shell_command(
+            str(script_path), "test_func", "test_payload"
+        )
 
         # Should include the basename
         assert "my_script" in shell_command
@@ -133,12 +138,14 @@ def my_function():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "my_function")
+        shell_command = template_shell_command(
+            str(script_path), "my_function", "test_payload"
+        )
 
         assert "my_function" in shell_command
 
-    def test_includes_payload_placeholder(self, tmp_path):
-        """Test that the shell command includes {payload} for substitution."""
+    def test_includes_payload_in_command(self, tmp_path):
+        """Test that the shell command includes the rendered payload."""
         script_path = tmp_path / "script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -152,10 +159,11 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func")
+        test_payload = "MY_TEST_PAYLOAD_12345"
+        shell_command = template_shell_command(str(script_path), "func", test_payload)
 
-        # Should have {payload} placeholder for Globus Compute substitution
-        assert "{payload}" in shell_command
+        # Payload should be rendered directly in the command (via Jinja2)
+        assert test_payload in shell_command
 
     def test_includes_uv_run_command(self, tmp_path):
         """Test that the shell command uses uv run."""
@@ -172,14 +180,14 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func")
+        shell_command = template_shell_command(str(script_path), "func", "test_payload")
 
-        # Check for uv.find_uv_bin() and run command
+        # Check for uv installation and run command
         assert "uv.find_uv_bin()" in shell_command
-        assert ") run" in shell_command
+        assert '"$UV_BIN" run' in shell_command
 
     def test_escapes_user_code_curly_braces(self, tmp_path):
-        """Test that curly braces in user code are escaped in final command."""
+        """Test that curly braces in user code are escaped in final shell command."""
         script_path = tmp_path / "script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -193,12 +201,53 @@ def dict_func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "dict_func")
+        shell_command = template_shell_command(
+            str(script_path), "dict_func", "test_payload"
+        )
 
-        # Curly braces in user code should be doubled
+        # Curly braces in user code should be doubled (escaped via Jinja2 filter)
+        # This is needed because Globus Compute's ShellFunction calls .format()
         assert '{{"result": 42}}' in shell_command
-        # But the payload placeholder should remain single
-        assert "{payload}" in shell_command
+
+    def test_shell_command_survives_format_call(self, tmp_path):
+        """Test that shell command can survive .format() call like ShellFunction does.
+
+        This is a regression test for the bug where curly braces in user code
+        (e.g., dict literals, f-strings) caused KeyError when Globus Compute's
+        ShellFunction called .format() on the command.
+        """
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def use_torch():
+    import torch
+    # This dict literal caused KeyError: 'torch' in the original bug
+    result = {"torch": torch.cuda.is_available()}
+    return result
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(
+            str(script_path), "use_torch", "test_payload"
+        )
+
+        # Simulate what Globus Compute's ShellFunction does:
+        # It calls .format() on the command (without any kwargs)
+        try:
+            # This should not raise KeyError if curly braces are properly escaped
+            formatted = shell_command.format()
+            # After .format(), the doubled braces should become single braces
+            assert '{"torch"' in formatted
+        except KeyError as e:
+            pytest.fail(
+                f"shell_command.format() raised KeyError: {e}. "
+                "This means curly braces in user code are not properly escaped!"
+            )
 
     def test_different_scripts_produce_different_hashes(self, tmp_path):
         """Test that different scripts produce different script names (hashes)."""
@@ -228,8 +277,8 @@ def func2():
         script1_path.write_text(script1_content)
         script2_path.write_text(script2_content)
 
-        command1 = template_shell_command(str(script1_path), "func1")
-        command2 = template_shell_command(str(script2_path), "func2")
+        command1 = template_shell_command(str(script1_path), "func1", "test_payload")
+        command2 = template_shell_command(str(script2_path), "func2", "test_payload")
 
         # Extract the script names (format: basename-hash)
         # They should have different hashes since content differs

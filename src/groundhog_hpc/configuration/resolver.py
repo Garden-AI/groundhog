@@ -32,8 +32,8 @@ def _merge_endpoint_configs(
 ) -> dict:
     """Merge endpoint configurations, ensuring worker_init commands are combined.
 
-    The worker_init field is special-cased: if both configs provide it, the
-    override's worker_init is executed first, followed by the base's worker_init.
+    The worker_init field is special-cased: if both configs provide it, they are
+    concatenated with the base's worker_init executed first, followed by the override's.
     All other fields from override_config simply replace fields from base_endpoint_config.
 
     Args:
@@ -47,17 +47,20 @@ def _merge_endpoint_configs(
         >>> base = {"worker_init": "pip install uv"}
         >>> override = {"worker_init": "module load gcc", "cores": 4}
         >>> _merge_endpoint_configs(base, override)
-        {'worker_init': 'module load gcc\\npip install uv', 'cores': 4}
+        {'worker_init': 'pip install uv\\nmodule load gcc', 'cores': 4}
     """
     if not override_config:
         return base_endpoint_config.copy()
 
     merged = base_endpoint_config.copy()
+    override_config = override_config.copy()
 
-    # Special handling for worker_init: append base to override
+    # Special handling for worker_init: prepend base to override
     if "worker_init" in override_config and "worker_init" in base_endpoint_config:
-        override_config = override_config.copy()
-        override_config["worker_init"] += f"\n{merged.pop('worker_init')}"
+        base_init = base_endpoint_config["worker_init"]
+        # pop worker_init so update doesn't clobber concatenated value
+        override_init = override_config.pop("worker_init")
+        merged["worker_init"] = f"{base_init.strip()}\n{override_init.strip()}\n"
 
     merged.update(override_config)
     return merged
@@ -179,6 +182,11 @@ class ConfigResolver:
         # Layer 5: Call-time overrides
         config = _merge_endpoint_configs(config, call_time_config)
 
+        # Layer 5 1/2: we want to ensure uv is installed *after* any user
+        # worker_init, e.g. activating a conda env, which might impact the
+        # templated shell command's ability to `uv.find_uv_bin()`
+        uv_init_config = {"worker_init": "pip show -qq uv || pip install uv"}
+        config = _merge_endpoint_configs(config, uv_init_config)
         return config
 
     def _load_pep723_metadata(self) -> dict[str, Any]:

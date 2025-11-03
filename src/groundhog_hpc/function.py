@@ -11,7 +11,6 @@ as defaults but overridden when calling .remote() or .submit().
 
 import inspect
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -19,26 +18,22 @@ from types import FrameType, FunctionType, ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import (
-    get_endpoint_schema,
-    script_to_submittable,
-    submit_to_executor,
-)
-from groundhog_hpc.configuration.defaults import DEFAULT_WALLTIME_SEC
+from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import LocalExecutionError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
-from groundhog_hpc.templating import template_shell_command
 from groundhog_hpc.utils import prefix_output
 
 if TYPE_CHECKING:
     import globus_compute_sdk
 
     ShellFunction = globus_compute_sdk.ShellFunction
+    ShellResult = globus_compute_sdk.ShellResult
 else:
     ShellFunction = TypeVar("ShellFunction")
+    ShellResult = TypeVar("ShellResult")
 
 
 class Function:
@@ -78,7 +73,6 @@ class Function:
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
 
         self._local_function: FunctionType = func
-        self._shell_function: ShellFunction | None = None
         self._config_resolver: ConfigResolver | None = None
 
     def __call__(self, *args, **kwargs) -> Any:
@@ -136,8 +130,7 @@ class Function:
             )
 
         endpoint = endpoint or self.endpoint
-        # handle walltime specially, because it's passed to the shell command
-        # not the executor (like the rest of the user_endpoing_config options)
+
         decorator_config = self.default_user_endpoint_config.copy()
         if self.walltime is not None:
             decorator_config["walltime"] = self.walltime
@@ -146,20 +139,16 @@ class Function:
         if walltime is not None:
             call_time_config["walltime"] = walltime
 
-        # Merge all config sources
+        # merge all config sources
         config = self.config_resolver.resolve(
             endpoint_name=endpoint or "",  # will validate below
             decorator_config=decorator_config,
             call_time_config=call_time_config,
         )
 
-        # extract endpoint uuid from config if specified
-        # this maps friendly names to actual uuids
+        # get endpoint UUID from config if specified (maps friendly names to UUIDs)
         if "endpoint" in config:
             endpoint = config.pop("endpoint")
-
-        if "walltime" in config:
-            walltime = config.pop("walltime")
 
         # Validate that we have an endpoint at this point
         if not endpoint:
@@ -174,32 +163,17 @@ class Function:
             else:
                 raise ValueError("No endpoint specified")
 
-        # Use default walltime if still not specified
-        if walltime is None:
-            walltime = DEFAULT_WALLTIME_SEC
-
-        # sanity check with endpoint metadata that we're not sending unrecognized user config
-        if schema := get_endpoint_schema(endpoint):
-            unexpected_keys = set(config.keys()) - set(
-                schema.get("properties", {}).keys()
-            )
-            config = {k: v for k, v in config.items() if k not in unexpected_keys}
-
-        if self._shell_function is None:
-            self._shell_function = script_to_submittable(
-                self.script_path, self._local_function.__qualname__, walltime
-            )
-
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
+        shell_function = script_to_submittable(self.script_path, self.name, payload)
+
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
-            shell_function=self._shell_function,
-            payload=payload,
+            shell_function=shell_function,
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
-        future.function_name = self._local_function.__qualname__
+        future.function_name = self.name
         return future
 
     def remote(
@@ -309,37 +283,38 @@ class Function:
                 return self._local_function(*args, **kwargs)
 
             # different module - use subprocess for isolation
-            shell_command_template = template_shell_command(
-                self.script_path, self._local_function.__qualname__
-            )
-
             # use proxystore to avoid duplicating large objects in memory
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
-            shell_command = shell_command_template.format(payload=payload)
+
+            # Create ShellFunction just like we do for remote execution
+            # This ensures .format() is called, which unescapes doubled braces
+            shell_function = script_to_submittable(self.script_path, self.name, payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                try:
-                    result = subprocess.run(
-                        shell_command,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        cwd=tmpdir,
-                    )
-                except subprocess.CalledProcessError as e:
-                    if e.stderr:
-                        print(e.stderr, file=sys.stderr)
-                    if e.stdout:
-                        print(e.stdout, file=sys.stdout)
-                    raise LocalExecutionError("Local subprocess failed") from e
-                else:
-                    user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                # set sandbox dir for ShellFunction to use
+                if "GC_TASK_SANDBOX_DIR" not in os.environ:
+                    os.environ["GC_TASK_SANDBOX_DIR"] = tmpdir
+
+                # just __call__ ShellFunction to execute the command
+                result = shell_function()
+                assert not isinstance(result, dict)
+
+                if result.returncode != 0:
                     if result.stderr:
                         print(result.stderr, file=sys.stderr)
-                    if user_stdout:
-                        print(user_stdout)
-                    return deserialized_result
+                    if result.stdout:
+                        print(result.stdout, file=sys.stdout)
+                    msg = "Local subprocess failed"
+                    if result.exception_name:
+                        msg += f": {result.exception_name}"
+                    raise LocalExecutionError(msg)
+
+                user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                if user_stdout:
+                    print(user_stdout)
+                return deserialized_result
 
     @property
     def script_path(self) -> str:
@@ -355,16 +330,17 @@ class Function:
             ValueError: If script path cannot be determined
         """
         # priority to env var set by CLI
-        self._script_path = os.environ.get("GROUNDHOG_SCRIPT_PATH", self._script_path)
+        self._script_path = self._script_path or os.environ.get("GROUNDHOG_SCRIPT_PATH")
         if self._script_path is not None:
             return self._script_path
 
         try:
             source_file = inspect.getfile(self._local_function)
-            return str(Path(source_file).resolve())
+            self._script_path = str(Path(source_file).resolve())
+            return self._script_path
         except (TypeError, OSError) as e:
             raise ValueError(
-                f"Could not determine script path for function {self._local_function.__qualname__}. "
+                f"Could not determine script path for function {self.name}. "
                 "Function must be defined in a file (not in interactive mode)."
             ) from e
 
@@ -374,3 +350,7 @@ class Function:
         if self._config_resolver is None:
             self._config_resolver = ConfigResolver(self.script_path)
         return self._config_resolver
+
+    @property
+    def name(self) -> str:
+        return self._local_function.__qualname__

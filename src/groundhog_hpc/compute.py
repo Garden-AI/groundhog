@@ -44,65 +44,56 @@ def _get_compute_client() -> Client:
 
 
 def script_to_submittable(
-    script_path: str, function_name: str, walltime: int | None = None
+    script_path: str, function_name: str, payload: str
 ) -> ShellFunction:
     """Convert a user script and function name into a Globus Compute ShellFunction.
 
     Args:
         script_path: Path to the Python script containing the function
         function_name: Name of the function to execute remotely
-        walltime: Maximum execution time in seconds (optional)
+        payload: Serialized arguments string
 
     Returns:
         A ShellFunction ready to be submitted to a Globus Compute executor
     """
     import globus_compute_sdk as gc
 
-    shell_command = template_shell_command(script_path, function_name)
-    shell_function = gc.ShellFunction(
-        shell_command, walltime=walltime, name=function_name
-    )
+    shell_command = template_shell_command(script_path, function_name, payload)
+    shell_function = gc.ShellFunction(shell_command, name=function_name)
     return shell_function
-
-
-def pre_register_shell_function(
-    script_path: str, function_name: str, walltime: int | None = None
-) -> UUID:
-    """Pre-register a `ShellFunction` corresponding to the named function in a
-    script and return its function UUID.
-
-    Note that the registered function will expect a single `payload` kwarg which
-    should be a serialized str, and will return a serialized str to be
-    deserialized.
-    """
-
-    client = _get_compute_client()
-    shell_function = script_to_submittable(script_path, function_name, walltime)
-    function_id = client.register_function(shell_function, public=True)
-    return function_id
 
 
 def submit_to_executor(
     endpoint: UUID,
     user_endpoint_config: dict[str, Any],
     shell_function: ShellFunction,
-    payload: str,
 ) -> GroundhogFuture:
     """Submit a ShellFunction to a Globus Compute endpoint for execution.
 
     Args:
         endpoint: UUID of the Globus Compute endpoint
-        user_endpoint_config: Configuration dict for the endpoint (e.g., worker_init)
-        shell_function: The ShellFunction to execute
-        payload: Serialized arguments string to pass to the function
+        user_endpoint_config: Configuration dict for the endpoint (e.g., worker_init, walltime)
+        shell_function: The ShellFunction to execute (with payload already templated in)
 
     Returns:
         A GroundhogFuture that will contain the deserialized result
     """
     import globus_compute_sdk as gc
 
-    with gc.Executor(endpoint, user_endpoint_config=user_endpoint_config) as executor:
-        future = executor.submit(shell_function, payload=payload)
+    # Extract walltime and set it on the shell function
+    config = user_endpoint_config.copy()
+    if "walltime" in config:
+        shell_function.walltime = config.pop("walltime")
+
+    # Validate config against endpoint schema and filter out unexpected keys
+    if schema := get_endpoint_schema(endpoint):
+        expected_keys = set(schema.get("properties", {}).keys())
+        unexpected_keys = set(config.keys()) - expected_keys
+        if unexpected_keys:
+            config = {k: v for k, v in config.items() if k not in unexpected_keys}
+
+    with gc.Executor(endpoint, user_endpoint_config=config) as executor:
+        future = executor.submit(shell_function)
         deserializing_future = GroundhogFuture(future)
         return deserializing_future
 
