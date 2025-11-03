@@ -11,7 +11,6 @@ as defaults but overridden when calling .remote() or .submit().
 
 import inspect
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -25,15 +24,16 @@ from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import LocalExecutionError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
-from groundhog_hpc.templating import template_shell_command
 from groundhog_hpc.utils import prefix_output
 
 if TYPE_CHECKING:
     import globus_compute_sdk
 
     ShellFunction = globus_compute_sdk.ShellFunction
+    ShellResult = globus_compute_sdk.ShellResult
 else:
     ShellFunction = TypeVar("ShellFunction")
+    ShellResult = TypeVar("ShellResult")
 
 
 class Function:
@@ -286,31 +286,35 @@ class Function:
             # use proxystore to avoid duplicating large objects in memory
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
 
-            shell_command = template_shell_command(self.script_path, self.name, payload)
+            # Create ShellFunction just like we do for remote execution
+            # This ensures .format() is called, which unescapes doubled braces
+            shell_function = script_to_submittable(self.script_path, self.name, payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                try:
-                    result = subprocess.run(
-                        shell_command,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        cwd=tmpdir,
-                    )
-                except subprocess.CalledProcessError as e:
-                    if e.stderr:
-                        print(e.stderr, file=sys.stderr)
-                    if e.stdout:
-                        print(e.stdout, file=sys.stdout)
-                    raise LocalExecutionError("Local subprocess failed") from e
-                else:
-                    user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                # set sandbox dir for ShellFunction to use
+                if "GC_TASK_SANDBOX_DIR" not in os.environ:
+                    os.environ["GC_TASK_SANDBOX_DIR"] = tmpdir
+
+                # just __call__ ShellFunction to execute the command
+                result = shell_function()
+                assert not isinstance(result, dict)
+
+                if result.returncode != 0:
                     if result.stderr:
                         print(result.stderr, file=sys.stderr)
-                    if user_stdout:
-                        print(user_stdout)
-                    return deserialized_result
+                    if result.stdout:
+                        print(result.stdout, file=sys.stdout)
+                    msg = "Local subprocess failed"
+                    if result.exception_name:
+                        msg += f": {result.exception_name}"
+                    raise LocalExecutionError(msg)
+
+                user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                if user_stdout:
+                    print(user_stdout)
+                return deserialized_result
 
     @property
     def script_path(self) -> str:
