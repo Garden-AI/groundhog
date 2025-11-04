@@ -1,0 +1,28 @@
+# /// script
+{{ pep723_metadata }}
+# ///
+
+import sys
+import importlib.util
+
+# Import user script as module
+spec = importlib.util.spec_from_file_location("user_script", "{{ script_path }}")
+module = importlib.util.module_from_spec(spec)
+sys.modules["user_script"] = module
+module.__groundhog_imported__ = True  # Mark as safe for .remote()/.local()
+spec.loader.exec_module(module)
+
+# Execute the function
+if __name__ == "__main__":
+    from groundhog_hpc.serialization import serialize, deserialize
+
+    with open('{{ payload_path }}', 'r') as f_in:
+        payload = f_in.read()
+        args, kwargs = deserialize(payload)
+
+    func = getattr(module, "{{ function_name }}")
+    results = func(*args, **kwargs)
+
+    with open('{{ outfile_path }}', 'w') as f_out:
+        contents = serialize(results)
+        f_out.write(contents)

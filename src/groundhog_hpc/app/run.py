@@ -1,5 +1,6 @@
 """Run command for executing Groundhog scripts on Globus Compute endpoints."""
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -68,17 +69,17 @@ def run(
             )
 
     try:
-        # Execute in the actual __main__ module so that classes defined in the script
-        # can be properly pickled (pickle requires classes to be importable from their
-        # __module__, and for __main__.ClassName to work it must be in sys.modules["__main__"])
-        import __main__
+        # Import user script as module (allows __main__ blocks without infinite loops)
+        spec = importlib.util.spec_from_file_location("user_script", script_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["user_script"] = module
+        module.__groundhog_imported__ = True  # Mark as safe for .remote()/.local()
+        spec.loader.exec_module(module)
 
-        exec(contents, __main__.__dict__, __main__.__dict__)
-
-        if harness not in __main__.__dict__:
+        if not hasattr(module, harness):
             typer.echo(f"Error: Function '{harness}' not found in script")
             raise typer.Exit(1)
-        elif not isinstance(__main__.__dict__[harness], Harness):
+        elif not isinstance(getattr(module, harness), Harness):
             typer.echo(
                 f"Error: Function '{harness}' must be decorated with `@hog.harness`",
             )
@@ -86,7 +87,8 @@ def run(
 
         # signal to harness obj that invocation is allowed
         os.environ[f"GROUNDHOG_RUN_{harness}".upper()] = str(True)
-        result = __main__.__dict__[harness]()
+        harness_func = getattr(module, harness)
+        result = harness_func()
         typer.echo(result)
     except RemoteExecutionError as e:
         if e.returncode == 124:

@@ -91,6 +91,44 @@ class Function:
         # set by @harness decorator
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
+    def _get_import_error_message(self, method_name: str) -> str:
+        """Generate detailed error message with stack context.
+
+        Args:
+            method_name: The method name that was called (e.g., "remote" or "local")
+
+        Returns:
+            A detailed error message explaining the issue and how to fix it
+        """
+        # sys.modules.get(self._local_function.__module__)
+
+        # Find where in the stack the problematic call originated
+        stack = inspect.stack()
+        module_level_frames = []
+        for frame_info in stack[2:]:  # Skip this method and the caller (remote/local)
+            if frame_info.function == "<module>":
+                module_level_frames.append(
+                    f"  {frame_info.filename}:{frame_info.lineno} in <module>"
+                )
+
+        stack_context = (
+            "\n".join(module_level_frames)
+            if module_level_frames
+            else "  (no module-level frames found)"
+        )
+
+        return (
+            f"Cannot call {self._local_function.__name__}.{method_name}() during module import.\n"
+            f"\n"
+            f"Module '{self._local_function.__module__}' is currently being imported, and "
+            f".{method_name}() calls are not allowed until import completes.\n"
+            f"\n"
+            f"Call stack (module-level frames):\n"
+            f"{stack_context}\n"
+            f"\n"
+            f"Solution: Move .{method_name}() calls to inside a function."
+        )
+
     def _get_available_endpoints_from_pep723(self) -> list[str]:
         """Get list of endpoint names defined in PEP 723 [tool.hog.*] sections."""
         metadata = self.config_resolver._load_pep723_metadata()
@@ -120,14 +158,14 @@ class Function:
             A GroundhogFuture that will contain the deserialized result
 
         Raises:
-            RuntimeError: If called outside of a @hog.harness function
+            RuntimeError: If called outside of a @hog.harness function or during module import
             ValueError: If endpoint is not specified and cannot be resolved from config
             PayloadTooLargeError: If serialized arguments exceed 10MB
         """
-        if not self._running_in_harness():
-            raise RuntimeError(
-                "Can't invoke a remote function outside of a @hog.harness function"
-            )
+        # Check if module has been marked as safe for .remote() calls
+        module = sys.modules.get(self._local_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise RuntimeError(self._get_import_error_message("submit"))
 
         endpoint = endpoint or self.endpoint
 
@@ -272,9 +310,14 @@ class Function:
             The deserialized result of the local function execution
 
         Raises:
+            RuntimeError: If called during module import
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
+        # Check if module has been marked as safe for .local() calls
+        module = sys.modules.get(self._local_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise RuntimeError(self._get_import_error_message("local"))
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
             if not (self._local_subprocess_safe() or self._running_in_harness()):
