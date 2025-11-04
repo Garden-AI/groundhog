@@ -238,6 +238,31 @@ class TestProxyStoreSerialization:
         result = deserialize(proxy_serialized)
         assert result == large_obj
 
+    def test_proxy_threshold_prevents_size_limit_error(self):
+        """Test that proxy_threshold_mb automatically uses proxy for objects >10MB.
+
+        This is the key behavior for .local() execution - it should never raise
+        PayloadTooLargeError when proxy_threshold_mb is set, even for objects
+        larger than the 10MB Globus Compute limit.
+        """
+        # Create an object larger than 10MB (would normally raise PayloadTooLargeError)
+        large_obj = {"data": "x" * (11 * 1024 * 1024)}
+
+        # Direct serialization should fail
+        with pytest.raises(PayloadTooLargeError):
+            serialize(large_obj)
+
+        # But with proxy_threshold_mb set (like .local() uses), should automatically
+        # use proxy instead of raising an error
+        serialized = serialize(large_obj, proxy_threshold_mb=1.0)
+
+        # Proxy should be small (not 11MB)
+        assert len(serialized) < 10000  # Proxy should be tiny
+
+        # Should roundtrip correctly
+        result = deserialize(serialized)
+        assert result == large_obj
+
     def test_store_singleton_behavior(self):
         """Test that the store is reused across serialization calls."""
         from proxystore.store import get_store
