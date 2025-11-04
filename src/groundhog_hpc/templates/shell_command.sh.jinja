@@ -1,0 +1,21 @@
+set -euo pipefail
+
+UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
+
+cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
+{{ user_script_contents | escape_braces }}
+USER_SCRIPT_EOF
+
+cat > {{ runner_name }}.py << 'RUNNER_EOF'
+{{ runner_contents | escape_braces }}
+RUNNER_EOF
+
+cat > {{ script_name }}.in << 'PAYLOAD_EOF'
+{{ payload }}
+PAYLOAD_EOF
+
+"$UV_BIN" run --managed-python --with {{ version_spec }} \
+  {{ runner_name }}.py
+
+echo "__GROUNDHOG_RESULT__"
+cat {{ script_name }}.out

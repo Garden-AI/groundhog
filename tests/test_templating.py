@@ -54,9 +54,11 @@ def foo():
         # Should create both user script and runner
         assert "_runner.py" in shell_command
         # Runner should import the user script
-        assert "importlib.util" in shell_command
-        assert "user_script" in shell_command
-        assert "__groundhog_imported__" in shell_command
+        assert (
+            'module = import_user_script("test_script", "test_script-' in shell_command
+        )
+        # Runner should invoke the target function
+        assert 'func = getattr(module, "foo")' in shell_command
 
     def test_runner_contains_pep723_metadata(self, tmp_path):
         """Test that runner contains PEP 723 metadata from user script."""

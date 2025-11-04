@@ -26,32 +26,6 @@ def escape_braces(text: str) -> str:
     return text.replace("{", "{{").replace("}", "}}")
 
 
-SHELL_COMMAND_TEMPLATE = """
-set -euo pipefail
-
-UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
-
-cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
-{{ user_script_contents | escape_braces }}
-USER_SCRIPT_EOF
-
-cat > {{ runner_name }}.py << 'RUNNER_EOF'
-{{ runner_contents | escape_braces }}
-RUNNER_EOF
-
-cat > {{ script_name }}.in << 'PAYLOAD_EOF'
-{{ payload }}
-PAYLOAD_EOF
-
-"$UV_BIN" run --managed-python --with {{ version_spec }} \\
-  {{ runner_name }}.py
-
-echo "__GROUNDHOG_RESULT__"
-cat {{ script_name }}.out
-"""
-# note: working directory is ~/.globus_compute/uep.<endpoint uuids>/tasks_working_dir
-
-
 def template_shell_command(script_path: str, function_name: str, payload: str) -> str:
     """Generate a shell command to execute a user function on a remote endpoint.
 
@@ -108,7 +82,7 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     )
 
     # Render shell command
-    shell_template = jinja_env.from_string(SHELL_COMMAND_TEMPLATE)
+    shell_template = jinja_env.get_template("shell_command.sh.jinja")
     shell_command_string = shell_template.render(
         user_script_name=user_script_name,
         user_script_contents=user_script,
