@@ -29,18 +29,15 @@ class GroundhogImportHook(MetaPathFinder):
         # We skip this finder to avoid infinite recursion
         spec = None
         for finder in sys.meta_path:
-            if finder is self:
+            if isinstance(finder, type(self)):
                 continue
             if hasattr(finder, "find_spec"):
                 spec = finder.find_spec(fullname, path, target)
                 if spec is not None:
                     break
 
-        if spec is None:
-            return None
-
         # Wrap the loader to set the flag after execution
-        if spec.loader is not None:
+        if spec and spec.loader:
             spec.loader = GroundhogLoader(spec.loader)
         return spec
 
@@ -91,7 +88,7 @@ class GroundhogLoader(Loader):
         # If this fails (e.g., built-in modules, C extensions), just continue
         try:
             setattr(module, "__groundhog_imported__", True)
-        except:  # noqa: E722
+        except (AttributeError, TypeError):
             # Module doesn't support attribute assignment (built-in, C extension, etc.)
             pass
 

@@ -173,7 +173,11 @@ def import_user_script(module_name: str, script_path: Path) -> ModuleType:
         The imported module with __groundhog_imported__ set to True
     """
     spec = spec_from_file_location(module_name, script_path)
-    assert spec and spec.loader, "Failed to create spec for import"
+    if not spec or not spec.loader:
+        raise RuntimeError(
+            f"Failed to create import spec for {script_path}. "
+            "Ensure the file exists and is a valid Python script."
+        )
     module = module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)

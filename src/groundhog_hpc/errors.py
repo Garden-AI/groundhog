@@ -111,7 +111,7 @@ class ModuleImportError(Exception):
         )
 
         return (
-            f"Cannot call {self.function_name}.{self.method_name}() during module import.\n"
+            f"Cannot call {self.module_name}.{self.function_name}.{self.method_name}() during module import.\n"
             f"\n"
             f"Module '{self.module_name}' is currently being imported, and "
             f".{self.method_name}() calls are not allowed until import completes.\n"
@@ -119,5 +119,8 @@ class ModuleImportError(Exception):
             f"Call stack (from module level to problematic call):\n"
             f"{stack_context}\n"
             f"\n"
-            f"Solution: Move .{self.method_name}() calls to inside a function or __main__ block."
+            f"Solutions:\n"
+            f"  1. Move .{self.method_name}() calls to inside a function or __main__ block\n"
+            f"  2. If running in a REPL or interactive session, ensure 'import groundhog_hpc'\n"
+            f"     appears before any other imports that contain @hog.function decorators"
         )
