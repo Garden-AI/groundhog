@@ -178,5 +178,5 @@ def import_user_script(module_name: str, script_path: Path) -> ModuleType:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     # Mark module as imported - now safe to call .remote()/.local()/.submit()
-    module.__groundhog_imported__ = True
+    setattr(module, "__groundhog_imported__", True)
     return module
