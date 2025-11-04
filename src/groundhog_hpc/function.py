@@ -21,7 +21,7 @@ from uuid import UUID
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
-from groundhog_hpc.errors import LocalExecutionError
+from groundhog_hpc.errors import LocalExecutionError, ModuleImportError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.utils import prefix_output
@@ -91,44 +91,6 @@ class Function:
         # set by @harness decorator
         return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
-    def _get_import_error_message(self, method_name: str) -> str:
-        """Generate detailed error message with stack context.
-
-        Args:
-            method_name: The method name that was called (e.g., "remote" or "local")
-
-        Returns:
-            A detailed error message explaining the issue and how to fix it
-        """
-        # sys.modules.get(self._local_function.__module__)
-
-        # Find where in the stack the problematic call originated
-        stack = inspect.stack()
-        module_level_frames = []
-        for frame_info in stack[2:]:  # Skip this method and the caller (remote/local)
-            if frame_info.function == "<module>":
-                module_level_frames.append(
-                    f"  {frame_info.filename}:{frame_info.lineno} in <module>"
-                )
-
-        stack_context = (
-            "\n".join(module_level_frames)
-            if module_level_frames
-            else "  (no module-level frames found)"
-        )
-
-        return (
-            f"Cannot call {self._local_function.__name__}.{method_name}() during module import.\n"
-            f"\n"
-            f"Module '{self._local_function.__module__}' is currently being imported, and "
-            f".{method_name}() calls are not allowed until import completes.\n"
-            f"\n"
-            f"Call stack (module-level frames):\n"
-            f"{stack_context}\n"
-            f"\n"
-            f"Solution: Move .{method_name}() calls to inside a function."
-        )
-
     def _get_available_endpoints_from_pep723(self) -> list[str]:
         """Get list of endpoint names defined in PEP 723 [tool.hog.*] sections."""
         metadata = self.config_resolver._load_pep723_metadata()
@@ -165,7 +127,9 @@ class Function:
         # Check if module has been marked as safe for .remote() calls
         module = sys.modules.get(self._local_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
-            raise RuntimeError(self._get_import_error_message("submit"))
+            raise ModuleImportError(
+                self._local_function.__name__, "submit", self._local_function.__module__
+            )
 
         endpoint = endpoint or self.endpoint
 
@@ -317,7 +281,9 @@ class Function:
         # Check if module has been marked as safe for .local() calls
         module = sys.modules.get(self._local_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
-            raise RuntimeError(self._get_import_error_message("local"))
+            raise ModuleImportError(
+                self._local_function.__name__, "local", self._local_function.__module__
+            )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
             if not (self._local_subprocess_safe() or self._running_in_harness()):

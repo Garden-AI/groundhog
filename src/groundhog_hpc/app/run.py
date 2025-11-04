@@ -1,17 +1,23 @@
 """Run command for executing Groundhog scripts on Globus Compute endpoints."""
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 
 import typer
 
-from groundhog_hpc.app.utils import check_and_update_metadata, python_version_matches
+from groundhog_hpc.app.utils import (
+    check_and_update_metadata,
+    python_version_matches,
+)
 from groundhog_hpc.configuration.pep723 import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.harness import Harness
-from groundhog_hpc.utils import get_groundhog_version_spec
+from groundhog_hpc.utils import (
+    get_groundhog_version_spec,
+    import_user_script,
+    path_to_module_name,
+)
 
 
 def run(
@@ -69,17 +75,13 @@ def run(
             )
 
     try:
-        # Import user script as module (allows __main__ blocks without infinite loops)
-        spec = importlib.util.spec_from_file_location("user_script", script_path)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["user_script"] = module
-        module.__groundhog_imported__ = True  # Mark as safe for .remote()/.local()
-        spec.loader.exec_module(module)
+        module_name = path_to_module_name(script_path)
+        module = import_user_script(module_name, script_path)
 
-        if not hasattr(module, harness):
+        if not (harness_func := getattr(module, harness, None)):
             typer.echo(f"Error: Function '{harness}' not found in script")
             raise typer.Exit(1)
-        elif not isinstance(getattr(module, harness), Harness):
+        if not isinstance(harness_func, Harness):
             typer.echo(
                 f"Error: Function '{harness}' must be decorated with `@hog.harness`",
             )
@@ -87,7 +89,6 @@ def run(
 
         # signal to harness obj that invocation is allowed
         os.environ[f"GROUNDHOG_RUN_{harness}".upper()] = str(True)
-        harness_func = getattr(module, harness)
         result = harness_func()
         typer.echo(result)
     except RemoteExecutionError as e:

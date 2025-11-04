@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from groundhog_hpc.errors import ModuleImportError
+
 
 class TestModuleLevelCallPrevention:
     """Test that module-level .remote() and .local() calls are prevented."""
@@ -34,7 +36,9 @@ result = my_func.remote()
         sys.modules["test_module"] = module
 
         # .remote() calls .submit() internally, so error will mention "submit"
-        with pytest.raises(RuntimeError, match="Cannot call.*during module import"):
+        with pytest.raises(
+            ModuleImportError, match="Cannot call.*during module import"
+        ):
             spec.loader.exec_module(module)
 
         # Cleanup
@@ -65,7 +69,7 @@ result = my_func.local()
         sys.modules["test_module2"] = module
 
         with pytest.raises(
-            RuntimeError, match="Cannot call.*local.*during module import"
+            ModuleImportError, match="Cannot call.*local.*during module import"
         ):
             spec.loader.exec_module(module)
 
@@ -101,7 +105,7 @@ future = my_func.submit()
         sys.modules["test_module3"] = module
 
         with pytest.raises(
-            RuntimeError, match="Cannot call.*submit.*during module import"
+            ModuleImportError, match="Cannot call.*submit.*during module import"
         ):
             spec.loader.exec_module(module)
 
@@ -110,8 +114,8 @@ future = my_func.submit()
         if "GROUNDHOG_IN_HARNESS" in sys.modules.get("os", {}).environ:
             del sys.modules["os"].environ["GROUNDHOG_IN_HARNESS"]
 
-    def test_flag_allows_remote_calls(self, tmp_path):
-        """Test that setting __groundhog_imported__ flag allows .remote() calls."""
+    def test_flag_allows_calls_after_import(self, tmp_path):
+        """Test that .remote() calls work after import when flag is set."""
         script_path = tmp_path / "test_script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -119,46 +123,40 @@ future = my_func.submit()
 # ///
 
 import groundhog_hpc as hog
-import os
-
-# Set up harness environment
-os.environ["GROUNDHOG_IN_HARNESS"] = "1"
 
 @hog.function(endpoint="00000000-0000-0000-0000-000000000000")
 def my_func():
     return "hello"
 
-# This should NOT raise an error when flag is set
-called = False
-try:
-    # This will fail for other reasons (no endpoint), but shouldn't raise import error
-    future = my_func.submit()
-except RuntimeError as e:
-    if "during module import" in str(e):
-        raise  # Re-raise if it's the import error
-    # Other errors are expected
-    called = True
-except Exception:
-    # Other exceptions are OK (e.g., endpoint not found)
-    called = True
+def call_remote():
+    '''This function calls .remote() - should work after flag is set'''
+    try:
+        return my_func.submit()
+    except Exception as e:
+        # May fail for other reasons (no endpoint, etc) but shouldn't be import error
+        if "during module import" in str(e):
+            raise
+        return None
 """
         script_path.write_text(script_content)
 
-        # Import the module WITH __groundhog_imported__ flag
+        # Import the module - flag should be set AFTER exec_module
         spec = importlib.util.spec_from_file_location("test_module4", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module4"] = module
-        module.__groundhog_imported__ = True  # Set the safety flag
-
-        # Should not raise import error
         spec.loader.exec_module(module)
+        module.__groundhog_imported__ = True  # Set flag after import completes
+
+        # Now calling a function that uses .remote() should work (flag is set)
+        # It may fail for other reasons but shouldn't raise "during module import" error
+        try:
+            module.call_remote()
+        except RuntimeError as e:
+            # Should not be an import error
+            assert "during module import" not in str(e)
 
         # Cleanup
         del sys.modules["test_module4"]
-        import os
-
-        if "GROUNDHOG_IN_HARNESS" in os.environ:
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestPicklingCustomClasses:
@@ -191,8 +189,8 @@ def create_custom_object(value):
         spec = importlib.util.spec_from_file_location("user_script", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["user_script"] = module
-        module.__groundhog_imported__ = True
         spec.loader.exec_module(module)
+        module.__groundhog_imported__ = True
 
         # Create an instance of the custom class
         obj = module.MyCustomClass(42)
@@ -329,8 +327,8 @@ if __name__ == "__main__":
         spec = importlib.util.spec_from_file_location("test_module5", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module5"] = module
-        module.__groundhog_imported__ = True
         spec.loader.exec_module(module)
+        module.__groundhog_imported__ = True
 
         # __main__ block should NOT have executed
         assert module.main_executed is False
@@ -388,11 +386,10 @@ if __name__ == "__main__":
 """
         script_path.write_text(script_content)
 
-        # Import the module (simulating what sidecar does)
+        # Import the module (simulating what runner does)
         spec = importlib.util.spec_from_file_location("test_module6", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module6"] = module
-        module.__groundhog_imported__ = True
 
         # Capture stdout to check if main block runs
         import contextlib
@@ -401,6 +398,8 @@ if __name__ == "__main__":
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
             spec.loader.exec_module(module)
+
+        module.__groundhog_imported__ = True
 
         output = f.getvalue()
 

@@ -7,8 +7,10 @@ merging, and other cross-cutting concerns.
 import os
 import sys
 from contextlib import contextmanager
+from importlib.util import module_from_spec, spec_from_file_location
 from io import StringIO
 from pathlib import Path
+from types import ModuleType
 
 from rich.console import Console
 from rich.text import Text
@@ -131,3 +133,50 @@ def _print_subprocess_output(
             text.append(f"{prefix} ", style=prefix_color)
             text.append(line)
             console.print(text)
+
+
+def path_to_module_name(script_path: Path | str) -> str:
+    """Convert a script path to a valid Python module name.
+
+    Extracts the filename (without extension) and replaces hyphens with underscores
+    to create a valid Python identifier.
+
+    Args:
+        script_path: Path to the script file (e.g., "path/to/my-script.py")
+
+    Returns:
+        Python-ified module name (e.g., "my_script")
+
+    Example:
+        >>> path_to_module_name("path/to/my-script.py")
+        "my_script"
+        >>> path_to_module_name(Path("hello-world.py"))
+        "hello_world"
+    """
+    path = Path(script_path)
+    return path.stem.replace("-", "_")
+
+
+def import_user_script(module_name: str, script_path: Path) -> ModuleType:
+    """Import a user script as a module with __groundhog_imported__ flag set.
+
+    This function performs import-based execution of user scripts, which:
+    - Prevents __main__ blocks from executing during import
+    - Enables proper pickling with consistent module names
+    - Sets the __groundhog_imported__ flag to allow .remote()/.local()/.submit() calls
+
+    Args:
+        script_path: Path to the user script file
+        module_name: Module name to use for import (default: "user_script")
+
+    Returns:
+        The imported module with __groundhog_imported__ set to True
+    """
+    spec = spec_from_file_location(module_name, script_path)
+    assert spec and spec.loader, "Failed to create spec for import"
+    module = module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    # Mark module as imported - now safe to call .remote()/.local()/.submit()
+    module.__groundhog_imported__ = True
+    return module

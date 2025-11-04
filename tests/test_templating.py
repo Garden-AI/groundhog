@@ -33,8 +33,8 @@ if __name__ == "__main__":
         # User script should be included as-is (with __main__ block)
         assert 'if __name__ == "__main__":' in shell_command
 
-    def test_generates_sidecar_script(self, tmp_path):
-        """Test that a sidecar script is generated."""
+    def test_generates_runner_script(self, tmp_path):
+        """Test that a runner script is generated."""
         script_path = tmp_path / "test_script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -51,15 +51,15 @@ def foo():
 
         shell_command = template_shell_command(str(script_path), "foo", "test_payload")
 
-        # Should create both user script and sidecar
-        assert "_sidecar.py" in shell_command
-        # Sidecar should import the user script
+        # Should create both user script and runner
+        assert "_runner.py" in shell_command
+        # Runner should import the user script
         assert "importlib.util" in shell_command
         assert "user_script" in shell_command
         assert "__groundhog_imported__" in shell_command
 
-    def test_sidecar_contains_pep723_metadata(self, tmp_path):
-        """Test that sidecar contains PEP 723 metadata from user script."""
+    def test_runner_contains_pep723_metadata(self, tmp_path):
+        """Test that runner contains PEP 723 metadata from user script."""
         script_path = tmp_path / "test_script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -76,7 +76,7 @@ def foo():
 
         shell_command = template_shell_command(str(script_path), "foo", "test_payload")
 
-        # Sidecar should contain the metadata
+        # Runner should contain the metadata
         assert 'requires-python = ">=3.12"' in shell_command
         assert '"numpy"' in shell_command
         assert '"torch"' in shell_command

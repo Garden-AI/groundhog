@@ -1,0 +1,24 @@
+# /// script
+{{ pep723_metadata }}
+# ///
+
+import sys
+import importlib.util
+
+from groundhog_hpc.serialization import serialize, deserialize
+from groundhog_hpc.utils import import_user_script
+
+# import user script as module
+module = import_user_script("{{ module_name }}", "{{ script_path }}")
+
+if __name__ == "__main__":
+    with open('{{ payload_path }}', 'r') as f_in:
+        payload = f_in.read()
+        args, kwargs = deserialize(payload)
+
+    func = getattr(module, "{{ function_name }}")
+    results = func(*args, **kwargs)
+
+    with open('{{ outfile_path }}', 'w') as f_out:
+        contents = serialize(results)
+        f_out.write(contents)

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from groundhog_hpc.errors import ModuleImportError
 from groundhog_hpc.function import Function
 from tests.test_fixtures import cross_module_function, simple_function
 
@@ -73,7 +74,7 @@ class TestRemoteExecution:
         try:
             func = Function(dummy_function)
 
-            with pytest.raises(RuntimeError, match="during module import"):
+            with pytest.raises(ModuleImportError, match="during module import"):
                 func.remote()
         finally:
             # Restore the flag
@@ -177,7 +178,7 @@ class TestSubmitMethod:
         try:
             func = Function(dummy_function)
 
-            with pytest.raises(RuntimeError, match="during module import"):
+            with pytest.raises(ModuleImportError, match="during module import"):
                 func.submit()
         finally:
             # Restore the flag
