@@ -120,7 +120,7 @@ class ModuleImportError(Exception):
             f"{stack_context}\n"
             f"\n"
             f"Solutions:\n"
-            f"  1. Move .{self.method_name}() calls to inside a function or __main__ block\n"
+            f"  1. Move .{self.method_name}() calls to inside a function or harness\n"
             f"  2. If running in a REPL or interactive session, ensure 'import groundhog_hpc'\n"
             f"     appears before any other imports that contain @hog.function decorators"
         )
