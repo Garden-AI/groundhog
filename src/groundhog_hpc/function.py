@@ -158,7 +158,7 @@ class Function:
             A GroundhogFuture that will contain the deserialized result
 
         Raises:
-            RuntimeError: If called outside of a @hog.harness function or during module import
+            RuntimeError: If called during module import
             ValueError: If endpoint is not specified and cannot be resolved from config
             PayloadTooLargeError: If serialized arguments exceed 10MB
         """
@@ -238,7 +238,7 @@ class Function:
             The deserialized result of the remote function execution
 
         Raises:
-            RuntimeError: If called outside of a @hog.harness function
+            RuntimeError: If called during module import
             ValueError: If source file cannot be located
             PayloadTooLargeError: If serialized arguments exceed 10MB
             RemoteExecutionError: If remote execution fails (non-zero exit code)
