@@ -76,36 +76,22 @@ def _proxy_serialize(obj: Any) -> str:
     # evict=True for auto-cleanup after first access
     # skip_nonproxiable=True to handle primitives gracefully
     proxy = store.proxy(obj, evict=True, skip_nonproxiable=True)
-    return _direct_serialize(proxy, size_limit_bytes=float("inf"))
+    return _direct_serialize(proxy)
 
 
-def _direct_serialize(
-    obj: Any, size_limit_bytes: int | float = PAYLOAD_SIZE_LIMIT_BYTES
-) -> str:
+def _direct_serialize(obj: Any) -> str:
     """Serialize an object directly using pickle + base64.
 
     Args:
         obj: The object to serialize
-        size_limit_bytes: Maximum allowed payload size in bytes
 
     Returns:
         Serialized string (prefixed with __PICKLE__:)
-
-    Raises:
-        PayloadTooLargeError: If the serialized payload exceeds the size limit.
     """
     pickled = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
     b64_encoded = base64.b64encode(pickled).decode("ascii")
     # Prefix with marker to indicate pickle encoding
-    result = f"__PICKLE__:{b64_encoded}"
-
-    # Check payload size against limit
-    payload_size = len(result.encode("utf-8"))
-    if payload_size > size_limit_bytes:
-        size_mb = payload_size / (1024 * 1024)
-        raise PayloadTooLargeError(size_mb)
-
-    return result
+    return f"__PICKLE__:{b64_encoded}"
 
 
 def serialize(
@@ -130,13 +116,15 @@ def serialize(
         use_proxy: If True, always use proxystore proxy serialization
         proxy_threshold_mb: If set, automatically use proxy for objects exceeding
                            this size in MB. Overrides use_proxy if threshold is exceeded.
-        size_limit_bytes: Maximum allowed payload size for direct serialization
+        size_limit_bytes: Maximum allowed payload size for direct serialization.
+                         Raises PayloadTooLargeError if exceeded (unless proxy is used).
 
     Returns:
         Serialized string (prefixed with __PICKLE__:)
 
     Raises:
-        PayloadTooLargeError: If direct serialization payload exceeds the size limit.
+        PayloadTooLargeError: If direct serialization payload exceeds size_limit_bytes
+                             and proxy_threshold_mb is not set or not exceeded.
 
     Examples:
         >>> # Direct serialization (default)
@@ -148,20 +136,20 @@ def serialize(
         >>> # Automatic proxy for objects > 5 MB
         >>> serialize(maybe_large_obj, proxy_threshold_mb=5)
     """
-    # If proxy is explicitly requested, use it immediately
     if use_proxy:
         return _proxy_serialize(obj)
 
-    # Otherwise, try direct serialization
-    result = _direct_serialize(obj, size_limit_bytes)
+    payload = _direct_serialize(obj)
+    payload_size = len(payload.encode("utf-8"))
+    payload_size_mb = payload_size / (1024 * 1024)
 
-    # Check if we should have used proxy instead (based on threshold)
-    if proxy_threshold_mb is not None:
-        payload_size_mb = len(result.encode("utf-8")) / (1024 * 1024)
-        if payload_size_mb > proxy_threshold_mb:
-            return _proxy_serialize(obj)
+    if proxy_threshold_mb is not None and payload_size_mb > proxy_threshold_mb:
+        return _proxy_serialize(obj)
 
-    return result
+    if payload_size > size_limit_bytes:
+        raise PayloadTooLargeError(payload_size_mb)
+
+    return payload
 
 
 def deserialize(payload: str) -> Any:
