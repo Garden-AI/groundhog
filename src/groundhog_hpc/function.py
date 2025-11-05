@@ -21,7 +21,11 @@ from uuid import UUID
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
-from groundhog_hpc.errors import LocalExecutionError, ModuleImportError
+from groundhog_hpc.errors import (
+    DeserializationError,
+    LocalExecutionError,
+    ModuleImportError,
+)
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.utils import prefix_output
@@ -236,12 +240,8 @@ class Function:
             )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
-            # Always use subprocess for isolation
-            # use proxystore to avoid duplicating large objects in memory
-            payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
-
             # Create ShellFunction just like we do for remote execution
-            # This ensures .format() is called, which unescapes doubled braces
+            payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
             shell_function = script_to_submittable(self.script_path, self.name, payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -263,12 +263,20 @@ class Function:
                         msg += f": {result.exception_name}"
                     raise LocalExecutionError(msg)
 
-                user_stdout, deserialized_result = deserialize_stdout(result.stdout)
-                if result.stderr:
-                    print(result.stderr, file=sys.stderr)
-                if user_stdout:
-                    print(user_stdout)
-                return deserialized_result
+                try:
+                    user_stdout, deserialized_result = deserialize_stdout(result.stdout)
+                except DeserializationError as e:
+                    if result.stderr:
+                        print(result.stderr, file=sys.stderr)
+                    if e.user_output:
+                        print(e.user_output)
+                    raise
+                else:
+                    if result.stderr:
+                        print(result.stderr, file=sys.stderr)
+                    if user_stdout:
+                        print(user_stdout, file=sys.stdout)
+                    return deserialized_result
 
     @property
     def script_path(self) -> str:

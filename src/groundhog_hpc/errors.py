@@ -86,38 +86,11 @@ class ModuleImportError(Exception):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        import inspect
-
-        # Find the full call chain starting from the module-level frame
-        stack = inspect.stack()
-        user_frames = []
-        found_module_frame = False
-
-        # Skip internal groundhog frames (this method and the caller)
-        for frame_info in stack[2:]:
-            # Once we find a <module> frame, capture everything from there onwards
-            if frame_info.function == "<module>":
-                found_module_frame = True
-
-            if found_module_frame:
-                user_frames.append(
-                    f"  {frame_info.filename}:{frame_info.lineno} in {frame_info.function}"
-                )
-
-        stack_context = (
-            "\n".join(user_frames)
-            if user_frames
-            else "  (no module-level frames found)"
-        )
-
-        return (
+        msg = (
             f"Cannot call {self.module_name}.{self.function_name}.{self.method_name}() during module import.\n"
             f"\n"
-            f"Module '{self.module_name}' is currently being imported, and "
-            f".{self.method_name}() calls are not allowed until import completes.\n"
-            f"\n"
-            f"Call stack (from module level to problematic call):\n"
-            f"{stack_context}\n"
+            f"Module '{self.module_name}' appears to be currently mid-import, and "
+            f".{self.method_name}() calls are not allowed until import fully completes.\n"
             f"\n"
             f"Solutions:\n"
             f"  1. Move .{self.method_name}() calls to inside a function or harness\n"
@@ -125,3 +98,25 @@ class ModuleImportError(Exception):
             f"     - Ensure 'import groundhog_hpc' appears before any other imports\n"
             f"     - OR use: import groundhog_hpc as hog; hog.mark_import_safe({self.module_name})"
         )
+        return msg
+
+
+class DeserializationError(Exception):
+    """Raised when deserialization of shell output fails.
+
+    This exception preserves user output (stdout) that was successfully parsed
+    before deserialization failed, allowing the calling code to display it.
+
+    Attributes:
+        user_output: The user's stdout output (if any) parsed before deserialization failed
+        original_exception: The underlying exception that caused deserialization to fail
+        stdout: The full stdout string that failed to deserialize
+    """
+
+    def __init__(
+        self, user_output: str | None, original_exception: Exception, stdout: str
+    ):
+        self.user_output = user_output
+        self.original_exception = original_exception
+        self.stdout = stdout
+        super().__init__(f"Failed to deserialize results: {original_exception}")

@@ -11,7 +11,7 @@ from rich.spinner import SPINNERS, Spinner
 from rich.text import Text
 
 from groundhog_hpc.compute import get_task_status
-from groundhog_hpc.errors import RemoteExecutionError
+from groundhog_hpc.errors import DeserializationError, RemoteExecutionError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.utils import prefix_output
 
@@ -63,6 +63,27 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
             except FuturesTimeoutError:
                 # expected - continue polling
                 continue
+            except DeserializationError as e:
+                # set status_text to indicate failure
+                status_text = _get_status_display(
+                    future.task_id,
+                    task_status,
+                    elapsed,
+                    spinner,
+                    time.time(),
+                    has_exception=True,
+                    function_name=future.function_name,
+                )
+                live.update(status_text)
+                live.stop()
+
+                # print user output from exception before re-raising
+                with prefix_output(prefix="[remote]", prefix_color="green"):
+                    if stderr := future.shell_result.stderr:
+                        print(stderr, file=sys.stderr)
+                    if e.user_output:
+                        print(e.user_output, file=sys.stdout)
+                raise
             except RemoteExecutionError:
                 # set status_text to indicate failure
                 status_text = _get_status_display(
@@ -77,7 +98,6 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 live.update(status_text)
                 live.stop()
 
-                # print stdout and stderr after display has stopped but before re-raising
                 with prefix_output(prefix="[remote]", prefix_color="green"):
                     if stderr := future.shell_result.stderr:
                         print(stderr, file=sys.stderr)
