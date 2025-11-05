@@ -2,40 +2,20 @@
 
 import pytest
 
-from groundhog_hpc.templating import (
-    _inject_script_boilerplate,
-    template_shell_command,
-)
+from groundhog_hpc.templating import template_shell_command
 
 
-class TestInjectScriptBoilerplate:
-    """Test the script boilerplate injection logic."""
+class TestTemplateShellCommand:
+    """Test the main shell command templating function."""
 
-    def test_adds_main_block(self, sample_pep723_script):
-        """Test that __main__ block is added."""
-        injected = _inject_script_boilerplate(
-            sample_pep723_script, "add", "test-abc123"
-        )
-        assert 'if __name__ == "__main__":' in injected
+    def test_allows_main_blocks(self, tmp_path):
+        """Test that scripts with __main__ blocks are now allowed."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 
-    def test_calls_target_function(self, sample_pep723_script):
-        """Test that the target function is called with deserialized args."""
-        injected = _inject_script_boilerplate(
-            sample_pep723_script, "multiply", "test-abc123"
-        )
-        assert "results = multiply(*args, **kwargs)" in injected
-
-    def test_preserves_original_script(self, sample_pep723_script):
-        """Test that the original script content is preserved."""
-        injected = _inject_script_boilerplate(
-            sample_pep723_script, "add", "test-abc123"
-        )
-        # Original decorators and functions should still be there
-        assert sample_pep723_script in injected
-
-    def test_raises_on_existing_main(self):
-        """Test that scripts with __main__ blocks are rejected."""
-        script_with_main = """
 import groundhog_hpc as hog
 
 @hog.function()
@@ -43,41 +23,65 @@ def foo():
     return 1
 
 if __name__ == "__main__":
-    print("custom main")
+    print("This is now allowed!")
 """
-        with pytest.raises(
-            AssertionError, match="can't define custom `__main__` logic"
-        ):
-            _inject_script_boilerplate(script_with_main, "foo", "test-abc123")
+        script_path.write_text(script_content)
 
-    def test_uses_correct_file_paths(self):
-        """Test that file paths use script_name (basename-hash format)."""
-        script = (
-            "import groundhog_hpc as hog\n\n@hog.function()\ndef test():\n    return 1"
-        )
-        injected = _inject_script_boilerplate(script, "test", "my_script-hashyhash")
-        assert "my_script-hashyhash.in" in injected
-        assert "my_script-hashyhash.out" in injected
+        # Should not raise any errors
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        assert isinstance(shell_command, str)
+        # User script should be included as-is (with __main__ block)
+        assert 'if __name__ == "__main__":' in shell_command
 
-    def test_preserves_curly_braces_in_user_code(self):
-        """Test that curly braces in user code are preserved in the boilerplate."""
-        script = """import groundhog_hpc as hog
+    def test_generates_runner_script(self, tmp_path):
+        """Test that a runner script is generated."""
+        script_path = tmp_path / "test_script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
 
 @hog.function()
-def process_dict():
-    data = {"key": "value"}
-    return data
+def foo():
+    return 42
 """
-        injected = _inject_script_boilerplate(script, "process_dict", "test-abc123")
-        # Curly braces should NOT be escaped in _inject_script_boilerplate
-        # (escaping happens later via Jinja2 filter in template_shell_command)
-        assert '{"key": "value"}' in injected
-        # Should not be doubled at this stage
-        assert '{{"key": "value"}}' not in injected
+        script_path.write_text(script_content)
 
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
 
-class TestTemplateShellCommand:
-    """Test the main shell command templating function."""
+        # Should create both user script and runner
+        assert "_runner.py" in shell_command
+        # Runner should import the user script
+        assert (
+            'module = import_user_script("test_script", "test_script-' in shell_command
+        )
+        # Runner should invoke the target function
+        assert 'func = getattr(module, "foo")' in shell_command
+
+    def test_runner_contains_pep723_metadata(self, tmp_path):
+        """Test that runner contains PEP 723 metadata from user script."""
+        script_path = tmp_path / "test_script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# dependencies = ["numpy", "torch"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def foo():
+    return 42
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+
+        # Runner should contain the metadata
+        assert 'requires-python = ">=3.12"' in shell_command
+        assert '"numpy"' in shell_command
+        assert '"torch"' in shell_command
 
     def test_generates_valid_shell_command(self, tmp_path):
         """Test that a valid shell command string is generated."""

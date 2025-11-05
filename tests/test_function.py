@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from groundhog_hpc.errors import ModuleImportError
 from groundhog_hpc.function import Function
 from tests.test_fixtures import cross_module_function, simple_function
 
@@ -59,13 +60,26 @@ class TestLocalExecution:
 class TestRemoteExecution:
     """Test remote function execution logic."""
 
-    def test_remote_call_outside_harness_raises(self):
-        """Test that calling .remote() outside a harness raises error."""
+    def test_remote_call_without_import_flag_raises(self):
+        """Test that calling .remote() without __groundhog_imported__ flag raises error."""
 
-        func = Function(dummy_function)
+        # Temporarily remove the flag to test the error case
+        import sys
 
-        with pytest.raises(RuntimeError, match="outside of a @hog.harness function"):
-            func.remote()
+        test_module = sys.modules.get("tests.test_fixtures")
+        had_flag = hasattr(test_module, "__groundhog_imported__")
+        if had_flag:
+            del test_module.__groundhog_imported__
+
+        try:
+            func = Function(dummy_function)
+
+            with pytest.raises(ModuleImportError, match="during module import"):
+                func.remote()
+        finally:
+            # Restore the flag
+            if had_flag:
+                test_module.__groundhog_imported__ = True
 
     def test_running_in_harness_detection(self):
         """Test the _running_in_harness method."""
@@ -85,16 +99,12 @@ class TestRemoteExecution:
     def test_submit_uses_fallback_when_script_path_is_none(self, mock_endpoint_uuid):
         """Test that submit can use inspection fallback when _script_path is None."""
 
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-        try:
-            func = Function(simple_function, endpoint=mock_endpoint_uuid)
-            func._script_path = None
+        func = Function(simple_function, endpoint=mock_endpoint_uuid)
+        func._script_path = None
 
-            # Should use inspect fallback to find the script path
-            script_path = func.script_path
-            assert script_path.endswith("test_fixtures.py")
-        finally:
-            del os.environ["GROUNDHOG_IN_HARNESS"]
+        # Should use inspect fallback to find the script path
+        script_path = func.script_path
+        assert script_path.endswith("test_fixtures.py")
 
     def test_script_path_raises_when_uninspectable(self):
         """Test that script_path raises when function cannot be inspected."""
@@ -154,13 +164,26 @@ class TestRemoteExecution:
 class TestSubmitMethod:
     """Test the submit() method."""
 
-    def test_submit_raises_outside_harness(self):
-        """Test that submit() raises when called outside a harness."""
+    def test_submit_raises_without_import_flag(self):
+        """Test that submit() raises when called without __groundhog_imported__ flag."""
 
-        func = Function(dummy_function)
+        # Temporarily remove the flag to test the error case
+        import sys
 
-        with pytest.raises(RuntimeError, match="outside of a @hog.harness function"):
-            func.submit()
+        test_module = sys.modules.get("tests.test_fixtures")
+        had_flag = hasattr(test_module, "__groundhog_imported__")
+        if had_flag:
+            del test_module.__groundhog_imported__
+
+        try:
+            func = Function(dummy_function)
+
+            with pytest.raises(ModuleImportError, match="during module import"):
+                func.submit()
+        finally:
+            # Restore the flag
+            if had_flag:
+                test_module.__groundhog_imported__ = True
 
     def test_submit_returns_future(self, tmp_path, mock_endpoint_uuid):
         """Test that submit() returns a Future object."""

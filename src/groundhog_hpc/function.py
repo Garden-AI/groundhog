@@ -21,7 +21,7 @@ from uuid import UUID
 from groundhog_hpc.compute import script_to_submittable, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
-from groundhog_hpc.errors import LocalExecutionError
+from groundhog_hpc.errors import LocalExecutionError, ModuleImportError
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.utils import prefix_output
@@ -120,13 +120,15 @@ class Function:
             A GroundhogFuture that will contain the deserialized result
 
         Raises:
-            RuntimeError: If called outside of a @hog.harness function
+            RuntimeError: If called during module import
             ValueError: If endpoint is not specified and cannot be resolved from config
             PayloadTooLargeError: If serialized arguments exceed 10MB
         """
-        if not self._running_in_harness():
-            raise RuntimeError(
-                "Can't invoke a remote function outside of a @hog.harness function"
+        # Check if module has been marked as safe for .remote() calls
+        module = sys.modules.get(self._local_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise ModuleImportError(
+                self._local_function.__name__, "submit", self._local_function.__module__
             )
 
         endpoint = endpoint or self.endpoint
@@ -200,7 +202,7 @@ class Function:
             The deserialized result of the remote function execution
 
         Raises:
-            RuntimeError: If called outside of a @hog.harness function
+            RuntimeError: If called during module import
             ValueError: If source file cannot be located
             PayloadTooLargeError: If serialized arguments exceed 10MB
             RemoteExecutionError: If remote execution fails (non-zero exit code)
@@ -272,9 +274,16 @@ class Function:
             The deserialized result of the local function execution
 
         Raises:
+            RuntimeError: If called during module import
             ValueError: If source file cannot be located
             subprocess.CalledProcessError: If local execution fails (non-zero exit code)
         """
+        # Check if module has been marked as safe for .local() calls
+        module = sys.modules.get(self._local_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise ModuleImportError(
+                self._local_function.__name__, "local", self._local_function.__module__
+            )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
             if not (self._local_subprocess_safe() or self._running_in_harness()):

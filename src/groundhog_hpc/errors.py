@@ -66,3 +66,62 @@ class PayloadTooLargeError(Exception):
             f"Payload size ({size_mb:.2f} MB) exceeds Globus Compute's 10 MB limit. "
             "See also: https://globus-compute.readthedocs.io/en/latest/limits.html#data-limits"
         )
+
+
+class ModuleImportError(Exception):
+    """Raised when a function method is called during module import.
+
+    This prevents infinite loops from module-level .remote(), .local(), or .submit() calls.
+
+    Attributes:
+        function_name: Name of the function being called
+        method_name: Name of the method (remote, local, or submit)
+        module_name: Name of the module being imported
+    """
+
+    def __init__(self, function_name: str, method_name: str, module_name: str):
+        self.function_name = function_name
+        self.method_name = method_name
+        self.module_name = module_name
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        import inspect
+
+        # Find the full call chain starting from the module-level frame
+        stack = inspect.stack()
+        user_frames = []
+        found_module_frame = False
+
+        # Skip internal groundhog frames (this method and the caller)
+        for frame_info in stack[2:]:
+            # Once we find a <module> frame, capture everything from there onwards
+            if frame_info.function == "<module>":
+                found_module_frame = True
+
+            if found_module_frame:
+                user_frames.append(
+                    f"  {frame_info.filename}:{frame_info.lineno} in {frame_info.function}"
+                )
+
+        stack_context = (
+            "\n".join(user_frames)
+            if user_frames
+            else "  (no module-level frames found)"
+        )
+
+        return (
+            f"Cannot call {self.module_name}.{self.function_name}.{self.method_name}() during module import.\n"
+            f"\n"
+            f"Module '{self.module_name}' is currently being imported, and "
+            f".{self.method_name}() calls are not allowed until import completes.\n"
+            f"\n"
+            f"Call stack (from module level to problematic call):\n"
+            f"{stack_context}\n"
+            f"\n"
+            f"Solutions:\n"
+            f"  1. Move .{self.method_name}() calls to inside a function or harness\n"
+            f"  2. If running in a REPL or interactive session:\n"
+            f"     - Ensure 'import groundhog_hpc' appears before any other imports\n"
+            f"     - OR use: import groundhog_hpc as hog; hog.mark_import_safe({self.module_name})"
+        )
