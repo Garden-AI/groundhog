@@ -121,6 +121,7 @@ class ModuleImportError(Exception):
             f"\n"
             f"Solutions:\n"
             f"  1. Move .{self.method_name}() calls to inside a function or harness\n"
-            f"  2. If running in a REPL or interactive session, ensure 'import groundhog_hpc'\n"
-            f"     appears before any other imports that contain @hog.function decorators"
+            f"  2. If running in a REPL or interactive session:\n"
+            f"     - Ensure 'import groundhog_hpc' appears before any other imports\n"
+            f"     - OR use: import groundhog_hpc as hog; hog.mark_import_safe({self.module_name})"
         )

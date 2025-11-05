@@ -181,6 +181,51 @@ def import_user_script(module_name: str, script_path: Path) -> ModuleType:
     module = module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
-    # Mark module as imported - now safe to call .remote()/.local()/.submit()
     setattr(module, "__groundhog_imported__", True)
     return module
+
+
+def mark_import_safe(obj) -> None:
+    """Mark an object or module as safe for .remote()/.local()/.submit() calls.
+
+    **WARNING:** be Very Careful not to mark a function as safe from within its
+      own module, or else you risk infinitely-recursive local or remote
+      subprocesses.
+
+    This is useful when a module was (safely) imported before groundhog_hpc was
+    imported, so the import hook didn't flag it as safe. After calling this
+    function, functions from that module can use .remote()/.local()/.submit().
+
+    Args:
+        obj: A module object, or any object with a __module__ attribute
+            (function, class, method, etc.). The module will be marked as safe.
+
+    Raises:
+        ValueError: If the module cannot be found in sys.modules
+        AttributeError: If obj is not a module and has no __module__ attribute
+
+    Examples:
+        >>> import myscript  # imported before groundhog
+        >>> import groundhog_hpc as hog
+        >>> myscript.myfunc.remote()  # fails with ModuleImportError
+        >>> hog.mark_import_safe(myscript)
+        >>> myscript.myfunc.remote() now this works
+
+        >>> from myscript import my_func
+        >>> hog.mark_import_safe(my_func)  # Can also pass function directly
+        >>> my_func.remote()  # Now works
+    """
+    module_name = obj.__name__ if isinstance(obj, ModuleType) else obj.__module__
+    module = sys.modules.get(module_name)
+    if module is None:
+        raise ValueError(
+            f"Module '{module_name}' not found in sys.modules. "
+            f"The module may not be imported yet."
+        )
+    try:
+        setattr(module, "__groundhog_imported__", True)
+    except (AttributeError, TypeError) as e:
+        raise TypeError(
+            f"Cannot set __groundhog_imported__ on module '{module_name}'. "
+            f"This may be a built-in module or C extension that doesn't support attribute assignment."
+        ) from e
