@@ -6,6 +6,7 @@ This module implements the `hog` CLI tool entry point and command registration.
 import os
 from typing import Optional
 
+import rich.traceback
 import typer
 
 import groundhog_hpc
@@ -14,6 +15,7 @@ from groundhog_hpc.app.init import init
 from groundhog_hpc.app.remove import remove
 from groundhog_hpc.app.run import run
 
+rich.traceback.install(show_locals=False)
 app = typer.Typer()
 
 app.command(no_args_is_help=True)(run)
