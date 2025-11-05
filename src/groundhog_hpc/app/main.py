@@ -14,7 +14,7 @@ from groundhog_hpc.app.init import init
 from groundhog_hpc.app.remove import remove
 from groundhog_hpc.app.run import run
 
-app = typer.Typer()
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 app.command(no_args_is_help=True)(run)
 app.command(no_args_is_help=True)(init)

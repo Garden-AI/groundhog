@@ -11,7 +11,7 @@ from typing import Any
 from proxystore.connectors.file import FileConnector
 from proxystore.store import Store, get_store
 
-from groundhog_hpc.errors import PayloadTooLargeError
+from groundhog_hpc.errors import DeserializationError, PayloadTooLargeError
 
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
@@ -153,10 +153,7 @@ def serialize(
 
 
 def deserialize(payload: str) -> Any:
-    """Deserialize a string to an object.
-
-    Automatically detects whether the payload is JSON or pickle+base64 encoded.
-    """
+    """Deserialize a string to an object."""
     if payload.startswith("__PICKLE__:"):
         # Extract base64 encoded pickle data
         b64_data = payload[len("__PICKLE__:") :]
@@ -182,13 +179,25 @@ def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
 
     Returns:
         A tuple of (user_output, deserialized_result). user_output is None if no delimiter found.
+
+    Raises:
+        DeserializationError: If deserialization fails. Contains user_output for display.
     """
     delimiter = "__GROUNDHOG_RESULT__"
-    if delimiter in stdout:
-        parts = stdout.split(delimiter, 1)
-        user_output = parts[0].rstrip("\n")  # Remove trailing newline from cat output
-        serialized_result = parts[1].lstrip("\n")  # Remove leading newline from echo
+    user_output = None
 
-        return user_output, deserialize(serialized_result)
-    else:
-        return None, deserialize(stdout)
+    try:
+        if delimiter in stdout:
+            parts = stdout.split(delimiter, 1)
+            user_output = parts[0].rstrip(
+                "\n"
+            )  # Remove trailing newline from cat output
+            serialized_result = parts[1].lstrip(
+                "\n"
+            )  # Remove leading newline from echo
+
+            return user_output, deserialize(serialized_result)
+        else:
+            return None, deserialize(stdout)
+    except Exception as e:
+        raise DeserializationError(user_output, e, stdout) from e
