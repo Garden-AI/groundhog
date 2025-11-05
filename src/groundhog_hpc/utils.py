@@ -30,16 +30,6 @@ def groundhog_script_path(script_path: Path):
         del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
 
-@contextmanager
-def groundhog_in_harness():
-    """Simulate running in a @hog.harness function to enable remote execution"""
-    try:
-        os.environ["GROUNDHOG_IN_HARNESS"] = str(True)
-        yield
-    finally:
-        del os.environ["GROUNDHOG_IN_HARNESS"]
-
-
 def get_groundhog_version_spec() -> str:
     """Return the current package version spec.
 

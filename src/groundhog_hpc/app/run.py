@@ -87,8 +87,6 @@ def run(
             )
             raise typer.Exit(1)
 
-        # signal to harness obj that invocation is allowed
-        os.environ[f"GROUNDHOG_RUN_{harness}".upper()] = str(True)
         result = harness_func()
         typer.echo(result)
     except RemoteExecutionError as e:

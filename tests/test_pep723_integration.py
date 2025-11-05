@@ -44,13 +44,18 @@ def test_func():
         try:
             # Set up environment
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             # Create function
             def test_func():
                 return "result"
 
             func = Function(test_func, endpoint="anvil")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             # Mock the submission pipeline
             mock_shell_func = MagicMock()
@@ -94,7 +99,6 @@ def test_func():
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_function_loads_pep723_variant_config(self):
         """Test that Function loads variant config with inheritance."""
@@ -125,12 +129,17 @@ def test_func():
 
         try:
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             def test_func():
                 return "result"
 
             func = Function(test_func, endpoint="anvil.gpu")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
@@ -171,7 +180,6 @@ def test_func():
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestPep723IntegrationPrecedence:
@@ -198,7 +206,6 @@ import groundhog_hpc as hog
 
         try:
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             def test_func():
                 return "result"
@@ -207,6 +214,12 @@ import groundhog_hpc as hog
             func = Function(
                 test_func, endpoint="anvil", account="decorator-account", cores=4
             )
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
@@ -247,7 +260,6 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_call_time_overrides_pep723(self):
         """Test that call-time config overrides PEP 723 config."""
@@ -270,12 +282,17 @@ import groundhog_hpc as hog
 
         try:
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             def test_func():
                 return "result"
 
             func = Function(test_func, endpoint="anvil")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
@@ -313,7 +330,6 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestPep723IntegrationWorkerInit:
@@ -339,12 +355,17 @@ import groundhog_hpc as hog
 
         try:
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             def test_func():
                 return "result"
 
             func = Function(test_func, endpoint="anvil", worker_init="pip install uv")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
@@ -378,7 +399,6 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestPep723IntegrationRuntimeEndpointSwitch:
@@ -409,13 +429,18 @@ import groundhog_hpc as hog
 
         try:
             os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
-            os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
             def test_func():
                 return "result"
 
             # Decorator uses base 'anvil'
             func = Function(test_func, endpoint="anvil")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
 
             mock_shell_func = MagicMock()
             mock_future = MagicMock()
@@ -453,7 +478,6 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestPep723IntegrationRealExamples:
@@ -467,7 +491,6 @@ class TestPep723IntegrationRealExamples:
             pytest.skip("Example file not found")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(example_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
         try:
 
@@ -475,6 +498,12 @@ class TestPep723IntegrationRealExamples:
                 return f"Hello, {name}!"
 
             func = Function(greet, endpoint="anvil")
+
+            # Set import flag (not needed for resolver tests but for consistency)
+            import sys
+
+            test_module = sys.modules[greet.__module__]
+            test_module.__groundhog_imported__ = True
 
             # Verify ConfigResolver loads the PEP 723 metadata
             resolver = func.config_resolver
@@ -487,7 +516,6 @@ class TestPep723IntegrationRealExamples:
 
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_hello_gpu_example_variant(self):
         """Test the hello_gpu example with variant configuration."""
@@ -497,7 +525,6 @@ class TestPep723IntegrationRealExamples:
             pytest.skip("Example file not found")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(example_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
 
         try:
 
@@ -505,6 +532,12 @@ class TestPep723IntegrationRealExamples:
                 return "result"
 
             func = Function(hello_torch, endpoint="anvil.gpu-debug")
+
+            # Set import flag (not needed for resolver tests but for consistency)
+            import sys
+
+            test_module = sys.modules[hello_torch.__module__]
+            test_module.__groundhog_imported__ = True
 
             resolver = func.config_resolver
             config = resolver.resolve(
@@ -522,4 +555,3 @@ class TestPep723IntegrationRealExamples:
 
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
