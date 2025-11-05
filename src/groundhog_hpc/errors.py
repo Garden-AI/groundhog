@@ -26,24 +26,7 @@ class RemoteExecutionError(Exception):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        # lifted from ShellResult.__str__
-        rc = self.returncode
-        _sout = self.stdout.lstrip("\n").rstrip()
-        sout = "\n".join(_sout[-1024:].splitlines()[-10:])
-        if sout != _sout:
-            sout = (
-                f"[... truncated; see .shell_result.stdout for full output ...]\n{sout}"
-            )
-        msg = f"{self.message}\n\nexit code: {rc}\n\n   cmd:\n{self.cmd}\n\n   stdout:\n{sout}"
-
-        if rc != 0:
-            # not successful
-            _serr = self.stderr.lstrip("\n").rstrip()
-            serr = "\n".join(_serr[-1024:].splitlines()[-10:])
-            if serr != _serr:
-                serr = f"[... truncated; see .shell_result.stderr for full output ...]\n{serr}"
-            msg += f"\n\n   stderr:\n{serr}"
-
+        msg = f"{self.message}\n\nexit code: {self.returncode}\n"
         return msg
 
 
