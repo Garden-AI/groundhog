@@ -96,9 +96,9 @@ def run(
                 "increasing walltime for long running jobs)",
                 err=True,
             )
-            raise typer.Exit(1)
+            raise
         typer.echo(f"Remote execution failed (exit code {e.returncode})", err=True)
-        raise typer.Exit(1)
+        raise
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise
