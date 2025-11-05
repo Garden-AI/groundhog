@@ -85,16 +85,12 @@ result = my_func.local()
 # ///
 
 import groundhog_hpc as hog
-import os
-
-# Fake being in a harness
-os.environ["GROUNDHOG_IN_HARNESS"] = "1"
 
 @hog.function(endpoint="test-endpoint")
 def my_func():
     return "hello"
 
-# This should raise an error
+# This should raise an error (no import flag set yet)
 future = my_func.submit()
 """
         script_path.write_text(script_content)
@@ -111,8 +107,6 @@ future = my_func.submit()
 
         # Cleanup
         del sys.modules["test_module3"]
-        if "GROUNDHOG_IN_HARNESS" in sys.modules.get("os", {}).environ:
-            del sys.modules["os"].environ["GROUNDHOG_IN_HARNESS"]
 
     def test_flag_allows_calls_after_import(self, tmp_path):
         """Test that .remote() calls work after import when flag is set."""

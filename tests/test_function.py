@@ -7,7 +7,7 @@ import pytest
 
 from groundhog_hpc.errors import ModuleImportError
 from groundhog_hpc.function import Function
-from tests.test_fixtures import cross_module_function, simple_function
+from tests.test_fixtures import simple_function
 
 # Alias for backward compatibility with existing tests
 dummy_function = simple_function
@@ -81,21 +81,6 @@ class TestRemoteExecution:
             if had_flag:
                 test_module.__groundhog_imported__ = True
 
-    def test_running_in_harness_detection(self):
-        """Test the _running_in_harness method."""
-
-        func = Function(dummy_function)
-
-        # Not in harness
-        assert not func._running_in_harness()
-
-        # In harness
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-        try:
-            assert func._running_in_harness()
-        finally:
-            del os.environ["GROUNDHOG_IN_HARNESS"]
-
     def test_submit_uses_fallback_when_script_path_is_none(self, mock_endpoint_uuid):
         """Test that submit can use inspection fallback when _script_path is None."""
 
@@ -129,36 +114,32 @@ class TestRemoteExecution:
         script_content = "# test script content"
         script_path.write_text(script_content)
 
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
-            func._script_path = str(script_path)
+        func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        func._script_path = str(script_path)
 
-            mock_shell_func = MagicMock()
-            mock_future = MagicMock()
+        mock_shell_func = MagicMock()
+        mock_future = MagicMock()
 
+        with patch(
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_func,
+        ) as mock_script_to_submittable:
             with patch(
-                "groundhog_hpc.function.script_to_submittable",
-                return_value=mock_shell_func,
-            ) as mock_script_to_submittable:
+                "groundhog_hpc.function.submit_to_executor",
+                return_value=mock_future,
+            ):
                 with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
+                    "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                 ):
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        func.submit()
+                    func.submit()
 
-            # Verify script_to_submittable was called with correct arguments
-            mock_script_to_submittable.assert_called_once()
-            call_args = mock_script_to_submittable.call_args[0]
-            assert call_args[0] == str(script_path)
-            assert (
-                call_args[1] == "simple_function"
-            )  # dummy_function is an alias to simple_function
-        finally:
-            del os.environ["GROUNDHOG_IN_HARNESS"]
+        # Verify script_to_submittable was called with correct arguments
+        mock_script_to_submittable.assert_called_once()
+        call_args = mock_script_to_submittable.call_args[0]
+        assert call_args[0] == str(script_path)
+        assert (
+            call_args[1] == "simple_function"
+        )  # dummy_function is an alias to simple_function
 
 
 class TestSubmitMethod:
@@ -192,8 +173,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
@@ -211,7 +190,6 @@ class TestSubmitMethod:
             assert result is mock_future
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_submit_serializes_arguments(self, tmp_path, mock_endpoint_uuid):
         """Test that submit() properly serializes function arguments."""
@@ -220,8 +198,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
@@ -250,7 +226,6 @@ class TestSubmitMethod:
             assert mock_script_to_submittable.call_args[0][2] == "serialized_payload"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_submit_passes_endpoint_and_config(self, tmp_path, mock_endpoint_uuid):
         """Test that submit() passes endpoint and user config to submit_to_executor."""
@@ -259,8 +234,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid, account="test")
 
@@ -289,7 +262,6 @@ class TestSubmitMethod:
             assert config["account"] == "test"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_remote_uses_submit_internally(self, tmp_path, mock_endpoint_uuid):
         """Test that remote() calls submit() and returns its result."""
@@ -298,8 +270,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
@@ -321,7 +291,6 @@ class TestSubmitMethod:
             assert result == "final_result"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_callsite_endpoint_overrides_default(self, tmp_path, mock_endpoint_uuid):
         """Test that endpoint provided at callsite overrides default endpoint."""
@@ -329,8 +298,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             # Initialize with default endpoint
             default_endpoint = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -354,7 +321,6 @@ class TestSubmitMethod:
             assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_callsite_walltime_overrides_default(self, tmp_path, mock_endpoint_uuid):
         """Test that walltime provided at callsite overrides default walltime."""
@@ -362,8 +328,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             # Initialize with default walltime
             func = Function(dummy_function, endpoint=mock_endpoint_uuid, walltime=60)
@@ -386,7 +350,6 @@ class TestSubmitMethod:
             assert config["walltime"] == 120
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_callsite_user_config_overrides_default(self, tmp_path, mock_endpoint_uuid):
         """Test that user_endpoint_config at callsite overrides default config."""
@@ -394,8 +357,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             # Initialize with default config
             func = Function(
@@ -437,7 +398,6 @@ class TestSubmitMethod:
             assert config["queue"] == "gpu"
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_worker_init_is_appended_not_overwritten(
         self, tmp_path, mock_endpoint_uuid
@@ -447,8 +407,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             # Initialize with default worker_init
             default_worker_init = "module load default"
@@ -487,7 +445,6 @@ class TestSubmitMethod:
             assert config["worker_init"].startswith(default_worker_init)
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
     def test_default_worker_init_preserved_when_no_callsite_override(
         self, tmp_path, mock_endpoint_uuid
@@ -497,8 +454,6 @@ class TestSubmitMethod:
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        os.environ["GROUNDHOG_IN_HARNESS"] = "True"
-
         try:
             # Initialize with default worker_init
             default_worker_init = "module load default"
@@ -530,7 +485,6 @@ class TestSubmitMethod:
             assert default_worker_init in config["worker_init"]
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
-            del os.environ["GROUNDHOG_IN_HARNESS"]
 
 
 class TestLocalMethod:
@@ -684,6 +638,12 @@ def add(a, b):
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
+        # Set the import flag to allow .local() call
+        import sys
+
+        test_module = sys.modules.get("tests.test_fixtures")
+        test_module.__groundhog_imported__ = True
+
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "result"
@@ -692,17 +652,15 @@ def add(a, b):
 
         mock_shell_function = MagicMock(return_value=mock_result)
 
-        # Mock _local_subprocess_safe to ensure subprocess path is taken
-        with patch.object(func, "_local_subprocess_safe", return_value=True):
+        with patch(
+            "groundhog_hpc.function.script_to_submittable",
+            return_value=mock_shell_function,
+        ) as mock_script_to_submittable:
             with patch(
-                "groundhog_hpc.function.script_to_submittable",
-                return_value=mock_shell_function,
-            ) as mock_script_to_submittable:
-                with patch(
-                    "groundhog_hpc.function.deserialize_stdout",
-                    return_value=(None, "result"),
-                ):
-                    func.local()
+                "groundhog_hpc.function.deserialize_stdout",
+                return_value=(None, "result"),
+            ):
+                func.local()
 
         # Verify script_to_submittable was called with script path, function name, and payload
         assert mock_script_to_submittable.call_count == 1
@@ -782,102 +740,43 @@ def add(a, b):
         assert result == 42
 
 
-class TestLocalSubprocessDetection:
-    """Test that .local() correctly detects when to use subprocess vs direct call."""
+class TestLocalAlwaysUsesSubprocess:
+    """Test that .local() always uses subprocess (no direct call fallback)."""
 
-    def test_should_use_subprocess_returns_false_when_frame_unavailable(self):
-        """Test fallback when inspect.currentframe() returns None."""
-
-        func = Function(dummy_function)
-
-        # Mock inspect.currentframe to return None
-        with patch("groundhog_hpc.function.inspect.currentframe", return_value=None):
-            assert not func._local_subprocess_safe()
-
-    def test_should_use_subprocess_for_cross_module_function(self):
-        """Test that subprocess is used when calling from a different module."""
-        import sys
-
-        # cross_module_function is defined in test_fixtures, not test_function
-        # So calling from here should use subprocess
-        test_module = sys.modules[__name__]
-        fixtures_module = sys.modules["tests.test_fixtures"]
-
-        # Verify we're actually testing cross-module behavior
-        assert cross_module_function._local_function.__module__ == "tests.test_fixtures"
-        assert test_module != fixtures_module
-
-        # Should detect cross-module call and use subprocess
-        assert cross_module_function._local_subprocess_safe()
-
-    def test_should_use_subprocess_returns_false_for_same_module(self):
-        """Test that direct call is used when <module> frame matches function's module."""
-        import sys
-
-        # Define a function in this test module
-        def local_function():
-            return "local"
-
-        func = Function(local_function)
-        test_module = sys.modules[__name__]
-
-        # Mock a <module> frame from the same module as the function
-        current_frame = MagicMock()
-        module_frame = MagicMock()
-        module_frame.f_code.co_name = "<module>"
-        module_frame.f_back = None
-        current_frame.f_back = module_frame
-
-        with patch(
-            "groundhog_hpc.function.inspect.currentframe", return_value=current_frame
-        ):
-            with patch(
-                "groundhog_hpc.function.inspect.getmodule", return_value=test_module
-            ):
-                # Should return False (no subprocess) because <module> frame matches
-                assert not func._local_subprocess_safe()
-
-    def test_local_uses_direct_call_for_same_module(self):
-        """Test that .local() falls back to direct call when _local_subprocess_safe returns False."""
-
-        def test_func(x):
-            return x * 2
-
-        func = Function(test_func)
-
-        # Mock _local_subprocess_safe to simulate same-module detection
-        with patch.object(func, "_local_subprocess_safe", return_value=False):
-            result = func.local(21)
-
-        # Should have called the function directly (no subprocess)
-        assert result == 42
-
-    def test_local_uses_subprocess_for_different_module(self, tmp_path):
-        """Test that .local() uses subprocess when crossing module boundaries."""
-        # Create a test script for the cross_module_function
+    def test_local_always_uses_subprocess_with_flag_set(self, tmp_path):
+        """Test that .local() always uses subprocess when flag is set."""
         script_path = tmp_path / "test_fixtures.py"
         script_content = """
 import groundhog_hpc as hog
 
 @hog.function()
-def cross_module_function(x):
+def test_func(x):
     return x * 2
 """
         script_path.write_text(script_content)
 
-        # cross_module_function is from test_fixtures (different module)
-        # Override script path for testing
-        cross_module_function._script_path = str(script_path)
+        # Define function in this module (same module as test)
+        def test_func(x):
+            return x * 2
+
+        func = Function(test_func)
+        func._script_path = str(script_path)
+
+        # Set the import flag to allow .local() call
+        import sys
+
+        test_module = sys.modules[func._local_function.__module__]
+        test_module.__groundhog_imported__ = True
 
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "__GROUNDHOG_RESULT__\n84"
+        mock_result.stdout = "84"
         mock_result.stderr = ""
         mock_result.exception_name = None
 
         mock_shell_function = MagicMock(return_value=mock_result)
 
-        # Mock script_to_submittable since we're not doing real execution
+        # Mock script_to_submittable to verify subprocess is used
         with patch(
             "groundhog_hpc.function.script_to_submittable",
             return_value=mock_shell_function,
@@ -885,52 +784,9 @@ def cross_module_function(x):
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
             ):
-                result = cross_module_function.local(42)
+                result = func.local(42)
 
-        # Should have used ShellFunction (different module)
+        # Should always use subprocess (ShellFunction)
         assert result == 84
         mock_script_to_submittable.assert_called_once()
         mock_shell_function.assert_called_once()
-
-    def test_should_use_subprocess_walks_entire_call_stack(self):
-        """Test that the frame walker checks all <module> frames in the stack."""
-        import sys
-
-        func = Function(dummy_function)
-        test_module = sys.modules[__name__]
-
-        # Create a chain of frames: non-module -> <module> (different) -> <module> (same)
-        frame_0 = MagicMock()  # Current frame (in _local_subprocess_safe)
-        frame_0.f_code.co_name = "_local_subprocess_safe"
-
-        frame_1 = MagicMock()  # Intermediate function frame
-        frame_1.f_code.co_name = "some_function"
-        frame_0.f_back = frame_1
-
-        frame_2 = MagicMock()  # <module> frame from different module
-        frame_2.f_code.co_name = "<module>"
-        frame_1.f_back = frame_2
-
-        frame_3 = MagicMock()  # <module> frame from same module (should match!)
-        frame_3.f_code.co_name = "<module>"
-        frame_2.f_back = frame_3
-        frame_3.f_back = None
-
-        mock_different_module = MagicMock()
-        mock_different_module.__name__ = "different_module"
-
-        def mock_getmodule(frame_or_func):
-            if frame_or_func == frame_2:
-                return mock_different_module
-            elif frame_or_func == frame_3:
-                return test_module
-            elif frame_or_func == func._local_function:
-                return test_module
-            return None
-
-        with patch("groundhog_hpc.function.inspect.currentframe", return_value=frame_0):
-            with patch(
-                "groundhog_hpc.function.inspect.getmodule", side_effect=mock_getmodule
-            ):
-                # Should return False because frame_3 matches the function's module
-                assert not func._local_subprocess_safe()

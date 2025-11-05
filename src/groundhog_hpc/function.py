@@ -14,7 +14,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from types import FrameType, FunctionType, ModuleType
+from types import FunctionType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
@@ -86,10 +86,6 @@ class Function:
             The result of the local function execution
         """
         return self._local_function(*args, **kwargs)
-
-    def _running_in_harness(self) -> bool:
-        # set by @harness decorator
-        return bool(os.environ.get("GROUNDHOG_IN_HARNESS"))
 
     def _get_available_endpoints_from_pep723(self) -> list[str]:
         """Get list of endpoint names defined in PEP 723 [tool.hog.*] sections."""
@@ -217,54 +213,8 @@ class Function:
         display_task_status(future)
         return future.result()
 
-    def _local_subprocess_safe(self) -> bool:
-        """Determine if .local() should use subprocess isolation.
-
-        Returns False (use direct __call__) if any <module>-level frame in the
-        call stack belongs to the same module as the function.
-
-        This prevents top-level .local() calls from spinning up subprocesses
-        which would reach the same .local() call, spinning up another
-        subprocess, etc.
-
-        Returns:
-            False if subprocess isolation is not safe or not needed, True otherwise.
-        """
-        frame: FrameType | None = inspect.currentframe()
-        if frame is None:
-            # frame introspection unavailable (non-CPython implementations)
-            # fall back to direct call for safety against infinite recursion
-            return False
-
-        function_module: ModuleType | None = inspect.getmodule(self._local_function)
-
-        try:
-            # walk up the call stack looking for module-level execution
-            while frame := frame.f_back:
-                # check for <module>-level (i.e., import-time) frames
-                if frame.f_code.co_name == "<module>":
-                    calling_module = inspect.getmodule(frame)
-                    # if we find a <module> frame in the function's own module,
-                    # we're in the import path of that module. Using a subprocess
-                    # would cause it to be imported again, leading to 💥💀
-                    if calling_module is function_module:
-                        return False  # should *not* use subprocess
-
-            # no matching <module> frame found - safe to use subprocess for isolation
-            return True
-
-        finally:
-            # Clean up frame reference to avoid reference cycles
-            # See: https://docs.python.org/3/library/inspect.html#the-interpreter-stack
-            del frame
-
     def local(self, *args: Any, **kwargs: Any) -> Any:
-        """Execute the function locally, using subprocess only when crossing module boundaries.
-
-        Falls back to direct execution (__call__) if called from within the same module*
-        where the function is defined, preventing infinite recursion from top-level calls.
-
-        *Calling .local() from a harness, even in the same module, will isolate the process.
+        """Execute the function locally in an isolated subprocess.
 
         Args:
             *args: Positional arguments to pass to the function
@@ -274,9 +224,9 @@ class Function:
             The deserialized result of the local function execution
 
         Raises:
-            RuntimeError: If called during module import
+            ModuleImportError: If called during module import
             ValueError: If source file cannot be located
-            subprocess.CalledProcessError: If local execution fails (non-zero exit code)
+            LocalExecutionError: If local execution fails (non-zero exit code)
         """
         # Check if module has been marked as safe for .local() calls
         module = sys.modules.get(self._local_function.__module__)
@@ -286,12 +236,7 @@ class Function:
             )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
-            if not (self._local_subprocess_safe() or self._running_in_harness()):
-                # Same module or uncertain - use direct call for safety
-                # Wrap the call to capture and prefix any stdout/stderr
-                return self._local_function(*args, **kwargs)
-
-            # different module - use subprocess for isolation
+            # Always use subprocess for isolation
             # use proxystore to avoid duplicating large objects in memory
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
 
