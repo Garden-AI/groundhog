@@ -1,8 +1,12 @@
 set -euo pipefail
 
-pip show -qq uv || pip install uv
+# Try to ensure uv is installed via pip (but don't fail if pip isn't available)
+if command -v pip &> /dev/null; then
+    pip show -qq uv || pip install uv || true
+fi
 
-UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
+# Try to find uv binary via Python module, fallback to PATH
+UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || which uv || echo "uv")
 
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
 {{ user_script_contents | escape_braces }}
