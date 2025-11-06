@@ -20,7 +20,10 @@ PAYLOAD_EOF
 
 # use temp directory for uv cache to avoid filesystem locking issues
 # on HPC systems where home directories are on NFS/GPFS
-{% raw %}export UV_CACHE_DIR="${{TMPDIR:-/tmp}}/uv-cache-${{USER:-$(id -un)}}"{% endraw %}
+# only set if admin hasn't already configured a better location
+{% raw %}if [ -z "${{UV_CACHE_DIR:-}}" ]; then
+    export UV_CACHE_DIR="${{TMPDIR:-/tmp}}/uv-cache-${{USER:-$(id -un)}}"
+fi{% endraw %}
 mkdir -p "$UV_CACHE_DIR"
 
 "$UV_BIN" run --managed-python --with {{ version_spec }} \
