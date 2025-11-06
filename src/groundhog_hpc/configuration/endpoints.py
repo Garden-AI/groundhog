@@ -6,6 +6,7 @@ conform to the EndpointConfig/EndpointVariant models for consistency with
 existing configuration parsing logic.
 """
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -28,6 +29,19 @@ KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
         "variants": {},
     },
 }
+
+
+@dataclass
+class FormattedEndpoint:
+    """Formatted endpoint configuration with metadata for template rendering.
+
+    Attributes:
+        name: Endpoint name for use in @hog.function(endpoint="name")
+        toml_block: Formatted TOML configuration block
+    """
+
+    name: str
+    toml_block: str
 
 
 class EndpointSpec:
@@ -229,8 +243,16 @@ def format_endpoint_config_to_toml(
     """
     lines = []
 
-    # Get display name
+    # Get display name and schema comments
     display_name = get_endpoint_display_name(endpoint_uuid)
+
+    # Calculate padding for aligned inline comments
+    # Align to UUID line length (approx 51 chars: "# endpoint = "uuid..."")
+    # For schema comments: "# # field_name = " should align comment to ~column 52
+    alignment_column = 52
+
+    if include_schema_comments:
+        comments = get_endpoint_schema_comments(endpoint_uuid)
 
     for endpoint_name, config in config_dict.items():
         # Check if this is a base config or has nested variants
@@ -248,28 +270,31 @@ def format_endpoint_config_to_toml(
             else:
                 lines.append(f"# {header}")
 
-            # Base config fields
+            # Base config fields (active, so prefix with # for PEP 723)
             for key, value in base_config.items():
                 if isinstance(value, str):
-                    lines.append(f'{key} = "{value}"')
+                    lines.append(f'# {key} = "{value}"')
                 else:
-                    lines.append(f"{key} = {value}")
+                    lines.append(f"# {key} = {value}")
 
-            # Add schema comments if requested
+            # Add schema comments if requested (commented out, so prefix with # #)
             if include_schema_comments:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
-                    lines.append(f"# {field_name} =  # {comment}")
+                    # Pad to align inline comments (left-align, pad to alignment_column)
+                    lines.append(
+                        f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"
+                    )
 
-            # Variant configs
+            # Variant configs (active headers, active fields)
             for variant_name, variant_config in variants.items():
-                lines.append("")
+                lines.append("#")
                 lines.append(f"# [tool.hog.{endpoint_name}.{variant_name}]")
                 for key, value in variant_config.items():
                     if isinstance(value, str):
-                        lines.append(f'{key} = "{value}"')
+                        lines.append(f'# {key} = "{value}"')
                     else:
-                        lines.append(f"{key} = {value}")
+                        lines.append(f"# {key} = {value}")
         else:
             # Simple config without variants
             header = f"[tool.hog.{endpoint_name}]"
@@ -278,35 +303,39 @@ def format_endpoint_config_to_toml(
             else:
                 lines.append(f"# {header}")
 
+            # Active fields (prefix with # for PEP 723)
             for key, value in config.items():
                 if isinstance(value, str):
-                    lines.append(f'{key} = "{value}"')
+                    lines.append(f'# {key} = "{value}"')
                 else:
-                    lines.append(f"{key} = {value}")
+                    lines.append(f"# {key} = {value}")
 
-            # Add schema comments if requested
+            # Add schema comments if requested (commented out, so prefix with # #)
             if include_schema_comments:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
-                    lines.append(f"# {field_name} =  # {comment}")
+                    # Pad to align inline comments (left-align, pad to alignment_column)
+                    lines.append(
+                        f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"
+                    )
 
     return "\n".join(lines)
 
 
-def fetch_and_format_endpoints(endpoint_specs: list[str]) -> list[str]:
+def fetch_and_format_endpoints(endpoint_specs: list[str]) -> list[FormattedEndpoint]:
     """Parse endpoint specifications and generate formatted TOML blocks.
 
     Args:
         endpoint_specs: List of endpoint specification strings
 
     Returns:
-        List of formatted TOML block strings ready for template insertion
+        List of FormattedEndpoint objects with name and TOML block
 
     Raises:
         ValueError: If any endpoint spec is invalid
         RuntimeError: If unable to fetch endpoint metadata
     """
-    blocks = []
+    endpoints = []
 
     for spec_str in endpoint_specs:
         try:
@@ -315,11 +344,11 @@ def fetch_and_format_endpoints(endpoint_specs: list[str]) -> list[str]:
             toml_block = format_endpoint_config_to_toml(
                 config_dict, spec.uuid, include_schema_comments=True
             )
-            blocks.append(toml_block)
+            endpoints.append(FormattedEndpoint(name=spec.name, toml_block=toml_block))
         except Exception as e:
             # Re-raise with context
             raise RuntimeError(
                 f"Failed to process endpoint spec '{spec_str}': {e}"
             ) from e
 
-    return blocks
+    return endpoints

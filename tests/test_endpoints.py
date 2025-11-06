@@ -190,10 +190,13 @@ class TestFormatEndpointConfigToToml:
             include_schema_comments=True,
         )
 
-        assert "[tool.hog.anvil]" in toml
-        assert 'endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
-        assert "# account =  # Type: string. Your allocation account" in toml
-        assert "# partition =  # Type: string. Scheduler partition" in toml
+        assert "# [tool.hog.anvil]" in toml
+        assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
+        # Check that aligned comments are present (padding may vary)
+        assert "# # account =" in toml
+        assert "Type: string. Your allocation account" in toml
+        assert "# # partition =" in toml
+        assert "Type: string. Scheduler partition" in toml
 
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
@@ -239,11 +242,11 @@ class TestFormatEndpointConfigToToml:
             include_schema_comments=False,
         )
 
-        assert "[tool.hog.anvil]" in toml
-        assert 'endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
+        assert "# [tool.hog.anvil]" in toml
+        assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
         assert "# [tool.hog.anvil.gpu]" in toml
-        assert 'partition = "gpu-debug"' in toml
-        assert 'qos = "gpu"' in toml
+        assert '# partition = "gpu-debug"' in toml
+        assert '# qos = "gpu"' in toml
 
 
 class TestFetchAndFormatEndpoints:
@@ -258,12 +261,17 @@ class TestFetchAndFormatEndpoints:
             "account": "Type: string. Your allocation account",
         }
 
-        blocks = fetch_and_format_endpoints(["anvil"])
+        endpoints = fetch_and_format_endpoints(["anvil"])
 
-        assert len(blocks) == 1
-        assert "[tool.hog.anvil]" in blocks[0]
-        assert "5aafb4c1-27b2-40d8-a038-a0277611868f" in blocks[0]
-        assert "# account =" in blocks[0]
+        assert len(endpoints) == 1
+        assert endpoints[0].name == "anvil"
+        assert "# [tool.hog.anvil]" in endpoints[0].toml_block
+        assert (
+            '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"'
+            in endpoints[0].toml_block
+        )
+        assert "# # account =" in endpoints[0].toml_block
+        assert "Type: string. Your allocation account" in endpoints[0].toml_block
 
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
@@ -274,11 +282,13 @@ class TestFetchAndFormatEndpoints:
         mock_get_display.return_value = None
         mock_get_comments.return_value = {}
 
-        blocks = fetch_and_format_endpoints(["anvil", "tutorial"])
+        endpoints = fetch_and_format_endpoints(["anvil", "tutorial"])
 
-        assert len(blocks) == 2
-        assert any("anvil" in block for block in blocks)
-        assert any("tutorial" in block for block in blocks)
+        assert len(endpoints) == 2
+        assert any(ep.name == "anvil" for ep in endpoints)
+        assert any(ep.name == "tutorial" for ep in endpoints)
+        assert any("anvil" in ep.toml_block for ep in endpoints)
+        assert any("tutorial" in ep.toml_block for ep in endpoints)
 
     def test_fetch_and_format_invalid_spec_raises_error(self):
         """Test that invalid spec raises RuntimeError."""
