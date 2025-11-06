@@ -1,11 +1,9 @@
 set -euo pipefail
 
-# Try to ensure uv is installed via pip (but don't fail if pip isn't available)
 if command -v pip &> /dev/null; then
     pip show -qq uv || pip install uv || true
 fi
 
-# Try to find uv binary via Python module, fallback to PATH
 UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || which uv || echo "uv")
 
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
@@ -19,6 +17,11 @@ RUNNER_EOF
 cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
+
+# use temp directory for uv cache to avoid filesystem locking issues
+# on HPC systems where home directories are on NFS/GPFS
+{% raw %}export UV_CACHE_DIR="${{TMPDIR:-/tmp}}/uv-cache-${{USER:-$(id -un)}}"{% endraw %}
+mkdir -p "$UV_CACHE_DIR"
 
 "$UV_BIN" run --managed-python --with {{ version_spec }} \
   {{ runner_name }}.py
