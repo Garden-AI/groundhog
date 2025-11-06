@@ -1,5 +1,7 @@
 set -euo pipefail
 
+pip show -qq uv || pip install uv
+
 UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())')
 
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
