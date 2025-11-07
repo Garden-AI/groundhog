@@ -29,10 +29,9 @@ PAYLOAD_EOF
 
 # use temp directory for uv cache to avoid filesystem locking issues
 {% raw %}if [ -z "${{UV_CACHE_DIR:-}}" ]; then
-    export UV_CACHE_DIR="${{TMPDIR:-/tmp}}/uv-cache-${{USER:-$(id -un)}}"
+    export UV_CACHE_DIR="${{SCRATCH:-${{TMPDIR:-/tmp}}}}/uv-cache-${{USER:-$(id -un)}}"
 fi{% endraw %}
 mkdir -p "$UV_CACHE_DIR"
-
 "$UV_BIN" run --managed-python --with {{ version_spec }} \
   {{ runner_name }}.py
 
