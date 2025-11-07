@@ -28,10 +28,18 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 PAYLOAD_EOF
 
 # use temp directory for uv cache to avoid filesystem locking issues
-{% raw %}if [ -z "${{UV_CACHE_DIR:-}}" ]; then
-    export UV_CACHE_DIR="${{SCRATCH:-${{TMPDIR:-/tmp}}}}/uv-cache-${{USER:-$(id -un)}}"
+{% raw %}GROUNDHOG_CACHE_BASE="${{GROUNDHOG_CACHE_DIR:-${{SCRATCH:-${{TMPDIR:-/tmp}}}}}}"
+GROUNDHOG_USER="${{USER:-$(id -un)}}"
+
+if [ -z "${{UV_CACHE_DIR:-}}" ]; then
+    export UV_CACHE_DIR="${{GROUNDHOG_CACHE_BASE}}/uv-cache-${{GROUNDHOG_USER}}"
+fi
+
+if [ -z "${{UV_PYTHON_INSTALL_DIR:-}}" ]; then
+    export UV_PYTHON_INSTALL_DIR="${{GROUNDHOG_CACHE_BASE}}/uv-python-${{GROUNDHOG_USER}}"
 fi{% endraw %}
-mkdir -p "$UV_CACHE_DIR"
+
+mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 "$UV_BIN" run --managed-python --with {{ version_spec }} \
   {{ runner_name }}.py
 
