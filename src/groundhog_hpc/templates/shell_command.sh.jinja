@@ -3,10 +3,10 @@ set -euo pipefail
 if command -v uv &> /dev/null; then
     UV_BIN=$(command -v uv)
 else
-    if command -v python3 &> /dev/null; then
-        PYTHON=python3
-    elif command -v python &> /dev/null; then
+    if command -v python &> /dev/null; then
         PYTHON=python
+    elif command -v python3 &> /dev/null; then
+        PYTHON=python3
     else
         echo "Error: No Python interpreter found" >&2
         exit 1
@@ -27,7 +27,8 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
 
-# use temp directory for uv cache to avoid filesystem locking issues
+# use scratch/temp directory for uv cache to avoid filesystem locking issues
+# GROUNDHOG_CACHE_DIR var allows users to override if needed
 {% raw %}GROUNDHOG_CACHE_BASE="${{GROUNDHOG_CACHE_DIR:-${{SCRATCH:-${{TMPDIR:-/tmp}}}}}}"
 GROUNDHOG_USER="${{USER:-$(id -un)}}"
 
