@@ -1,10 +1,19 @@
 set -euo pipefail
 
-if command -v pip &> /dev/null; then
-    pip show -qq uv || pip install uv || true
+if command -v uv &> /dev/null; then
+    UV_BIN=$(command -v uv)
+else
+    if command -v python3 &> /dev/null; then
+        PYTHON=python3
+    elif command -v python &> /dev/null; then
+        PYTHON=python
+    else
+        echo "Error: No Python interpreter found" >&2
+        exit 1
+    fi
+    $PYTHON -m pip install uv &> /dev/null || true
+    UV_BIN=$($PYTHON -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || command -v uv 2>/dev/null || echo "uv")
 fi
-
-UV_BIN=$(python -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || which uv || echo "uv")
 
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
 {{ user_script_contents | escape_braces }}
@@ -19,8 +28,6 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 PAYLOAD_EOF
 
 # use temp directory for uv cache to avoid filesystem locking issues
-# on HPC systems where home directories are on NFS/GPFS
-# only set if admin hasn't already configured a better location
 {% raw %}if [ -z "${{UV_CACHE_DIR:-}}" ]; then
     export UV_CACHE_DIR="${{TMPDIR:-/tmp}}/uv-cache-${{USER:-$(id -un)}}"
 fi{% endraw %}
