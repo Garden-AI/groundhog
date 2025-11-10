@@ -15,6 +15,21 @@ else
     UV_BIN=$($PYTHON -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || command -v uv 2>/dev/null || echo "uv")
 fi
 
+# try SCRATCH -> TMPDIR -> /tmp for uv cache to avoid filesystem locking issues
+# GROUNDHOG_CACHE_DIR allows users to override if needed, UV_* vars also respected
+{% raw %}
+GROUNDHOG_CACHE_BASE="${{GROUNDHOG_CACHE_DIR:-${{SCRATCH:-${{TMPDIR:-/tmp}}}}}}"
+
+if [ -z "${{UV_CACHE_DIR:-}}" ]; then
+    export UV_CACHE_DIR="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/uv"
+fi
+
+if [ -z "${{UV_PYTHON_INSTALL_DIR:-}}" ]; then
+    export UV_PYTHON_INSTALL_DIR="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/uv/python"
+fi
+mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
+{% endraw %}
+
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
 {{ user_script_contents | escape_braces }}
 USER_SCRIPT_EOF
@@ -27,20 +42,6 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
 
-# use scratch/temp directory for uv cache to avoid filesystem locking issues
-# GROUNDHOG_CACHE_DIR var allows users to override if needed
-{% raw %}GROUNDHOG_CACHE_BASE="${{GROUNDHOG_CACHE_DIR:-${{SCRATCH:-${{TMPDIR:-/tmp}}}}}}"
-GROUNDHOG_USER="${{USER:-$(id -un)}}"
-
-if [ -z "${{UV_CACHE_DIR:-}}" ]; then
-    export UV_CACHE_DIR="${{GROUNDHOG_CACHE_BASE}}/uv-cache-${{GROUNDHOG_USER}}"
-fi
-
-if [ -z "${{UV_PYTHON_INSTALL_DIR:-}}" ]; then
-    export UV_PYTHON_INSTALL_DIR="${{GROUNDHOG_CACHE_BASE}}/uv-python-${{GROUNDHOG_USER}}"
-fi{% endraw %}
-
-mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 "$UV_BIN" run --managed-python --with {{ version_spec }} \
   {{ runner_name }}.py
 
