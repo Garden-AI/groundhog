@@ -57,8 +57,8 @@ def foo():
         assert (
             'module = import_user_script("test_script", "test_script-' in shell_command
         )
-        # Runner should invoke the target function
-        assert 'func = getattr(module, "foo")' in shell_command
+        # Runner should invoke the target function using attrgetter
+        assert 'func = attrgetter("foo")(module)' in shell_command
 
     def test_runner_contains_pep723_metadata(self, tmp_path):
         """Test that runner contains PEP 723 metadata from user script."""
@@ -287,3 +287,31 @@ def func2():
         # Extract the script names (format: basename-hash)
         # They should have different hashes since content differs
         assert command1 != command2
+
+
+class TestDottedQualnames:
+    """Test that templating handles dotted qualnames (class methods)."""
+
+    def test_runner_handles_dotted_qualname(self, tmp_path):
+        """Test that runner template works with dotted qualnames like MyClass.method."""
+        script_path = tmp_path / "test_class_method.py"
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# ///
+
+class MyClass:
+    @staticmethod
+    def compute(x):
+        return x * 2
+"""
+        script_path.write_text(script_content)
+
+        result = template_shell_command(
+            str(script_path),
+            "MyClass.compute",  # Dotted qualname
+            "[[1], {}]",
+        )
+
+        # The runner should use attrgetter for dotted paths
+        assert "attrgetter" in result
+        assert "MyClass.compute" in result

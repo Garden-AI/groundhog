@@ -1,7 +1,7 @@
 """Tests for the decorators module."""
 
-from groundhog_hpc.decorators import function
-from groundhog_hpc.function import Function
+from groundhog_hpc.decorators import function, method
+from groundhog_hpc.function import Function, Method
 
 
 class TestFunctionDecorator:
@@ -65,3 +65,39 @@ class TestFunctionDecorator:
 
         # Decorator should only have custom init, ConfigResolver will merge with DEFAULT
         assert my_function.default_user_endpoint_config["worker_init"] == custom_init
+
+
+class TestMethodDecorator:
+    """Test the @hog.method decorator."""
+
+    def test_creates_method_wrapper(self):
+        """Test that decorator creates a Method instance."""
+
+        @method()
+        def my_method():
+            return "result"
+
+        assert isinstance(my_method, Method)
+
+    def test_accepts_endpoint_parameter(self, mock_endpoint_uuid):
+        """Test that endpoint parameter is accepted."""
+
+        @method(endpoint=mock_endpoint_uuid)
+        def my_method():
+            return "result"
+
+        assert my_method.endpoint == mock_endpoint_uuid
+
+    def test_works_as_class_method(self):
+        """Test that decorator works when applied to class method."""
+
+        class MyClass:
+            @method()
+            def compute(x):  # No self - staticmethod semantics
+                return x * 2
+
+        # Should be accessible via class and instance
+        assert isinstance(MyClass.compute, Method)
+        assert isinstance(MyClass().compute, Method)
+        assert MyClass.compute(5) == 10
+        assert MyClass().compute(5) == 10

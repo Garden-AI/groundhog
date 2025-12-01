@@ -316,3 +316,13 @@ class Function:
     @property
     def name(self) -> str:
         return self._local_function.__qualname__
+
+
+class Method(Function):
+    """Descriptor variant of Function for use as class methods.
+
+    Provides staticmethod-like semantics (no self) with remote execution.
+    """
+
+    def __get__(self, obj, objtype=None):
+        return self

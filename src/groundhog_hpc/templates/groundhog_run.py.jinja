@@ -1,4 +1,6 @@
 {{ pep723_metadata }}
+from operator import attrgetter
+
 from groundhog_hpc.serialization import serialize, deserialize
 from groundhog_hpc.utils import import_user_script
 
@@ -10,7 +12,7 @@ if __name__ == "__main__":
         payload = f_in.read()
         args, kwargs = deserialize(payload)
 
-    func = getattr(module, "{{ function_name }}")
+    func = attrgetter("{{ function_name }}")(module)
     results = func(*args, **kwargs)
 
     with open('{{ outfile_path }}', 'w') as f_out:

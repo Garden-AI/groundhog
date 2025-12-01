@@ -34,3 +34,13 @@ def cross_module_function(x):
 def nested_local_caller(y):
     """A function that calls another .local() - tests nested behavior."""
     return cross_module_function.local(y)
+
+
+# Class with @hog.method() decorated methods - for testing class method behavior
+class FixtureClass:
+    """Test class with method decorators."""
+
+    @hog.method()
+    def class_method(x):
+        """A decorated class method for testing."""
+        return x * 3
