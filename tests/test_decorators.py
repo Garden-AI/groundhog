@@ -1,5 +1,9 @@
 """Tests for the decorators module."""
 
+import warnings
+
+import pytest
+
 from groundhog_hpc.decorators import function, method
 from groundhog_hpc.function import Function, Method
 
@@ -101,3 +105,31 @@ class TestMethodDecorator:
         assert isinstance(MyClass().compute, Method)
         assert MyClass.compute(5) == 10
         assert MyClass().compute(5) == 10
+
+    def test_warns_when_first_param_is_self(self):
+        """Test that a warning is emitted when first parameter is named 'self'."""
+        with pytest.warns(UserWarning, match=r".*'self'.*staticmethod.*"):
+
+            @method()
+            def compute(self, x):
+                return x * 2
+
+    def test_warns_when_first_param_is_cls(self):
+        """Test that a warning is emitted when first parameter is named 'cls'."""
+        with pytest.warns(UserWarning, match=r".*'cls'.*staticmethod.*"):
+
+            @method()
+            def compute(cls, x):
+                return x * 2
+
+    def test_no_warning_when_first_param_is_not_self_or_cls(self):
+        """Test that no warning is emitted when first parameter is not 'self' or 'cls'."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Turn warnings into errors
+
+            @method()
+            def compute(data, x):
+                return data + x
+
+            # Should not raise any warnings
+            assert isinstance(compute, Method)

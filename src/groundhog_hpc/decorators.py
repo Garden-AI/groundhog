@@ -6,6 +6,8 @@ orchestration.
 """
 
 import functools
+import inspect
+import warnings
 from types import FunctionType
 from typing import Any, Callable
 
@@ -55,7 +57,7 @@ def function(
 
     Args:
         endpoint: Globus Compute endpoint UUID
-        walltime: Maximum execution time in seconds (default: 60)
+        walltime: Maximum execution time in seconds
         **user_endpoint_config: Options to pass through to the Executor as
             user_endpoint_config (e.g. account, partition, etc)
 
@@ -123,6 +125,18 @@ def method(
     """
 
     def decorator(func: FunctionType) -> Method:
+        # Check if first parameter is 'self' or 'cls' and emit a warning
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+        if params and params[0] in ("self", "cls"):
+            warnings.warn(
+                f"Method '{func.__name__}' has first parameter '{params[0]}', "
+                f"but @hog.method provides staticmethod-like semantics and will not "
+                f"pass the instance or class. Consider removing '{params[0]}' from the signature.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         wrapper = Method(func, endpoint, walltime, **user_endpoint_config)
         functools.update_wrapper(wrapper, func)
         return wrapper
