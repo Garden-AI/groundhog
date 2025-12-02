@@ -59,7 +59,9 @@ def script_to_submittable(
     import globus_compute_sdk as gc
 
     shell_command = template_shell_command(script_path, function_name, payload)
-    shell_function = gc.ShellFunction(shell_command, name=function_name)
+    shell_function = gc.ShellFunction(
+        shell_command, name=function_name.replace(".", "_")
+    )
     return shell_function
 
 

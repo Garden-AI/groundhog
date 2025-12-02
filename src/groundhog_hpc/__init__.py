@@ -30,7 +30,7 @@ Run with: `hog run script.py main`
 import importlib.metadata
 import os
 
-from groundhog_hpc.decorators import function, harness
+from groundhog_hpc.decorators import function, harness, method
 from groundhog_hpc.import_hook import install_import_hook
 from groundhog_hpc.utils import mark_import_safe
 
@@ -39,7 +39,7 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-__all__ = ["function", "harness", "mark_import_safe", "__version__"]
+__all__ = ["function", "harness", "method", "mark_import_safe", "__version__"]
 
 if not os.environ.get("GROUNDHOG_NO_IMPORT_HOOK"):
     install_import_hook()
