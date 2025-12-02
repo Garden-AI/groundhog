@@ -13,3 +13,4 @@ wheels/
 /CLAUDE.md
 /.DS_Store
 /.coverage
+/docs/plans/*.md
