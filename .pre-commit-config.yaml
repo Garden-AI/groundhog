@@ -17,7 +17,7 @@ repos:
     hooks:
       # Run the linter.
       - id: ruff-check
-        args: [--fix]
+        args: [--fix, --exclude, "examples/*.py"]
         # Run the formatter.
       - id: ruff-format
   # keep lockfile synced with pyproject.toml
