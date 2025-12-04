@@ -1,16 +1,21 @@
 # /// script
-# requires-python = "==3.12.*"
+# requires-python = ">=3.12,<3.13"
 # dependencies = [
 #     "torch",
+#     "numpy",
 # ]
 #
 # [tool.hog.anvil]
-# account = "cis250223"  # Replace with your account
-# walltime = 30
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# requirements = ""
+# account = "cis250461"   # Replace with your account
+# walltime = 300
 #
 # [tool.hog.anvil.gpu]
+# account = "cis250461-gpu"
 # qos = "gpu"
 # partition = "gpu-debug"
+# scheduler_options = "#SBATCH --gpus-per-node=1"
 # ///
 """
 Example demonstrating PEP 723 dependencies and configuration.
@@ -24,47 +29,47 @@ NOTE: groundhog-hpc is automatically installed on the remote end, no need to
 declare it in the PEP 723 dependencies.
 """
 
-import json
-import os
-
 import groundhog_hpc as hog
 
 
+# uses config from [tool.hog.anvil] block above
 @hog.function(endpoint="anvil")
-def hello_environment():
-    return dict(os.environ)
+def hello_hog():
+    import sys
+
+    # demonstrate log behavior
+    print("This log goes to stdout: 🪵", file=sys.stdout)
+    print("This log goes to stderr: 🪵", file=sys.stderr)
+    return f"Hello, groundhog! {hog.__version__=}"
 
 
+# uses merged options from [.anvil] and [.anvil.gpu] above
 @hog.function(endpoint="anvil.gpu")
 def hello_torch():
     # NOTE: we import torch inside the function because it's available on the
     # remote endpoint (because it was declared in script metadata) but may not
-    # be available locally.
+    # be available in the current environment.
     import torch
 
     msg = f"Hello, cuda? {torch.cuda.is_available()=}"
     return msg
 
 
-@hog.function(endpoint="anvil")
-def hello_hog():
-    return f"{hog.__version__=}"
-
-
 @hog.harness()
-def test_env():
-    print("running locally...")
-    local_env = hello_environment()
-    print(json.dumps(local_env, indent=2))
-
-    print("running remotely...")
-    remote_env = hello_environment.remote()
-    print(json.dumps(remote_env, indent=2))
-
-    return remote_env
-
-
-@hog.harness()
-def test_deps():
-    print(hello_torch.remote())
+def main():
     print(hello_hog.remote())
+    print(hello_torch.remote())
+
+    try:
+        # decorated functions can still be called like normal,
+        print("Calling hello_hog()...")
+        print(hello_hog())
+
+        # but this one should fail due to missing a dependency
+        print("Calling hello_torch()...")
+        print(hello_torch())
+    except ImportError:
+        print("Couldn't import torch - not installed in current environment")
+        print("Calling hello_torch.local() ...")
+        # but with .local(), we can run the function in its own ephemeral environment (i.e. in a separate process)
+        print(hello_torch.local())
