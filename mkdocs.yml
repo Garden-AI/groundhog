@@ -97,6 +97,7 @@ nav:
     - Dependencies: examples/dependencies.md
     - Endpoint Configuration: examples/configuration.md
     - Running Locally: examples/local.md
+    - Running from Another Script: examples/imported_function.md
   - Reference:
     - CLI Commands: api/cli.md
     - Environment Variables: api/environment_variables.md
