@@ -37,7 +37,7 @@ import groundhog_hpc as hog
 def hello_hog():
     import sys
 
-    # demonstrate log behavior
+    # demonstrate log behavior/appearance
     print("This log goes to stdout: 🪵", file=sys.stdout)
     print("This log goes to stderr: 🪵", file=sys.stderr)
     return f"Hello, groundhog! {hog.__version__=}"
@@ -46,7 +46,7 @@ def hello_hog():
 # uses merged options from [.anvil] and [.anvil.gpu] above
 @hog.function(endpoint="anvil.gpu")
 def hello_torch():
-    # NOTE: we import torch inside the function because it's available on the
+    # NOTE: we import torch inside the function -- while it's available on the
     # remote endpoint (because it was declared in script metadata) but may not
     # be available in the current environment.
     import torch
