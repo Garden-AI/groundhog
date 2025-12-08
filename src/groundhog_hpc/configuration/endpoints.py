@@ -16,6 +16,9 @@ from groundhog_hpc.compute import get_endpoint_metadata, get_endpoint_schema
 KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
     "anvil": {
         "uuid": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+        "base": {
+            "requirements": "",
+        },
         "variants": {
             "gpu": {
                 "partition": "gpu-debug",
@@ -26,6 +29,7 @@ KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
     },
     "tutorial": {
         "uuid": "4b116d3c-1703-4f8f-9f6f-39921e5864df",
+        "base": {},
         "variants": {},
     },
 }
@@ -51,6 +55,7 @@ class EndpointSpec:
         name: Table name for [tool.hog.{name}]
         variant: Optional variant name for [tool.hog.{name}.{variant}]
         uuid: Globus Compute endpoint UUID
+        base_defaults: Dict of defaults to apply to base endpoint (if known endpoint)
         variant_defaults: Dict of defaults to apply to variant (if known variant)
     """
 
@@ -59,11 +64,13 @@ class EndpointSpec:
         name: str,
         variant: str | None,
         uuid: str,
+        base_defaults: dict[str, Any] | None = None,
         variant_defaults: dict[str, Any] | None = None,
     ):
         self.name = name
         self.variant = variant
         self.uuid = uuid
+        self.base_defaults = base_defaults or {}
         self.variant_defaults = variant_defaults or {}
 
 
@@ -122,12 +129,14 @@ def parse_endpoint_spec(spec: str) -> EndpointSpec:
 
         endpoint_info = KNOWN_ENDPOINTS[base_name]
         uuid = endpoint_info["uuid"]
+        base_defaults = endpoint_info.get("base", {})
         variant_defaults = endpoint_info["variants"].get(variant, {})
 
         return EndpointSpec(
             name=base_name,
             variant=variant,
             uuid=uuid,
+            base_defaults=base_defaults,
             variant_defaults=variant_defaults,
         )
 
@@ -137,7 +146,10 @@ def parse_endpoint_spec(spec: str) -> EndpointSpec:
         raise ValueError(f"Unknown endpoint '{spec}'. Known endpoints: {known}")
 
     endpoint_info = KNOWN_ENDPOINTS[spec]
-    return EndpointSpec(name=spec, variant=None, uuid=endpoint_info["uuid"])
+    base_defaults = endpoint_info.get("base", {})
+    return EndpointSpec(
+        name=spec, variant=None, uuid=endpoint_info["uuid"], base_defaults=base_defaults
+    )
 
 
 def generate_endpoint_config(spec: EndpointSpec) -> dict[str, dict[str, Any]]:
@@ -158,10 +170,18 @@ def generate_endpoint_config(spec: EndpointSpec) -> dict[str, dict[str, Any]]:
     """
     result: dict[str, Any] = {}
 
+    # Filter base_defaults to only include fields present in the endpoint schema
+    schema = get_endpoint_schema(spec.uuid)
+    schema_fields = set(schema.get("properties", {}).keys())
+    filtered_base_defaults = {
+        k: v for k, v in spec.base_defaults.items() if k in schema_fields
+    }
+
     # Base configuration
     base_config = {
         "endpoint": spec.uuid,
-        # Other fields will be added by user, we just provide the endpoint UUID
+        **filtered_base_defaults,
+        # Other fields will be added by user, we just provide the endpoint UUID + defaults
     }
     result[spec.name] = base_config
 
@@ -281,6 +301,9 @@ def format_endpoint_config_to_toml(
             if include_schema_comments:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
+                    # Skip fields that are already in the active config
+                    if field_name in base_config:
+                        continue
                     # Pad to align inline comments (left-align, pad to alignment_column)
                     lines.append(
                         f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"
@@ -314,6 +337,9 @@ def format_endpoint_config_to_toml(
             if include_schema_comments:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
+                    # Skip fields that are already in the active config
+                    if field_name in config:
+                        continue
                     # Pad to align inline comments (left-align, pad to alignment_column)
                     lines.append(
                         f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"
