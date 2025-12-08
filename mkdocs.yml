@@ -104,5 +104,5 @@ nav:
     - Configuration: api/configuration.md
     - Decorators: api/decorators.md
     - Function: api/function.md
-    - Future: api/future.md
+    - GroundhogFuture: api/future.md
     - Harness: api/harness.md
