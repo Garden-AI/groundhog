@@ -24,12 +24,10 @@ class EndpointConfig(BaseModel, extra="allow"):
 
     Attributes:
         endpoint: Globus Compute endpoint UUID (required for base configs)
-        walltime: Maximum execution time in seconds (must be positive)
         worker_init: Shell commands to run in worker initialization
     """
 
     endpoint: str | UUID
-    walltime: int | None = Field(None, gt=0)
     worker_init: str | None = None
 
 
@@ -50,7 +48,6 @@ class EndpointVariant(BaseModel, extra="allow"):
     """
 
     endpoint: None = None
-    walltime: int | None = Field(None, gt=0)
     worker_init: str | None = None
 
     @model_validator(mode="before")

@@ -671,43 +671,6 @@ import groundhog_hpc as hog
         finally:
             Path(script_path).unlink()
 
-    def test_resolve_validates_variant_at_each_level(self):
-        """Test that each variant is validated when traversing the path."""
-        import pytest
-        from pydantic import ValidationError
-
-        script_content = """# /// script
-# requires-python = ">=3.10"
-# dependencies = []
-#
-# [tool.hog.anvil]
-# endpoint = "uuid-here"
-#
-# [tool.hog.anvil.gpu]
-# walltime = -10
-# ///
-
-import groundhog_hpc as hog
-"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(script_content)
-            f.flush()
-            script_path = f.name
-
-        try:
-            resolver = ConfigResolver(script_path=script_path)
-
-            with pytest.raises(ValidationError) as exc_info:
-                resolver.resolve(
-                    endpoint_name="anvil.gpu",
-                    decorator_config={},
-                )
-
-            # Should contain error about walltime validation
-            assert "walltime" in str(exc_info.value).lower()
-        finally:
-            Path(script_path).unlink()
-
     def test_resolve_error_when_variant_not_dict(self):
         """Test error when variant path points to non-dict value."""
         import pytest

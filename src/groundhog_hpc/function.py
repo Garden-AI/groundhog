@@ -51,15 +51,13 @@ class Function:
 
     Attributes:
         endpoint: Default Globus Compute endpoint UUID or None to use resolved config
-        walltime: Default walltime in seconds for remote execution or None to use resolved config
-        default_user_endpoint_config: Default endpoint configuration (e.g., worker_init)
+        default_user_endpoint_config: Default endpoint configuration (e.g., worker_init, walltime)
     """
 
     def __init__(
         self,
         func: FunctionType,
         endpoint: str | None = None,
-        walltime: int | None = None,
         **user_endpoint_config: Any,
     ) -> None:
         """Initialize a Function wrapper.
@@ -67,14 +65,17 @@ class Function:
         Args:
             func: The Python function to wrap
             endpoint: Globus Compute endpoint UUID or named endpoint from `[tool.hog.<name>]` PEP 723
-            walltime: Maximum execution time in seconds (can also be set in config)
             **user_endpoint_config: Additional endpoint configuration to pass to
-                Globus Compute Executor (e.g., worker_init commands)
+                Globus Compute Executor (e.g., worker_init commands, walltime)
         """
         self._script_path: str | None = None
         self.endpoint: str | None = endpoint
-        self.walltime: int | None = walltime
         self.default_user_endpoint_config: dict[str, Any] = user_endpoint_config
+
+        # ShellFunction walltime - always None here to prevent conflicts with a
+        # 'walltime' endpoint config, but the attribute exists as an escape
+        # hatch if users need to set it after the function's been created
+        self.walltime: int | float | None = None
 
         self._local_function: FunctionType = func
         self._config_resolver: ConfigResolver | None = None
@@ -103,7 +104,6 @@ class Function:
         self,
         *args: Any,
         endpoint: str | None = None,
-        walltime: int | None = None,
         user_endpoint_config: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> GroundhogFuture:
@@ -112,7 +112,6 @@ class Function:
         Args:
             *args: Positional arguments to pass to the function
             endpoint: Globus Compute endpoint UUID (overrides decorator default)
-            walltime: Maximum execution time in seconds (overrides decorator default)
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
             **kwargs: Keyword arguments to pass to the function
 
@@ -134,12 +133,7 @@ class Function:
         endpoint = endpoint or self.endpoint
 
         decorator_config = self.default_user_endpoint_config.copy()
-        if self.walltime is not None:
-            decorator_config["walltime"] = self.walltime
-
         call_time_config = user_endpoint_config.copy() if user_endpoint_config else {}
-        if walltime is not None:
-            call_time_config["walltime"] = walltime
 
         # merge all config sources
         config = self.config_resolver.resolve(
@@ -166,7 +160,9 @@ class Function:
                 raise ValueError("No endpoint specified")
 
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
-        shell_function = script_to_submittable(self.script_path, self.name, payload)
+        shell_function = script_to_submittable(
+            self.script_path, self.name, payload, walltime=self.walltime
+        )
 
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
@@ -182,7 +178,6 @@ class Function:
         self,
         *args: Any,
         endpoint: str | None = None,
-        walltime: int | None = None,
         user_endpoint_config: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -194,7 +189,6 @@ class Function:
         Args:
             *args: Positional arguments to pass to the function
             endpoint: Globus Compute endpoint UUID (overrides decorator default)
-            walltime: Maximum execution time in seconds (overrides decorator default)
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
             **kwargs: Keyword arguments to pass to the function
 
@@ -210,7 +204,6 @@ class Function:
         future = self.submit(
             *args,
             endpoint=endpoint,
-            walltime=walltime,
             user_endpoint_config=user_endpoint_config,
             **kwargs,
         )

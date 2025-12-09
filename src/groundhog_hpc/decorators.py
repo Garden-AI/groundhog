@@ -45,7 +45,6 @@ def harness() -> Callable[[FunctionType], Harness]:
 
 def function(
     endpoint: str | None = None,
-    walltime: int | None = None,
     **user_endpoint_config: Any,
 ) -> Callable[[FunctionType], Function]:
     """Decorator to mark a function for remote execution on Globus Compute.
@@ -56,17 +55,17 @@ def function(
     - Submitted asynchronously: func.submit(args)
 
     Args:
-        endpoint: Globus Compute endpoint UUID
-        walltime: Maximum execution time in seconds
+        endpoint: Globus Compute endpoint UUID or named endpoint from
+            `[tool.hog.<name>]` PEP 723 metadata
         **user_endpoint_config: Options to pass through to the Executor as
-            user_endpoint_config (e.g. account, partition, etc)
+            user_endpoint_config (e.g. account, partition, walltime, etc)
 
     Returns:
         A decorator function that wraps the function as a Function instance
 
     Example:
         ```python
-        @hog.function(endpoint="my-remote-endpoint-uuid", walltime=300)
+        @hog.function(endpoint="my-remote-endpoint-uuid", account='my-account')
         def train_model(data):
             # This runs on the remote HPC cluster
             model = train(data)
@@ -81,7 +80,7 @@ def function(
     """
 
     def decorator(func: FunctionType) -> Function:
-        wrapper = Function(func, endpoint, walltime, **user_endpoint_config)
+        wrapper = Function(func, endpoint, **user_endpoint_config)
         functools.update_wrapper(wrapper, func)
         return wrapper
 
@@ -90,7 +89,6 @@ def function(
 
 def method(
     endpoint: str | None = None,
-    walltime: int | None = None,
     **user_endpoint_config: Any,
 ) -> Callable[[FunctionType], Method]:
     """Decorator to mark a class method for remote execution on Globus Compute.
@@ -105,9 +103,8 @@ def method(
 
     Args:
         endpoint: Globus Compute endpoint UUID
-        walltime: Maximum execution time in seconds
         **user_endpoint_config: Options to pass through to the Executor as
-            user_endpoint_config (e.g. account, partition, etc)
+            user_endpoint_config (e.g. account, partition, walltime, etc)
 
     Returns:
         A decorator function that wraps the function as a Method instance
@@ -137,7 +134,7 @@ def method(
                 stacklevel=2,
             )
 
-        wrapper = Method(func, endpoint, walltime, **user_endpoint_config)
+        wrapper = Method(func, endpoint, **user_endpoint_config)
         functools.update_wrapper(wrapper, func)
         return wrapper
 

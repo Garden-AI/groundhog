@@ -322,15 +322,14 @@ class TestSubmitMethod:
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
-    def test_callsite_walltime_overrides_default(self, tmp_path, mock_endpoint_uuid):
-        """Test that walltime provided at callsite overrides default walltime."""
+    def test_callsite_walltime_goes_to_config(self, tmp_path, mock_endpoint_uuid):
+        """Test that walltime provided at callsite goes to endpoint config."""
         script_path = tmp_path / "test_script.py"
         script_path.write_text("# test")
 
         os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
         try:
-            # Initialize with default walltime
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid, walltime=60)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
 
             mock_future = MagicMock()
             with patch("groundhog_hpc.function.script_to_submittable"):
@@ -341,13 +340,47 @@ class TestSubmitMethod:
                     with patch(
                         "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                     ):
-                        # Call with override walltime
-                        func.submit(walltime=120)
+                        # Call with walltime in user_endpoint_config
+                        func.submit(user_endpoint_config={"walltime": 120})
 
-            # Verify submit_to_executor was called with override walltime in config
-            # Walltime should be in user_endpoint_config dict
+            # Verify submit_to_executor was called with walltime in config
             config = mock_submit.call_args[1]["user_endpoint_config"]
             assert config["walltime"] == 120
+        finally:
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+
+    def test_function_walltime_sets_shellfunction_walltime(
+        self, tmp_path, mock_endpoint_uuid
+    ):
+        """Test that Function.walltime attribute sets ShellFunction walltime (escape hatch)."""
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+
+        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
+        try:
+            # Create function and manually set walltime (escape hatch)
+            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+            func.walltime = 120
+
+            mock_future = MagicMock()
+            with patch(
+                "groundhog_hpc.function.script_to_submittable"
+            ) as mock_script_to_submittable:
+                mock_shell_func = MagicMock()
+                mock_script_to_submittable.return_value = mock_shell_func
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ):
+                    with patch(
+                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
+                    ):
+                        func.submit()
+
+            # Verify script_to_submittable was called with walltime parameter
+            call_args = mock_script_to_submittable.call_args
+            assert call_args[1]["walltime"] == 120
+
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
