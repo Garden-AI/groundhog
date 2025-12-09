@@ -92,8 +92,9 @@ def run(
     except RemoteExecutionError as e:
         if e.returncode == 124:
             typer.echo(
-                "Remote execution failed (timed out - try "
-                "increasing walltime for long running jobs)",
+                "Remote execution failed: (exit code 124 - timed out). \nTry increasing walltime for "
+                "long running jobs by setting my_function.walltime (in seconds) "
+                "before invoking my_function.remote/submit()",
                 err=True,
             )
             raise
