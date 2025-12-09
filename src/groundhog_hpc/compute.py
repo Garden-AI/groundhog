@@ -44,7 +44,10 @@ def _get_compute_client() -> Client:
 
 
 def script_to_submittable(
-    script_path: str, function_name: str, payload: str
+    script_path: str,
+    function_name: str,
+    payload: str,
+    walltime: int | float | None = None,
 ) -> ShellFunction:
     """Convert a user script and function name into a Globus Compute ShellFunction.
 
@@ -52,6 +55,7 @@ def script_to_submittable(
         script_path: Path to the Python script containing the function
         function_name: Name of the function to execute remotely
         payload: Serialized arguments string
+        walltime: Optional maximum execution time in seconds for ShellFunction timeout
 
     Returns:
         A ShellFunction ready to be submitted to a Globus Compute executor
@@ -60,7 +64,7 @@ def script_to_submittable(
 
     shell_command = template_shell_command(script_path, function_name, payload)
     shell_function = gc.ShellFunction(
-        shell_command, name=function_name.replace(".", "_")
+        shell_command, name=function_name.replace(".", "_"), walltime=walltime
     )
     return shell_function
 
@@ -82,12 +86,8 @@ def submit_to_executor(
     """
     import globus_compute_sdk as gc
 
-    # Extract walltime and set it on the shell function
-    config = user_endpoint_config.copy()
-    if "walltime" in config:
-        shell_function.walltime = config.pop("walltime")
-
     # Validate config against endpoint schema and filter out unexpected keys
+    config = user_endpoint_config.copy()
     if schema := get_endpoint_schema(endpoint):
         expected_keys = set(schema.get("properties", {}).keys())
         unexpected_keys = set(config.keys()) - expected_keys
