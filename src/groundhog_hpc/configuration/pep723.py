@@ -39,7 +39,7 @@ def read_pep723(script: str) -> Pep723Metadata | None:
 
     Raises:
         ValueError: If multiple 'script' metadata blocks are found
-        ValidationError: If metadata contains invalid configuration (e.g., negative walltime)
+        ValidationError: If metadata contains invalid configuration
     """
     name = "script"
     matches = list(
