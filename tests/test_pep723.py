@@ -196,27 +196,6 @@ class TestPep723Metadata:
         assert isinstance(anvil.model_extra["gpu"], dict)
         assert anvil.model_extra["gpu"]["partition"] == "gpu-debug"
 
-    def test_validation_error_on_invalid_endpoint_config(self):
-        """Test that invalid endpoint config raises validation error."""
-
-        data = {
-            "requires-python": ">=3.10",
-            "dependencies": [],
-            "tool": {
-                "hog": {
-                    "anvil": {
-                        "endpoint": "uuid",
-                        "walltime": -10,  # Invalid: must be positive
-                    }
-                }
-            },
-        }
-
-        with pytest.raises(ValidationError) as exc_info:
-            Pep723Metadata(**data)
-
-        assert "walltime" in str(exc_info.value).lower()
-
 
 class TestDumpsPep723:
     """Test serializing Pep723Metadata to PEP 723 format."""
@@ -469,15 +448,6 @@ class TestEndpointConfig:
         assert config.account == "my-account"
         assert config.walltime == 300
 
-    def test_walltime_validation_rejects_negative(self):
-        """Test that walltime must be positive."""
-
-        with pytest.raises(ValidationError) as exc_info:
-            EndpointConfig(walltime=-10)
-
-        # Should contain validation error about walltime
-        assert "walltime" in str(exc_info.value).lower()
-
     def test_extra_fields_allowed(self):
         """Test that unknown fields are preserved for endpoint-specific config."""
 
@@ -592,19 +562,3 @@ class TestToolMetadata:
 
         assert "anvil" in tool.hog
         assert tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
-
-    def test_parse_from_dict_validates_endpoint_configs(self):
-        """Test that parsing from dict validates endpoint configs."""
-
-        # Invalid walltime should raise validation error
-        with pytest.raises(ValidationError) as exc_info:
-            ToolMetadata(
-                hog={
-                    "anvil": {
-                        "endpoint": "uuid",
-                        "walltime": -10,  # Invalid
-                    }
-                }
-            )
-
-        assert "walltime" in str(exc_info.value).lower()

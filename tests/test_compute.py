@@ -32,7 +32,9 @@ class TestScriptToSubmittable:
                 )
 
                 # Verify ShellFunction was created with correct args
-                mock_shell_func.assert_called_once_with("echo test", name="my_function")
+                mock_shell_func.assert_called_once_with(
+                    "echo test", name="my_function", walltime=None
+                )
 
     def test_uses_function_name_as_shell_function_name(self, tmp_path):
         """Test that function name is used as the ShellFunction name."""
@@ -99,3 +101,28 @@ class TestSubmitToExecutor:
                 # Should return a different future than the one from executor.submit
                 assert result is not mock_future
                 assert isinstance(result, Future)
+
+    def test_walltime_in_config_passed_to_executor(self, mock_endpoint_uuid):
+        """Test that walltime in config is passed to Executor, not extracted to ShellFunction."""
+        mock_shell_func = MagicMock()
+        mock_future = Future()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        user_config = {"account": "test", "walltime": 600}
+
+        with patch("groundhog_hpc.compute.gc.Executor", return_value=mock_executor):
+            with patch("groundhog_hpc.compute.get_endpoint_schema", return_value=None):
+                submit_to_executor(
+                    UUID(mock_endpoint_uuid), user_config, mock_shell_func
+                )
+
+                # Verify walltime was NOT extracted from config - it should still be present
+                from groundhog_hpc.compute import gc
+
+                gc.Executor.assert_called_once_with(
+                    UUID(mock_endpoint_uuid),
+                    user_endpoint_config={"account": "test", "walltime": 600},
+                )

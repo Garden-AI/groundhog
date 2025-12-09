@@ -40,13 +40,15 @@ class TestFunctionDecorator:
         assert my_function.endpoint == mock_endpoint_uuid
 
     def test_accepts_walltime_parameter(self):
-        """Test that walltime parameter is accepted."""
+        """Test that walltime parameter is accepted and added to config."""
 
         @function(walltime=60)
         def my_function():
             return "result"
 
-        assert my_function.walltime == 60
+        # Walltime should be in config, not the walltime attribute (escape hatch)
+        assert my_function.default_user_endpoint_config["walltime"] == 60
+        assert my_function.walltime is None
 
     def test_accepts_custom_endpoint_config(self):
         """Test that custom endpoint configuration is accepted."""
