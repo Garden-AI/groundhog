@@ -8,7 +8,8 @@
 # [tool.hog.anvil]
 # endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "cis250461"                  # Layer 2: Base config from PEP 723
-# walltime = 100
+# requirements = ""
+# qos = "cpu"
 # worker_init = "echo 'Layer 2: Base PEP 723 init'"
 #
 # [tool.hog.anvil.gpu]
@@ -46,7 +47,6 @@ from pprint import pprint
     endpoint="anvil",
     # Layer 4: Decorator config
     # This overrides the walltime from PEP 723 base config (100 -> 200)
-    walltime=200,
     worker_init="echo 'Layer 4: Decorator init'",
 )
 def show_config_layers():
@@ -94,14 +94,9 @@ def inspect_base_config():
 
     print("\n" + "=" * 70)
     print("Key observations:")
-    print("  - walltime: 200 (from decorator, overrode PEP 723's 100)")
     print("  - account: cis250461 (from PEP 723 base config)")
     print("  - worker_init: Contains commands from multiple layers!")
     print("=" * 70)
-
-    # Wait for result
-    result = future.result()
-    print(f"\nResult: {result}")
 
 
 @hog.harness()
@@ -138,13 +133,6 @@ def worker_init_concatenation():
     print("All commands are concatenated, not replaced!")
     print("=" * 70)
 
-    # Wait for results
-    print("\nWaiting for tasks to complete...")
-    base_result = base_future.result()
-    gpu_result = gpu_future.result()
-    print(f"Base result: {base_result}")
-    print(f"GPU result: {gpu_result}")
-
 
 @hog.harness()
 def call_time_override():
@@ -170,7 +158,7 @@ def call_time_override():
     override_future = show_config_layers.submit(
         user_endpoint_config={
             "account": "different-account",
-            "walltime": 300,
+            "walltime": "00:30:00",
             "worker_init": "echo 'Layer 5: Call-time override init'",
         }
     )
@@ -185,13 +173,6 @@ def call_time_override():
     print("Call-time config has highest priority!")
     print("But worker_init is still CONCATENATED, not replaced.")
     print("=" * 70)
-
-    # Wait for results
-    print("\nWaiting for tasks to complete...")
-    default_result = default_future.result()
-    override_result = override_future.result()
-    print(f"Default result: {default_result}")
-    print(f"Override result: {override_result}")
 
 
 @hog.harness()
@@ -214,7 +195,6 @@ Layer 1: DEFAULT_USER_CONFIG (Groundhog defaults)
 Layer 2: [tool.hog.anvil] (PEP 723 base)
          └─ endpoint: 5aafb4c1-27b2-40d8-a038-a0277611868f
          └─ account: cis250461
-         └─ walltime: 100
          └─ worker_init: "echo 'Layer 2: Base PEP 723 init'"
 
 Layer 3: [tool.hog.anvil.gpu] (PEP 723 variant) - NOT USED in this example
@@ -246,14 +226,9 @@ Layer 5.5: Automatic uv installation (always last)
     print("Final values:")
     print(f"  walltime: {future.user_endpoint_config.get('walltime')} (from Layer 5)")
     print(f"  account: {future.user_endpoint_config.get('account')} (from Layer 2)")
-    print(
-        f"  endpoint: {future.user_endpoint_config.get('endpoint')[:20]}... (from Layer 2)"
-    )
+    print(f"  endpoint: {future.endpoint}... (from Layer 2)")
     print("  worker_init: <all 4 layers concatenated>")
     print("=" * 70)
-
-    result = future.result()
-    print(f"\nResult: {result}")
 
 
 @hog.harness()
