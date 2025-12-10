@@ -22,13 +22,12 @@
 """
 Example demonstrating configuration precedence and worker_init concatenation.
 
-Groundhog merges endpoint configuration from 5 sources (later overrides earlier):
+Groundhog merges endpoint configuration from 4 sources (later overrides earlier):
 
-1. DEFAULT_USER_CONFIG - Groundhog's built-in defaults
-2. [tool.hog.<base>] - Base endpoint config from PEP 723 metadata
-3. [tool.hog.<base>.<variant>] - Variant config from PEP 723 (inherits from base)
-4. @hog.function(**config) - Decorator keyword arguments
-5. .remote(user_endpoint_config={...}) - Call-time overrides
+1. [tool.hog.<base>] - Base endpoint config from PEP 723 metadata
+2. [tool.hog.<base>.<variant>] - Variant config from PEP 723 (inherits from base)
+3. @hog.function(**config) - Decorator keyword arguments
+4. .remote(user_endpoint_config={...}) - Call-time overrides
 
 SPECIAL CASE: worker_init commands are CONCATENATED (not replaced) across all
 layers. This allows you to build up initialization commands from multiple sources.
@@ -45,9 +44,8 @@ from pprint import pprint
 
 @hog.function(
     endpoint="anvil",
-    # Layer 4: Decorator config
-    # This overrides the walltime from PEP 723 base config (100 -> 200)
-    worker_init="echo 'Layer 4: Decorator init'",
+    # Layer 3: Decorator config
+    worker_init="echo 'Layer 3: Decorator init'",
 )
 def show_config_layers():
     """Function that shows which config layers were applied."""
@@ -61,8 +59,8 @@ def show_config_layers():
 
 @hog.function(
     endpoint="anvil.gpu",  # This selects both [tool.hog.anvil] and [tool.hog.anvil.gpu]
-    # Layer 4: Decorator config
-    worker_init="echo 'Layer 4: GPU function decorator init'",
+    # Layer 3: Decorator config
+    worker_init="echo 'Layer 3: GPU function decorator init'",
 )
 def show_gpu_config():
     """Function using variant config (anvil.gpu)."""
@@ -126,23 +124,23 @@ def worker_init_concatenation():
 
     print("\n" + "=" * 70)
     print("Notice how the GPU variant includes:")
-    print("  - Layer 2 (base PEP 723)")
-    print("  - Layer 3 (variant PEP 723)")
-    print("  - Layer 4 (decorator)")
-    print("  - Layer 5.5 (automatic uv installation)")
+    print("  - Layer 1 (base PEP 723)")
+    print("  - Layer 2 (variant PEP 723)")
+    print("  - Layer 3 (decorator)")
+    print("  - Layer 4+ (automatic uv installation)")
     print("All commands are concatenated, not replaced!")
     print("=" * 70)
 
 
 @hog.harness()
 def call_time_override():
-    """Demonstrate call-time config overrides (Layer 5).
+    """Demonstrate call-time config overrides (Layer 4).
 
     Call-time overrides are the highest priority and can override
     settings from all other layers.
     """
     print("\n" + "=" * 70)
-    print("CALL-TIME OVERRIDES (Layer 5)")
+    print("CALL-TIME OVERRIDES (Layer 4)")
     print("=" * 70)
 
     # Submit with default config
@@ -159,7 +157,7 @@ def call_time_override():
         user_endpoint_config={
             "account": "different-account",
             "walltime": "00:30:00",
-            "worker_init": "echo 'Layer 5: Call-time override init'",
+            "worker_init": "echo 'Layer 4: Call-time override init'",
         }
     )
     print(f"  account: {override_future.user_endpoint_config.get('account')}")
@@ -176,45 +174,41 @@ def call_time_override():
 
 
 @hog.harness()
-def all_five_layers():
-    """Demonstrate all 5 configuration layers in action.
+def all_four_layers():
+    """Demonstrate all 4 configuration layers in action.
 
-    This shows the complete precedence chain from defaults through
+    This shows the complete precedence chain from PEP 723 metadata through
     call-time overrides.
     """
     print("\n" + "=" * 70)
-    print("ALL 5 CONFIGURATION LAYERS")
+    print("ALL 4 CONFIGURATION LAYERS")
     print("=" * 70)
 
     print("""
 Configuration sources (later overrides earlier):
 
-Layer 1: DEFAULT_USER_CONFIG (Groundhog defaults)
-         └─ walltime: 60, endpoint: None, account: None, ...
-
-Layer 2: [tool.hog.anvil] (PEP 723 base)
+Layer 1: [tool.hog.anvil] (PEP 723 base)
          └─ endpoint: 5aafb4c1-27b2-40d8-a038-a0277611868f
          └─ account: cis250461
-         └─ worker_init: "echo 'Layer 2: Base PEP 723 init'"
+         └─ worker_init: "echo 'Layer 1: Base PEP 723 init'"
 
-Layer 3: [tool.hog.anvil.gpu] (PEP 723 variant) - NOT USED in this example
+Layer 2: [tool.hog.anvil.gpu] (PEP 723 variant) - NOT USED in this example
 
-Layer 4: @hog.function(walltime=200, worker_init=...)
-         └─ walltime: 200 (overrides Layer 2's 100)
-         └─ worker_init: "echo 'Layer 4: Decorator init'" (concatenated)
+Layer 3: @hog.function(worker_init=...)
+         └─ worker_init: "echo 'Layer 3: Decorator init'" (concatenated)
 
-Layer 5: .submit(user_endpoint_config={...})
-         └─ walltime: 300 (overrides Layer 4's 200)
-         └─ worker_init: "echo 'Layer 5: Call-time'" (concatenated)
+Layer 4: .submit(user_endpoint_config={...})
+         └─ walltime: 300
+         └─ worker_init: "echo 'Layer 4: Call-time'" (concatenated)
 
-Layer 5.5: Automatic uv installation (always last)
+Layer 4+: Automatic uv installation (always last)
          └─ worker_init: "pip show -qq uv || pip install uv" (concatenated)
     """)
 
     future = show_config_layers.submit(
         user_endpoint_config={
             "walltime": 300,
-            "worker_init": "echo 'Layer 5: Call-time override'",
+            "worker_init": "echo 'Layer 4: Call-time override'",
         }
     )
 
@@ -224,10 +218,10 @@ Layer 5.5: Automatic uv installation (always last)
 
     print("\n" + "=" * 70)
     print("Final values:")
-    print(f"  walltime: {future.user_endpoint_config.get('walltime')} (from Layer 5)")
-    print(f"  account: {future.user_endpoint_config.get('account')} (from Layer 2)")
-    print(f"  endpoint: {future.endpoint}... (from Layer 2)")
-    print("  worker_init: <all 4 layers concatenated>")
+    print(f"  walltime: {future.user_endpoint_config.get('walltime')} (from Layer 4)")
+    print(f"  account: {future.user_endpoint_config.get('account')} (from Layer 1)")
+    print(f"  endpoint: {future.endpoint}... (from Layer 1)")
+    print("  worker_init: <all layers concatenated>")
     print("=" * 70)
 
 
@@ -240,9 +234,9 @@ def main():
       - hog run configuration_precedence.py inspect_base_config
       - hog run configuration_precedence.py worker_init_concatenation
       - hog run configuration_precedence.py call_time_override
-      - hog run configuration_precedence.py all_five_layers
+      - hog run configuration_precedence.py all_four_layers
     """
     inspect_base_config()
     worker_init_concatenation()
     call_time_override()
-    all_five_layers()
+    all_four_layers()

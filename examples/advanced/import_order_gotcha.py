@@ -1,8 +1,8 @@
 """
-Example demonstrating the import order gotcha and how to fix it.
+Example demonstrating an import order gotcha and how to fix it.
 
-This script shows what happens when you:
-1. Import a groundhog script BEFORE importing groundhog itself
+This script shows:
+1. Importing a groundhog script BEFORE importing groundhog itself
 2. How to fix it with mark_import_safe()
 3. That subsequent imports work fine
 
@@ -18,11 +18,10 @@ print("=" * 60)
 print("IMPORT ORDER GOTCHA DEMONSTRATION")
 print("=" * 60)
 
-# GOTCHA: Import a groundhog script BEFORE importing groundhog
+# GOTCHA: import a groundhog script BEFORE importing groundhog
 # This means the import hook hasn't been installed yet, so the module
 # won't have __groundhog_imported__ flag set
 print("\n1. Importing hello_world module BEFORE groundhog...")
-print("   (This triggers the gotcha)")
 import hello_world
 
 # now import groundhog (so import hook gets installed)
@@ -35,7 +34,6 @@ import groundhog_hpc as hog
 print("\n3. Trying to call hello_world.local()...")
 try:
     result = hello_world.hello_world.local("Gotcha!")
-    print(f"   Unexpected success: {result}")
 except hog.errors.ModuleImportError as e:
     print(f"   Caught expected ModuleImportError: {e}")
 
