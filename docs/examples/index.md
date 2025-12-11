@@ -1,0 +1,55 @@
+# Examples
+
+This section provides practical examples demonstrating Groundhog's features and common usage patterns.
+
+## Getting Started Examples
+
+These examples cover the basics of using Groundhog:
+
+- **[Hello World](hello-world.md)** - The simplest possible Groundhog script showing basic remote execution
+- **[Dependencies](dependencies.md)** - Adding and using external packages in your remote functions
+- **[Running Locally](local.md)** - Using `.local()` to run functions in isolated local environments (without Globus Compute)
+
+## Common Patterns
+
+Examples showing how to handle typical workflows:
+
+- **[Parallel Execution](parallel-execution.md)** - Using `.submit()` for concurrent remote execution
+- **[Endpoint Configuration](configuration.md)** - Configuring multiple endpoints and switching between them
+- **[Running from Another Script](imported_function.md)** - Importing and calling Groundhog functions from other Python scripts
+
+## Advanced Examples
+
+Deep dives into more complex features:
+
+- **[Import Safety](advanced/import-safety.md)** - Understanding the import safety system and `mark_import_safe()`
+- **[Configuration Precedence](advanced/configuration-precedence.md)** - How the configuration system resolves settings
+
+## Running the Examples
+
+All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository.
+
+To run an example:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Garden-AI/groundhog.git
+   cd groundhog/examples
+   ```
+
+2. Update the endpoint configuration in the example file to match your setup
+
+3. Run with the `hog` CLI:
+   ```bash
+   hog run example_name.py
+   ```
+
+!!! tip "Interactive experimentation"
+    You can also import and call functions from these examples in a Python REPL or Jupyter notebook:
+
+    ```python
+    import groundhog_hpc as hog
+    from examples.hello_world import hello_world
+
+    result = hello_world.remote("from the REPL")
+    ```
