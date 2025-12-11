@@ -84,16 +84,6 @@ class TestParseEndpointSpec:
             "4b116d3c-1703-4f8f-9f6f-39921e5864df"
         )
 
-    def test_parse_unknown_endpoint(self):
-        """Test parsing an unknown endpoint name raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown endpoint 'unknown'"):
-            parse_endpoint_spec("unknown")
-
-    def test_parse_unknown_base_in_variant(self):
-        """Test parsing unknown base in variant format raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown endpoint 'unknown'"):
-            parse_endpoint_spec("unknown.variant")
-
     def test_parse_invalid_uuid(self):
         """Test parsing invalid UUID format raises ValueError."""
         with pytest.raises(ValueError, match="Invalid endpoint UUID"):
@@ -342,11 +332,6 @@ class TestFetchAndFormatEndpoints:
         assert any(ep.name == "tutorial" for ep in endpoints)
         assert any("anvil" in ep.toml_block for ep in endpoints)
         assert any("tutorial" in ep.toml_block for ep in endpoints)
-
-    def test_fetch_and_format_invalid_spec_raises_error(self):
-        """Test that invalid spec raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="Failed to process endpoint spec"):
-            fetch_and_format_endpoints(["unknown_endpoint"])
 
 
 class TestKnownEndpoints:

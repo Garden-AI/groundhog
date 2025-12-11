@@ -485,7 +485,7 @@ class TestPep723IntegrationRealExamples:
 
     def test_hello_world_example(self):
         """Test the updated hello_world example with PEP 723 config."""
-        example_path = Path(__file__).parent.parent / "examples" / "00_hello_world.py"
+        example_path = Path(__file__).parent.parent / "examples" / "hello_world.py"
 
         if not example_path.exists():
             pytest.skip("Example file not found")
@@ -517,9 +517,9 @@ class TestPep723IntegrationRealExamples:
         finally:
             del os.environ["GROUNDHOG_SCRIPT_PATH"]
 
-    def test_hello_gpu_example_variant(self):
-        """Test the hello_gpu example with variant configuration."""
-        example_path = Path(__file__).parent.parent / "examples" / "hello_gpu.py"
+    def test_configuration_example_variant(self):
+        """Test the configuration.py example with variant configuration."""
+        example_path = Path(__file__).parent.parent / "examples" / "configuration.py"
 
         if not example_path.exists():
             pytest.skip("Example file not found")
@@ -528,26 +528,24 @@ class TestPep723IntegrationRealExamples:
 
         try:
 
-            def hello_torch():
+            def show_gpu_config():
                 return "result"
 
-            func = Function(hello_torch, endpoint="anvil.gpu-debug")
+            func = Function(show_gpu_config, endpoint="anvil.gpu")
 
             # Set import flag (not needed for resolver tests but for consistency)
             import sys
 
-            test_module = sys.modules[hello_torch.__module__]
+            test_module = sys.modules[show_gpu_config.__module__]
             test_module.__groundhog_imported__ = True
 
             resolver = func.config_resolver
-            config = resolver.resolve(
-                endpoint_name="anvil.gpu-debug", decorator_config={}
-            )
+            config = resolver.resolve(endpoint_name="anvil.gpu", decorator_config={})
 
             # Should load base + variant config
             assert config["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
-            assert config["account"] == "cis250461-gpu"
-            assert config["qos"] == "gpu"
+            assert config["account"] == "cis250461"  # From base
+            assert config["qos"] == "gpu"  # From variant
 
             # Variant-specific fields
             assert config["partition"] == "gpu-debug"
