@@ -404,6 +404,114 @@ import groundhog_hpc as hog
 class TestPep723IntegrationRuntimeEndpointSwitch:
     """Test runtime endpoint switching with PEP 723."""
 
+    def test_runtime_endpoint_switch_between_base_endpoints(self):
+        """Test switching between different base endpoints at runtime."""
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "anvil-account"
+# qos = "cpu"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "polaris-account"
+# queue = "debug"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            os.environ["GROUNDHOG_SCRIPT_PATH"] = script_path
+
+            def test_func():
+                return "result"
+
+            # Decorator uses 'anvil' as default
+            func = Function(test_func, endpoint="anvil")
+
+            # Set import flag to allow remote execution
+            import sys
+
+            test_module = sys.modules[test_func.__module__]
+            test_module.__groundhog_imported__ = True
+
+            mock_shell_func = MagicMock()
+            mock_future = MagicMock()
+
+            # Mock schema that includes all fields we're testing
+            mock_schema = {
+                "properties": {
+                    "account": {"type": "string"},
+                    "qos": {"type": "string"},
+                    "queue": {"type": "string"},
+                }
+            }
+
+            with patch(
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_func,
+            ):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    with patch(
+                        "groundhog_hpc.compute.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # First submission uses default 'anvil' endpoint
+                        func.submit()
+
+            # Verify first submission used anvil config
+            first_call_kwargs = mock_submit.call_args_list[0][1]
+            first_config = first_call_kwargs["user_endpoint_config"]
+            first_endpoint = mock_submit.call_args_list[0][0][0]
+
+            assert str(first_endpoint) == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+            assert first_config["account"] == "anvil-account"
+            assert first_config["qos"] == "cpu"
+
+            # Reset mock
+            mock_submit.reset_mock()
+
+            with patch(
+                "groundhog_hpc.function.script_to_submittable",
+                return_value=mock_shell_func,
+            ):
+                with patch(
+                    "groundhog_hpc.function.submit_to_executor",
+                    return_value=mock_future,
+                ) as mock_submit:
+                    with patch(
+                        "groundhog_hpc.compute.get_endpoint_schema",
+                        return_value=mock_schema,
+                    ):
+                        # Switch to 'polaris' endpoint at call time
+                        func.submit(endpoint="polaris")
+
+            # Verify second submission used polaris config
+            second_call_kwargs = mock_submit.call_args_list[0][1]
+            second_config = second_call_kwargs["user_endpoint_config"]
+            second_endpoint = mock_submit.call_args_list[0][0][0]
+
+            assert str(second_endpoint) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            assert second_config["account"] == "polaris-account"
+            assert second_config["queue"] == "debug"
+            # Polaris config should not have anvil-specific fields
+            assert "qos" not in second_config
+
+        finally:
+            Path(script_path).unlink()
+            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+
     def test_runtime_endpoint_switch_to_variant(self):
         """Test switching to GPU variant at runtime."""
         script_content = """# /// script

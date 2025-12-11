@@ -37,6 +37,39 @@ def compute():
 
 The function uses all settings from `[tool.hog.anvil]`: the endpoint UUID, account, and QoS.
 
+## Multiple Base Endpoints
+
+Define multiple HPC systems in your script and switch between them:
+
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "cis250461"
+# qos = "cpu"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "my-polaris-account"
+# queue = "debug"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function(endpoint="anvil")
+def process_data():
+    return "Running on Anvil"
+
+# Switch endpoint at call time
+result1 = process_data.remote()  # Uses anvil
+result2 = process_data.remote(endpoint="polaris")  # Switches to polaris
+```
+
+Each base endpoint has completely independent configuration. Switching endpoints at call time allows you to run the same function on different systems without changing the decorator.
+
 ## Variants for Specialized Configs
 
 Create variants for different resource requirements:
@@ -86,7 +119,7 @@ This function uses all settings from `[tool.hog.anvil]` except `walltime`, which
 Override settings when calling the function:
 
 ```python
-result = quick_task.remote(
+result = quick_task.remote(  #  (1)!
     user_endpoint_config={
         "account": "different-account",
         "walltime": "00:30:00",
@@ -94,9 +127,11 @@ result = quick_task.remote(
 )
 ```
 
-Call-time config has highest priority. This call uses `different-account` and 30 minutes for walltime.
+1. Because `quick_task` was decorated with `endpoint="anvil"`, this call will use anvil's `endpoint` and `qos` default values; only `account` and `walltime` are overriden.
 
-## The worker_init Special Case
+Call-time config has highest priority. This call runs as `"different-account"` and has a 30 minute walltime instead of 10.
+
+## The `worker_init` Special Case
 
 Unlike other settings, `worker_init` commands are concatenated across all layers:
 
@@ -126,8 +161,10 @@ The final `worker_init` executed on the remote endpoint contains:
 module load python
 export MY_VAR=value
 echo 'starting job'
-pip show -qq uv || pip install uv || true  # Groundhog adds this automatically
+pip show -qq uv || pip install uv || true # (1)!
 ```
+
+1. Groundhog adds this automatically, just in case `uv` isn't present in the remote environment to bootstrap the groundhog runner. If you or your endpoint administrator could ensure `uv` is available for groundhog, your sailing will be smoother ⛵️🦫.
 
 This allows you to build up initialization commands from multiple sources.
 
@@ -150,6 +187,7 @@ The [`examples/configuration.py`](https://github.com/Garden-AI/groundhog/blob/ma
 - Configuration precedence
 - Variant inheritance
 - The `worker_init` concatenation behavior
+- Switching between multiple base endpoints
 - Inspecting resolved config
 
 Run it with:
@@ -164,6 +202,7 @@ Or run specific demonstrations:
 hog run examples/configuration.py inspect_base_config
 hog run examples/configuration.py worker_init_concatenation
 hog run examples/configuration.py call_time_override
+hog run examples/configuration.py multiple_base_endpoints
 ```
 
 The script includes detailed output showing how each layer contributes to the final configuration.

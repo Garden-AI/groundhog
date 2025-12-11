@@ -18,6 +18,12 @@
 # scheduler_options = "#SBATCH --gpus-per-node=1"
 # worker_init = "echo 'Layer 3: GPU variant init'\nmodule load cuda/12.0"
 #
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "my-polaris-account"
+# queue = "debug"
+# worker_init = "echo 'Layer 2: Polaris base init'\nmodule load python"
+#
 # ///
 """
 Example demonstrating configuration precedence and worker_init concatenation.
@@ -38,8 +44,9 @@ This example shows:
 - How to inspect the resolved config via GroundhogFuture.user_endpoint_config
 """
 
-import groundhog_hpc as hog
 from pprint import pprint
+
+import groundhog_hpc as hog
 
 
 @hog.function(
@@ -226,6 +233,50 @@ Layer 4+: Automatic uv installation (always last)
 
 
 @hog.harness()
+def multiple_base_endpoints():
+    """Demonstrate switching between multiple base endpoints.
+
+    This shows how you can define multiple HPC systems in your PEP 723
+    metadata and switch between them at call time, allowing you to run
+    the same function on different systems without changing the decorator.
+    """
+    print("\n" + "=" * 70)
+    print("SWITCHING BETWEEN MULTIPLE BASE ENDPOINTS")
+    print("=" * 70)
+
+    print("""
+This script defines two base endpoints:
+  - anvil: Uses SLURM scheduler with 'qos' field
+  - polaris: Uses PBS scheduler with 'queue' field
+
+We can switch between them at call time using the 'endpoint' parameter.
+    """)
+
+    # Submit to anvil (default)
+    print("\n1. Submit to Anvil (default endpoint):")
+    print("-" * 70)
+    anvil_future = show_config_layers.submit()
+    print(f"  endpoint: {anvil_future.endpoint}")
+    print(f"  account: {anvil_future.user_endpoint_config.get('account')}")
+    print(f"  qos: {anvil_future.user_endpoint_config.get('qos')}")
+
+    # Switch to polaris at call time
+    print("\n2. Switch to Polaris at call time:")
+    print("-" * 70)
+    polaris_future = show_config_layers.submit(endpoint="polaris")
+    print(f"  endpoint: {polaris_future.endpoint}")
+    print(f"  account: {polaris_future.user_endpoint_config.get('account')}")
+    print(f"  queue: {polaris_future.user_endpoint_config.get('queue')}")
+
+    print("\n" + "=" * 70)
+    print("Notice:")
+    print("  - Each endpoint has completely independent configuration")
+    print("  - Anvil uses 'qos', Polaris uses 'queue'")
+    print("  - Same function, different systems!")
+    print("=" * 70)
+
+
+@hog.harness()
 def main():
     """Run all configuration examples.
 
@@ -235,8 +286,10 @@ def main():
       - hog run configuration.py worker_init_concatenation
       - hog run configuration.py call_time_override
       - hog run configuration.py all_four_layers
+      - hog run configuration.py multiple_base_endpoints
     """
     inspect_base_config()
     worker_init_concatenation()
     call_time_override()
     all_four_layers()
+    multiple_base_endpoints()

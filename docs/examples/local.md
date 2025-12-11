@@ -130,4 +130,3 @@ Using .local() - runs in subprocess with numpy installed:
 
 - **[Parallel Execution](parallel-execution.md)** - Run multiple functions concurrently with `.submit()`
 - **[Configuration](configuration.md)** - Configure multiple endpoints
-- **[Execution Modes](../concepts/execution-modes.md)** - Deep dive into all four execution modes

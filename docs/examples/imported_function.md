@@ -121,7 +121,7 @@ uv run python importing_functions.py
 
 The script prints detailed output showing each step and the error messages you'll encounter.
 
-## Best Practice
+## TL;DR: Best Practice
 
 **Always import `groundhog_hpc` before importing any modules that contain Groundhog functions.**
 
