@@ -96,7 +96,6 @@ nav:
     - Hello World: examples/hello-world.md
     - Dependencies: examples/dependencies.md
     - Parallel Execution: examples/parallel-execution.md
-    - Error Handling: examples/error-handling.md
     - Endpoint Configuration: examples/configuration.md
     - Running Locally: examples/local.md
     - Running from Another Script: examples/imported_function.md
