@@ -9,6 +9,7 @@ These examples cover the basics of using Groundhog:
 - **[Hello World](hello-world.md)** - The simplest possible Groundhog script showing basic remote execution
 - **[Dependencies](dependencies.md)** - Adding and using external packages in your remote functions
 - **[Running Locally](local.md)** - Using `.local()` to run functions in isolated local environments (without Globus Compute)
+- **[Organizing with Classes](methods.md)** - Using `@hog.method()` to group related functions into classes
 
 ## Common Patterns
 
@@ -20,7 +21,7 @@ Examples showing how to handle typical workflows:
 
 ## Running the Examples
 
-All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository, and should be runnable with minimal modification (e.g. configuring your own endpoint/account)
+All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository, and should be runnable with minimal modification (e.g. configuring your own endpoint/account etc)
 
 To run an example:
 
@@ -37,7 +38,7 @@ To run an example:
    hog run example_name.py
    ```
 
-!!! tip "Interactive experimentation"
+!!! tip "Kick the tires"
     You can also import and call functions from these examples in a Python REPL or Jupyter notebook:
 
     ```python

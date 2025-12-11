@@ -53,7 +53,7 @@ The comment block at the top uses [PEP 723](https://peps.python.org/pep-0723/) i
 
 - **`requires-python`**: Python version requirement for remote execution
 - **`dependencies`**: Python packages needed by your function (managed by uv)
-- **`[tool.uv]`**: Optional configuration read by `uv run` when creating the ephemeral remote environment (see also: [uv reference](https://docs.astral.sh/uv/reference/settings/))
+- **`[tool.uv]`**: Optional configuration read by `uv run` when creating the ephemeral remote environment (see also: [full uv settings reference](https://docs.astral.sh/uv/reference/settings/))
 - **`[tool.hog.my-endpoint]`**: Endpoint configuration with HPC-specific settings like account, partition, walltime, etc.
 
 ### Functions and harnesses

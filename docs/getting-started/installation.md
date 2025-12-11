@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.10 or later**
+- **Python 3.10+**
 - **Access to a Globus Compute endpoint** - You'll need access to an HPC cluster or remote compute resource running a Globus Compute endpoint. If you don't have one configured, see the [Globus Compute documentation](https://funcx.readthedocs.io/) for setup instructions.
 
 ## Installing with uv (recommended)
@@ -53,7 +53,7 @@ You can also install with pip, though this is not recommended for most users:
 pip install groundhog-hpc
 ```
 
-!!! warning "pip installation caveat"
+!!! warning
     Installing with pip into your global Python environment can cause dependency conflicts. Consider using a virtual environment or the uv tool installation method instead.
 
 ## Installing from source
