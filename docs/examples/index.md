@@ -15,19 +15,12 @@ These examples cover the basics of using Groundhog:
 Examples showing how to handle typical workflows:
 
 - **[Parallel Execution](parallel-execution.md)** - Using `.submit()` for concurrent remote execution
-- **[Endpoint Configuration](configuration.md)** - Configuring multiple endpoints and switching between them
-- **[Running from Another Script](imported_function.md)** - Importing and calling Groundhog functions from other Python scripts
-
-## Advanced Examples
-
-Deep dives into more complex features:
-
-- **[Import Safety](advanced/import-safety.md)** - Understanding the import safety system and `mark_import_safe()`
-- **[Configuration Precedence](advanced/configuration-precedence.md)** - How the configuration system resolves settings
+- **[Endpoint Configuration](configuration.md)** - How the configuration system merges settings from multiple sources (PEP 723, decorators, call-time overrides)
+- **[Importing Groundhog Functions](imported_function.md)** - Calling Groundhog functions from regular Python scripts, REPLs, and notebooks (includes import safety and `mark_import_safe()`)
 
 ## Running the Examples
 
-All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository.
+All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository, and should be runnable with minimal modification (e.g. configuring your own endpoint/account)
 
 To run an example:
 
@@ -49,7 +42,7 @@ To run an example:
 
     ```python
     import groundhog_hpc as hog
-    from examples.hello_world import hello_world
+    from hello_world import hello_world
 
     result = hello_world.remote("from the REPL")
     ```

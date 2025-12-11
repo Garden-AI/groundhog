@@ -229,12 +229,12 @@ Layer 4+: Automatic uv installation (always last)
 def main():
     """Run all configuration examples.
 
-    Run with: hog run configuration_precedence.py
+    Run with: hog run configuration.py
     Or run individual harnesses:
-      - hog run configuration_precedence.py inspect_base_config
-      - hog run configuration_precedence.py worker_init_concatenation
-      - hog run configuration_precedence.py call_time_override
-      - hog run configuration_precedence.py all_four_layers
+      - hog run configuration.py inspect_base_config
+      - hog run configuration.py worker_init_concatenation
+      - hog run configuration.py call_time_override
+      - hog run configuration.py all_four_layers
     """
     inspect_base_config()
     worker_init_concatenation()

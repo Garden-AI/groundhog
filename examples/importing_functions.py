@@ -1,12 +1,12 @@
 """
-Example demonstrating an import order gotcha and how to fix it.
+Example demonstrating how to import and call Groundhog functions from regular Python scripts.
 
 This script shows:
 1. Importing a groundhog script BEFORE importing groundhog itself
 2. How to fix it with mark_import_safe()
 3. That subsequent imports work fine
 
-Run with: uv run python import_order_gotcha.py
+Run with: uv run python importing_functions.py
 (from the examples/ directory)
 
 NOTE: This is NOT a groundhog script (no @hog.function or @hog.harness), it's a

@@ -2,6 +2,24 @@
 
 This example demonstrates the difference between sequential execution with `.remote()` and parallel execution with `.submit()`.
 
+## When to Use Each Method
+
+**Use `.remote()` when:**
+
+- You need the result immediately to continue execution
+- You enjoy the console display:
+
+(`| <function> | <task id> | <status> | <elapsed> | ☀️🦫️`)
+
+- Tasks depend on results from previous tasks
+- You want simpler code without managing futures
+
+**Use `.submit()` when:**
+
+- You have multiple independent tasks that can run concurrently
+- You don't care for the console display
+- You need access to the `GroundhogFuture` object
+
 ## Full Example
 
 ```python title="parallel_execution.py"
@@ -56,25 +74,6 @@ def main():
 
 3. Calling `.result()` on each future blocks until that task completes. Since all tasks run in parallel, total time is ~2 seconds.
 
-## When to Use Each Method
-
-
-**Use `.remote()` when:**
-
-- You need the result immediately to continue execution
-- You enjoy the console display:
-
-(`| <function> | <task id> | <status> | <elapsed> | ☀️🦫️`)
-
-- Tasks depend on results from previous tasks
-- You want simpler code without managing futures
-
-**Use `.submit()` when:**
-
-- You have multiple independent tasks that can run concurrently
-- You don't care for the console display
-- You need access to the `GroundhogFuture` object
-
 ## Working with GroundhogFutures
 
 ```python
@@ -101,7 +100,7 @@ print(future.shell_result.stderr)
 ## Running the Example
 
 ```bash
-hog run parallel_execution.py
+hog run examples/parallel_execution.py
 ```
 
 Expected output:

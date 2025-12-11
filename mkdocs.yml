@@ -98,10 +98,7 @@ nav:
     - Parallel Execution: examples/parallel-execution.md
     - Endpoint Configuration: examples/configuration.md
     - Running Locally: examples/local.md
-    - Running from Another Script: examples/imported_function.md
-    - Advanced:
-      - Import Safety: examples/advanced/import-safety.md
-      - Configuration Precedence: examples/advanced/configuration-precedence.md
+    - Importing Groundhog Functions: examples/imported_function.md
   - Concepts:
     - Execution Modes: concepts/execution-modes.md
     - Remote Execution Flow: concepts/remote-execution.md

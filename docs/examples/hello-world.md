@@ -48,7 +48,7 @@ def main():
 
 3. Optional, but highly recommended for reproducibility, restricting `uv` to only install package versions released before the timestamp.
 
-## Breakdown
+## Anatomy of a Groundhog (Script):
 
 ### PEP 723 Metadata
 
