@@ -35,14 +35,15 @@ result = my_func.remote()
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module"] = module
 
-        # .remote() calls .submit() internally, so error will mention "submit"
-        with pytest.raises(
-            ModuleImportError, match="Cannot call.*during module import"
-        ):
-            spec.loader.exec_module(module)
-
-        # Cleanup
-        del sys.modules["test_module"]
+        try:
+            # .remote() calls .submit() internally, so error will mention "submit"
+            with pytest.raises(
+                ModuleImportError, match="Cannot call.*during module import"
+            ):
+                spec.loader.exec_module(module)
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module", None)
 
     def test_module_level_local_raises_error(self, tmp_path):
         """Test that module-level .local() calls raise RuntimeError."""
@@ -68,13 +69,14 @@ result = my_func.local()
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module2"] = module
 
-        with pytest.raises(
-            ModuleImportError, match="Cannot call.*local.*during module import"
-        ):
-            spec.loader.exec_module(module)
-
-        # Cleanup
-        del sys.modules["test_module2"]
+        try:
+            with pytest.raises(
+                ModuleImportError, match="Cannot call.*local.*during module import"
+            ):
+                spec.loader.exec_module(module)
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module2", None)
 
     def test_module_level_submit_raises_error(self, tmp_path):
         """Test that module-level .submit() calls raise RuntimeError."""
@@ -100,13 +102,14 @@ future = my_func.submit()
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module3"] = module
 
-        with pytest.raises(
-            ModuleImportError, match="Cannot call.*submit.*during module import"
-        ):
-            spec.loader.exec_module(module)
-
-        # Cleanup
-        del sys.modules["test_module3"]
+        try:
+            with pytest.raises(
+                ModuleImportError, match="Cannot call.*submit.*during module import"
+            ):
+                spec.loader.exec_module(module)
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module3", None)
 
     def test_flag_allows_calls_after_import(self, tmp_path):
         """Test that .remote() calls work after import when flag is set."""
@@ -138,19 +141,21 @@ def call_remote():
         spec = importlib.util.spec_from_file_location("test_module4", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module4"] = module
-        spec.loader.exec_module(module)
-        module.__groundhog_imported__ = True  # Set flag after import completes
 
-        # Now calling a function that uses .remote() should work (flag is set)
-        # It may fail for other reasons but shouldn't raise "during module import" error
         try:
-            module.call_remote()
-        except RuntimeError as e:
-            # Should not be an import error
-            assert "during module import" not in str(e)
+            spec.loader.exec_module(module)
+            module.__groundhog_imported__ = True  # Set flag after import completes
 
-        # Cleanup
-        del sys.modules["test_module4"]
+            # Now calling a function that uses .remote() should work (flag is set)
+            # It may fail for other reasons but shouldn't raise "during module import" error
+            try:
+                module.call_remote()
+            except RuntimeError as e:
+                # Should not be an import error
+                assert "during module import" not in str(e)
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module4", None)
 
 
 class TestPicklingCustomClasses:
@@ -183,23 +188,25 @@ def create_custom_object(value):
         spec = importlib.util.spec_from_file_location("user_script", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["user_script"] = module
-        spec.loader.exec_module(module)
-        module.__groundhog_imported__ = True
 
-        # Create an instance of the custom class
-        obj = module.MyCustomClass(42)
+        try:
+            spec.loader.exec_module(module)
+            module.__groundhog_imported__ = True
 
-        # Test that it can be pickled and unpickled
-        import pickle
+            # Create an instance of the custom class
+            obj = module.MyCustomClass(42)
 
-        pickled = pickle.dumps(obj)
-        unpickled = pickle.loads(pickled)
+            # Test that it can be pickled and unpickled
+            import pickle
 
-        assert unpickled == obj
-        assert unpickled.value == 42
+            pickled = pickle.dumps(obj)
+            unpickled = pickle.loads(pickled)
 
-        # Cleanup
-        del sys.modules["user_script"]
+            assert unpickled == obj
+            assert unpickled.value == 42
+        finally:
+            # Cleanup
+            sys.modules.pop("user_script", None)
 
     def test_custom_class_module_name_consistency(self, tmp_path):
         """Test that custom classes have consistent module names for pickle."""
@@ -216,32 +223,34 @@ class MyClass:
         script_path.write_text(script_content)
 
         # Import as module (like groundhog does)
-        spec = importlib.util.spec_from_file_location("user_script", script_path)
+        spec = importlib.util.spec_from_file_location("user_script2", script_path)
         module = importlib.util.module_from_spec(spec)
-        sys.modules["user_script"] = module
-        spec.loader.exec_module(module)
+        sys.modules["user_script2"] = module
 
-        # Create instance
-        obj = module.MyClass(10)
+        try:
+            spec.loader.exec_module(module)
 
-        # Check the module name
-        assert obj.__class__.__module__ == "user_script"
+            # Create instance
+            obj = module.MyClass(10)
 
-        # Pickle and check the module name is preserved
-        import pickle
+            # Check the module name
+            assert obj.__class__.__module__ == "user_script2"
 
-        pickled = pickle.dumps(obj)
+            # Pickle and check the module name is preserved
+            import pickle
 
-        # The pickled data should contain the module name "user_script"
-        assert b"user_script" in pickled
+            pickled = pickle.dumps(obj)
 
-        # Should be able to unpickle (module is still in sys.modules)
-        unpickled = pickle.loads(pickled)
-        assert unpickled.x == 10
-        assert unpickled.__class__.__module__ == "user_script"
+            # The pickled data should contain the module name "user_script2"
+            assert b"user_script2" in pickled
 
-        # Cleanup
-        del sys.modules["user_script"]
+            # Should be able to unpickle (module is still in sys.modules)
+            unpickled = pickle.loads(pickled)
+            assert unpickled.x == 10
+            assert unpickled.__class__.__module__ == "user_script2"
+        finally:
+            # Cleanup
+            sys.modules.pop("user_script2", None)
 
     def test_custom_class_cross_execution_compatibility(self, tmp_path):
         """Test that classes pickled in one execution can be unpickled in another."""
@@ -261,36 +270,38 @@ class DataPoint:
 """
         script_path.write_text(script_content)
 
-        # First execution: import and pickle
-        spec1 = importlib.util.spec_from_file_location("user_script", script_path)
-        module1 = importlib.util.module_from_spec(spec1)
-        sys.modules["user_script"] = module1
-        spec1.loader.exec_module(module1)
-
-        obj1 = module1.DataPoint(1, 2)
-
         import pickle
 
-        pickled = pickle.dumps(obj1)
+        # First execution: import and pickle
+        spec1 = importlib.util.spec_from_file_location("user_script3", script_path)
+        module1 = importlib.util.module_from_spec(spec1)
+        sys.modules["user_script3"] = module1
 
-        # Clean up first execution
-        del sys.modules["user_script"]
-        del module1
+        try:
+            spec1.loader.exec_module(module1)
+            obj1 = module1.DataPoint(1, 2)
+            pickled = pickle.dumps(obj1)
+        finally:
+            # Clean up first execution
+            sys.modules.pop("user_script3", None)
+            del module1
 
         # Second execution: import again and unpickle
-        spec2 = importlib.util.spec_from_file_location("user_script", script_path)
+        spec2 = importlib.util.spec_from_file_location("user_script3", script_path)
         module2 = importlib.util.module_from_spec(spec2)
-        sys.modules["user_script"] = module2
-        spec2.loader.exec_module(module2)
+        sys.modules["user_script3"] = module2
 
-        # Should be able to unpickle with the new module
-        obj2 = pickle.loads(pickled)
-        assert obj2.x == 1
-        assert obj2.y == 2
-        assert isinstance(obj2, module2.DataPoint)
+        try:
+            spec2.loader.exec_module(module2)
 
-        # Cleanup
-        del sys.modules["user_script"]
+            # Should be able to unpickle with the new module
+            obj2 = pickle.loads(pickled)
+            assert obj2.x == 1
+            assert obj2.y == 2
+            assert isinstance(obj2, module2.DataPoint)
+        finally:
+            # Cleanup
+            sys.modules.pop("user_script3", None)
 
 
 class TestMainBlockBehavior:
@@ -321,14 +332,16 @@ if __name__ == "__main__":
         spec = importlib.util.spec_from_file_location("test_module5", script_path)
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module5"] = module
-        spec.loader.exec_module(module)
-        module.__groundhog_imported__ = True
 
-        # __main__ block should NOT have executed
-        assert module.main_executed is False
+        try:
+            spec.loader.exec_module(module)
+            module.__groundhog_imported__ = True
 
-        # Cleanup
-        del sys.modules["test_module5"]
+            # __main__ block should NOT have executed
+            assert module.main_executed is False
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module5", None)
 
     def test_main_block_runs_on_direct_execution(self, tmp_path):
         """Test that __main__ blocks DO execute during direct execution."""
@@ -349,11 +362,14 @@ if __name__ == "__main__":
 """
         script_path.write_text(script_content)
 
-        # Execute the script directly
+        # Execute the script directly with a timeout
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, str(script_path)], capture_output=True, text=True
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,  # 10 second timeout to prevent hanging
         )
 
         # __main__ block should have executed
@@ -385,20 +401,21 @@ if __name__ == "__main__":
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_module6"] = module
 
-        # Capture stdout to check if main block runs
-        import contextlib
-        import io
+        try:
+            # Capture stdout to check if main block runs
+            import contextlib
+            import io
 
-        f = io.StringIO()
-        with contextlib.redirect_stdout(f):
-            spec.loader.exec_module(module)
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f):
+                spec.loader.exec_module(module)
 
-        module.__groundhog_imported__ = True
+            module.__groundhog_imported__ = True
 
-        output = f.getvalue()
+            output = f.getvalue()
 
-        # __main__ block should NOT have executed during import
-        assert "MAIN_BLOCK_REACHED" not in output
-
-        # Cleanup
-        del sys.modules["test_module6"]
+            # __main__ block should NOT have executed during import
+            assert "MAIN_BLOCK_REACHED" not in output
+        finally:
+            # Cleanup
+            sys.modules.pop("test_module6", None)

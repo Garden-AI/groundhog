@@ -295,10 +295,19 @@ class TestFormatEndpointConfigToToml:
 class TestFetchAndFormatEndpoints:
     """Test end-to-end fetch and format pipeline."""
 
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_fetch_and_format_known_endpoint(self, mock_get_comments, mock_get_display):
+    def test_fetch_and_format_known_endpoint(
+        self, mock_get_comments, mock_get_display, mock_get_schema
+    ):
         """Test fetching and formatting a known endpoint."""
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "account": {"type": "string"},
+            }
+        }
         mock_get_display.return_value = None
         mock_get_comments.return_value = {
             "account": "Type: string. Your allocation account",
@@ -316,12 +325,19 @@ class TestFetchAndFormatEndpoints:
         assert "# # account =" in endpoints[0].toml_block
         assert "Type: string. Your allocation account" in endpoints[0].toml_block
 
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
     def test_fetch_and_format_multiple_endpoints(
-        self, mock_get_comments, mock_get_display
+        self, mock_get_comments, mock_get_display, mock_get_schema
     ):
         """Test fetching and formatting multiple endpoints."""
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "account": {"type": "string"},
+            }
+        }
         mock_get_display.return_value = None
         mock_get_comments.return_value = {}
 
