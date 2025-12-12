@@ -13,13 +13,19 @@ Groundhog automatically manages remote environments (powered by [uv](https://doc
 
 ```python
 # /// script
-# requires-python = ">=3.10"
-# dependencies = ["numpy"]
+# requires-python = ">=3.12,<3.13"
+# dependencies = [
+#     numpy,
+# ]
+#
+# [tool.hog.tutorial]  # Globus Compute Tutorial Endpoint
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
 # ///
 
 import groundhog_hpc as hog
 
-@hog.function(endpoint="your-endpoint-id", account="your-account")
+@hog.function(endpoint='tutorial') # points to [tool.hog.tutorial] config
 def compute(x: int) -> int:
     import numpy as np
     return int(np.sum(range(x)))
@@ -34,4 +40,4 @@ Run with: `hog run myscript.py main`
 
 ---
 
-see also: [examples/README.md](./examples/README.md)
+see also: [examples](https://groundhog-hpc.readthedocs.io/en/latest/examples/)
