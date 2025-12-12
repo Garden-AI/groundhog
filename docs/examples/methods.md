@@ -19,7 +19,8 @@ class Statistics:
         return float(np.std(numbers))
 ```
 
-Methods don't receive `self` - they work like standalone functions organized into a class.
+!!! note
+    Groundhog methods have `@staticmethod` semantics -- i.e. they don't receive `self` or `cls`, behaving just like standalone functions, except organized into a class.
 
 ## Calling Methods
 
@@ -42,7 +43,7 @@ Use `@hog.method()` when you want to organize related functions into logical gro
 
 ## Complete Example
 
-The [`examples/methods.py`](https://github.com/Garden-AI/groundhog/blob/main/examples/methods.py) script demonstrates organizing statistical functions into a `Statistics` class.
+The [`examples/methods.py`](https://github.com/Garden-AI/groundhog/blob/main/examples/methods.py) script demonstrates a `Statistics` class with groundhog methods.
 
 Run it with:
 

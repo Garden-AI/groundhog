@@ -1,6 +1,6 @@
 # Running Locally
 
-Use `.local()` to run functions in isolated local subprocesses with dependencies automatically installed by uv. This is useful when you need packages that aren't in your current environment.
+Use `.local()` to run functions in isolated local subprocesses with dependencies automatically installed by uv.
 
 ## Full Example
 
