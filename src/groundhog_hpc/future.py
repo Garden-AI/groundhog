@@ -93,7 +93,7 @@ class GroundhogFuture(Future):
 
     @property
     def task_id(self) -> str | None:
-        return self._original_future.task_id
+        return self._original_future.task_id  # type: ignore[attr-defined]
 
 
 def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:

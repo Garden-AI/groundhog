@@ -1,6 +1,7 @@
 """Shared fixtures and test utilities for Groundhog tests."""
 
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -64,3 +65,23 @@ def main():
 def mock_endpoint_uuid():
     """A valid UUID for testing."""
     return "12345678-1234-1234-1234-123456789abc"
+
+
+@pytest.fixture(autouse=True)
+def mock_globus_client():
+    """Mock Globus Compute client to prevent network calls during tests.
+
+    This prevents the 20+ second timeout when running tests offline.
+    """
+    with patch("groundhog_hpc.compute._get_compute_client") as mock_client:
+        # Create a mock client that returns sensible defaults
+        client = MagicMock()
+        client.get_endpoint_metadata.return_value = {
+            "user_config_schema": {"properties": {}}
+        }
+        client.get_task.return_value = {
+            "status": "success",
+            "exception": None,
+        }
+        mock_client.return_value = client
+        yield mock_client

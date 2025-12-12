@@ -1,0 +1,113 @@
+site_name: Groundhog
+site_description: Iterative HPC function development
+site_author: Owen Price Skelly
+site_url: https://groundhog-hpc.readthedocs.io/
+
+repo_name: Garden-AI/groundhog
+repo_url: https://github.com/Garden-AI/groundhog
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: brown
+      accent: orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: brown
+      accent: orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Garden-AI/groundhog
+  version:
+    provider: mike
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+  - Examples:
+    - Overview: examples/index.md
+    - Hello World: examples/hello-world.md
+    - Dependencies: examples/dependencies.md
+    - Running Locally: examples/local.md
+    - Organizing with Classes: examples/methods.md
+    - Parallel Execution: examples/parallel-execution.md
+    - Endpoint Configuration: examples/configuration.md
+    - Importing Groundhog Functions: examples/imported_function.md
+  - Concepts:
+    - PEP 723 Metadata: concepts/pep723.md
+    - Remote Execution Flow: concepts/remote-execution.md
+    - Serialization: concepts/serialization.md
+  # - Reference:
+  #   - CLI Commands: api/cli.md
+  #   - Environment Variables: api/environment_variables.md
+  #   - Decorators: api/decorators.md
+  #   - Function: api/function.md
+  #   - Harness: api/harness.md
+  #   - GroundhogFuture: api/future.md

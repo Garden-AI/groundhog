@@ -1,5 +1,8 @@
 set -euo pipefail
 
+# Cleanup temporary files on exit
+trap 'rm -f {{ user_script_name }}.py {{ runner_name }}.py {{ script_name }}.in {{ script_name }}.out' EXIT
+
 if command -v uv &> /dev/null; then
     UV_BIN=$(command -v uv)
 else

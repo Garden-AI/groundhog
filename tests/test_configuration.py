@@ -741,3 +741,240 @@ import groundhog_hpc as hog
             assert "not found" in str(exc_info.value).lower()
         finally:
             Path(script_path).unlink()
+
+
+class TestConfigResolverMultipleBaseEndpoints:
+    """Test ConfigResolver with multiple distinct base endpoint configurations."""
+
+    def test_resolve_multiple_base_endpoints(self):
+        """Test that resolver can handle multiple distinct base endpoints."""
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "anvil-account"
+# qos = "cpu"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "polaris-account"
+# queue = "debug"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            # Resolve anvil endpoint
+            anvil_result = resolver.resolve(
+                endpoint_name="anvil",
+                decorator_config={},
+            )
+
+            assert anvil_result["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+            assert anvil_result["account"] == "anvil-account"
+            assert anvil_result["qos"] == "cpu"
+
+            # Resolve polaris endpoint
+            polaris_result = resolver.resolve(
+                endpoint_name="polaris",
+                decorator_config={},
+            )
+
+            assert polaris_result["endpoint"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            assert polaris_result["account"] == "polaris-account"
+            assert polaris_result["queue"] == "debug"
+
+            # Verify they are independent
+            assert anvil_result["endpoint"] != polaris_result["endpoint"]
+            assert anvil_result["account"] != polaris_result["account"]
+
+        finally:
+            Path(script_path).unlink()
+
+    def test_switch_base_endpoints_at_call_time(self):
+        """Test switching between base endpoints at call time."""
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "anvil-account"
+# qos = "cpu"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "polaris-account"
+# queue = "debug"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            # Resolve with anvil as the endpoint name
+            anvil_result = resolver.resolve(
+                endpoint_name="anvil",
+                decorator_config={"cores": 4},
+                call_time_config={"walltime": 300},
+            )
+
+            assert anvil_result["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+            assert anvil_result["account"] == "anvil-account"
+            assert anvil_result["cores"] == 4
+            assert anvil_result["walltime"] == 300
+
+            # Resolve with polaris as the endpoint name (simulates call-time switch)
+            polaris_result = resolver.resolve(
+                endpoint_name="polaris",
+                decorator_config={"cores": 4},
+                call_time_config={"walltime": 300},
+            )
+
+            assert polaris_result["endpoint"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            assert polaris_result["account"] == "polaris-account"
+            assert polaris_result["cores"] == 4
+            assert polaris_result["walltime"] == 300
+
+        finally:
+            Path(script_path).unlink()
+
+    def test_multiple_base_endpoints_with_variants(self):
+        """Test multiple base endpoints each with their own variants."""
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "anvil-account"
+# qos = "cpu"
+#
+# [tool.hog.anvil.gpu]
+# qos = "gpu"
+# partition = "gpu-debug"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "polaris-account"
+# queue = "debug"
+#
+# [tool.hog.polaris.gpu]
+# queue = "gpu"
+# scheduler_options = "#PBS -l select=1:ngpus=4"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            # Resolve anvil.gpu
+            anvil_gpu_result = resolver.resolve(
+                endpoint_name="anvil.gpu",
+                decorator_config={},
+            )
+
+            assert (
+                anvil_gpu_result["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+            )
+            assert anvil_gpu_result["account"] == "anvil-account"
+            assert anvil_gpu_result["qos"] == "gpu"
+            assert anvil_gpu_result["partition"] == "gpu-debug"
+
+            # Resolve polaris.gpu
+            polaris_gpu_result = resolver.resolve(
+                endpoint_name="polaris.gpu",
+                decorator_config={},
+            )
+
+            assert (
+                polaris_gpu_result["endpoint"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            )
+            assert polaris_gpu_result["account"] == "polaris-account"
+            assert polaris_gpu_result["queue"] == "gpu"
+            assert polaris_gpu_result["scheduler_options"] == "#PBS -l select=1:ngpus=4"
+
+            # Verify they are independent
+            assert anvil_gpu_result["endpoint"] != polaris_gpu_result["endpoint"]
+            assert "partition" in anvil_gpu_result
+            assert "partition" not in polaris_gpu_result
+            assert "scheduler_options" in polaris_gpu_result
+            assert "scheduler_options" not in anvil_gpu_result
+
+        finally:
+            Path(script_path).unlink()
+
+    def test_call_time_override_preserves_correct_base(self):
+        """Test that call-time overrides don't leak between base endpoints."""
+        script_content = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "anvil-account"
+# qos = "cpu"
+#
+# [tool.hog.polaris]
+# endpoint = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+# account = "polaris-account"
+# queue = "debug"
+# ///
+
+import groundhog_hpc as hog
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(script_content)
+            f.flush()
+            script_path = f.name
+
+        try:
+            resolver = ConfigResolver(script_path=script_path)
+
+            # Resolve polaris with call-time override
+            polaris_result = resolver.resolve(
+                endpoint_name="polaris",
+                decorator_config={},
+                call_time_config={"walltime": 1800},
+            )
+
+            # Should have polaris base config + call-time override
+            assert polaris_result["endpoint"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            assert polaris_result["account"] == "polaris-account"
+            assert polaris_result["walltime"] == 1800
+
+            # Now resolve anvil - should not have any polaris config
+            anvil_result = resolver.resolve(
+                endpoint_name="anvil",
+                decorator_config={},
+            )
+
+            assert anvil_result["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+            assert anvil_result["account"] == "anvil-account"
+            assert anvil_result["qos"] == "cpu"
+            # Should not have queue field from polaris
+            assert "queue" not in anvil_result
+
+        finally:
+            Path(script_path).unlink()

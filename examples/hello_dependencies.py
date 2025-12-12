@@ -1,70 +1,39 @@
 # /// script
-# requires-python = "==3.12.*"
+# requires-python = ">=3.12,<3.13"
 # dependencies = [
-#     "torch",
+#     "numpy",
 # ]
 #
-# [tool.hog.anvil]
-# account = "cis250223"  # Replace with your account
-# walltime = 30
+# [tool.uv]
+# exclude-newer = "2025-12-02T19:48:40Z"
 #
-# [tool.hog.anvil.gpu]
-# qos = "gpu"
-# partition = "gpu-debug"
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "cis250461"
+# requirements = ""
 # ///
 """
-Example demonstrating PEP 723 dependencies and configuration.
+Example showing how to use dependencies in remote functions.
 
-This script shows how to:
-1. Declare dependencies in PEP 723 metadata (torch)
-2. Configure endpoint settings in [tool.hog] sections
-3. Use base and variant configurations (anvil vs anvil.gpu)
-
-NOTE: groundhog-hpc is automatically installed on the remote end, no need to
-declare it in the PEP 723 dependencies.
+Declare dependencies in the PEP 723 metadata block above, then import them
+inside your remote functions. The dependencies will be installed automatically
+on the remote endpoint.
 """
-
-import json
-import os
 
 import groundhog_hpc as hog
 
 
 @hog.function(endpoint="anvil")
-def hello_environment():
-    return dict(os.environ)
+def compute_mean(numbers: list[float]) -> float:
+    """Compute the mean using numpy (declared in PEP 723 dependencies)."""
+    import numpy as np
 
-
-@hog.function(endpoint="anvil.gpu")
-def hello_torch():
-    # NOTE: we import torch inside the function because it's available on the
-    # remote endpoint (because it was declared in script metadata) but may not
-    # be available locally.
-    import torch
-
-    msg = f"Hello, cuda? {torch.cuda.is_available()=}"
-    return msg
-
-
-@hog.function(endpoint="anvil")
-def hello_hog():
-    return f"{hog.__version__=}"
+    return float(np.mean(numbers))
 
 
 @hog.harness()
-def test_env():
-    print("running locally...")
-    local_env = hello_environment()
-    print(json.dumps(local_env, indent=2))
-
-    print("running remotely...")
-    remote_env = hello_environment.remote()
-    print(json.dumps(remote_env, indent=2))
-
-    return remote_env
-
-
-@hog.harness()
-def test_deps():
-    print(hello_torch.remote())
-    print(hello_hog.remote())
+def main():
+    """Run with: hog run hello_dependencies.py"""
+    numbers = [1.0, 2.0, 3.0, 4.0, 5.0]
+    result = compute_mean.remote(numbers)
+    print(f"Mean of {numbers} is {result}")

@@ -25,6 +25,7 @@ class TestParseEndpointSpec:
         assert spec.name == "anvil"
         assert spec.variant is None
         assert spec.uuid == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert spec.base_defaults == {"requirements": ""}
         assert spec.variant_defaults == {}
 
     def test_parse_known_variant(self):
@@ -34,6 +35,7 @@ class TestParseEndpointSpec:
         assert spec.name == "anvil"
         assert spec.variant == "gpu"
         assert spec.uuid == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert spec.base_defaults == {"requirements": ""}
         assert "partition" in spec.variant_defaults
         assert spec.variant_defaults["partition"] == "gpu-debug"
 
@@ -44,6 +46,7 @@ class TestParseEndpointSpec:
         assert spec.name == "anvil"
         assert spec.variant == "unknown"
         assert spec.uuid == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert spec.base_defaults == {"requirements": ""}
         assert spec.variant_defaults == {}
 
     def test_parse_custom_name_with_uuid(self):
@@ -81,16 +84,6 @@ class TestParseEndpointSpec:
             "4b116d3c-1703-4f8f-9f6f-39921e5864df"
         )
 
-    def test_parse_unknown_endpoint(self):
-        """Test parsing an unknown endpoint name raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown endpoint 'unknown'"):
-            parse_endpoint_spec("unknown")
-
-    def test_parse_unknown_base_in_variant(self):
-        """Test parsing unknown base in variant format raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown endpoint 'unknown'"):
-            parse_endpoint_spec("unknown.variant")
-
     def test_parse_invalid_uuid(self):
         """Test parsing invalid UUID format raises ValueError."""
         with pytest.raises(ValueError, match="Invalid endpoint UUID"):
@@ -100,25 +93,47 @@ class TestParseEndpointSpec:
 class TestGenerateEndpointConfig:
     """Test endpoint configuration dict generation."""
 
-    def test_generate_base_config(self):
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
+    def test_generate_base_config(self, mock_get_schema):
         """Test generating base endpoint config."""
+        # Mock schema to include requirements field
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "account": {"type": "string"},
+            }
+        }
+
         spec = EndpointSpec(
             name="anvil",
             variant=None,
             uuid="5aafb4c1-27b2-40d8-a038-a0277611868f",
+            base_defaults={"requirements": ""},
         )
 
         config = generate_endpoint_config(spec)
 
         assert "anvil" in config
         assert config["anvil"]["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert config["anvil"]["requirements"] == ""
 
-    def test_generate_config_with_variant(self):
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
+    def test_generate_config_with_variant(self, mock_get_schema):
         """Test generating config with variant."""
+        # Mock schema to include requirements field
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "partition": {"type": "string"},
+                "qos": {"type": "string"},
+            }
+        }
+
         spec = EndpointSpec(
             name="anvil",
             variant="gpu",
             uuid="5aafb4c1-27b2-40d8-a038-a0277611868f",
+            base_defaults={"requirements": ""},
             variant_defaults={"partition": "gpu-debug", "qos": "gpu"},
         )
 
@@ -126,9 +141,37 @@ class TestGenerateEndpointConfig:
 
         assert "anvil" in config
         assert config["anvil"]["endpoint"] == "5aafb4c1-27b2-40d8-a038-a0277611868f"
+        assert config["anvil"]["requirements"] == ""
         assert "gpu" in config["anvil"]
         assert config["anvil"]["gpu"]["partition"] == "gpu-debug"
         assert config["anvil"]["gpu"]["qos"] == "gpu"
+
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
+    def test_generate_config_filters_invalid_base_defaults(self, mock_get_schema):
+        """Test that base_defaults are filtered to only include schema fields."""
+        # Mock schema without requirements field
+        mock_get_schema.return_value = {
+            "properties": {
+                "account": {"type": "string"},
+                "partition": {"type": "string"},
+            }
+        }
+
+        spec = EndpointSpec(
+            name="test",
+            variant=None,
+            uuid="test-uuid",
+            base_defaults={"requirements": "", "account": "default-account"},
+        )
+
+        config = generate_endpoint_config(spec)
+
+        assert "test" in config
+        assert config["test"]["endpoint"] == "test-uuid"
+        # requirements should be filtered out (not in schema)
+        assert "requirements" not in config["test"]
+        # account should be kept (in schema)
+        assert config["test"]["account"] == "default-account"
 
 
 class TestGetEndpointSchemaComments:
@@ -252,10 +295,19 @@ class TestFormatEndpointConfigToToml:
 class TestFetchAndFormatEndpoints:
     """Test end-to-end fetch and format pipeline."""
 
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_fetch_and_format_known_endpoint(self, mock_get_comments, mock_get_display):
+    def test_fetch_and_format_known_endpoint(
+        self, mock_get_comments, mock_get_display, mock_get_schema
+    ):
         """Test fetching and formatting a known endpoint."""
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "account": {"type": "string"},
+            }
+        }
         mock_get_display.return_value = None
         mock_get_comments.return_value = {
             "account": "Type: string. Your allocation account",
@@ -273,12 +325,19 @@ class TestFetchAndFormatEndpoints:
         assert "# # account =" in endpoints[0].toml_block
         assert "Type: string. Your allocation account" in endpoints[0].toml_block
 
+    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
     def test_fetch_and_format_multiple_endpoints(
-        self, mock_get_comments, mock_get_display
+        self, mock_get_comments, mock_get_display, mock_get_schema
     ):
         """Test fetching and formatting multiple endpoints."""
+        mock_get_schema.return_value = {
+            "properties": {
+                "requirements": {"type": "string"},
+                "account": {"type": "string"},
+            }
+        }
         mock_get_display.return_value = None
         mock_get_comments.return_value = {}
 
@@ -289,11 +348,6 @@ class TestFetchAndFormatEndpoints:
         assert any(ep.name == "tutorial" for ep in endpoints)
         assert any("anvil" in ep.toml_block for ep in endpoints)
         assert any("tutorial" in ep.toml_block for ep in endpoints)
-
-    def test_fetch_and_format_invalid_spec_raises_error(self):
-        """Test that invalid spec raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="Failed to process endpoint spec"):
-            fetch_and_format_endpoints(["unknown_endpoint"])
 
 
 class TestKnownEndpoints:

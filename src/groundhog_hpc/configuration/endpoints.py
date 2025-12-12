@@ -16,6 +16,9 @@ from groundhog_hpc.compute import get_endpoint_metadata, get_endpoint_schema
 KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
     "anvil": {
         "uuid": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+        "base": {
+            "requirements": "",
+        },
         "variants": {
             "gpu": {
                 "partition": "gpu-debug",
@@ -26,6 +29,7 @@ KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
     },
     "tutorial": {
         "uuid": "4b116d3c-1703-4f8f-9f6f-39921e5864df",
+        "base": {},
         "variants": {},
     },
 }
@@ -51,6 +55,7 @@ class EndpointSpec:
         name: Table name for [tool.hog.{name}]
         variant: Optional variant name for [tool.hog.{name}.{variant}]
         uuid: Globus Compute endpoint UUID
+        base_defaults: Dict of defaults to apply to base endpoint (if known endpoint)
         variant_defaults: Dict of defaults to apply to variant (if known variant)
     """
 
@@ -59,11 +64,13 @@ class EndpointSpec:
         name: str,
         variant: str | None,
         uuid: str,
+        base_defaults: dict[str, Any] | None = None,
         variant_defaults: dict[str, Any] | None = None,
     ):
         self.name = name
         self.variant = variant
         self.uuid = uuid
+        self.base_defaults = base_defaults or {}
         self.variant_defaults = variant_defaults or {}
 
 
@@ -115,29 +122,40 @@ def parse_endpoint_spec(spec: str) -> EndpointSpec:
     if "." in spec:
         base_name, variant = spec.split(".", 1)
         if base_name not in KNOWN_ENDPOINTS:
-            known = ", ".join(KNOWN_ENDPOINTS.keys())
-            raise ValueError(
-                f"Unknown endpoint '{base_name}'. Known endpoints: {known}"
+            # Stub out unknown endpoint with variant with TODO placeholder
+            return EndpointSpec(
+                name=base_name,
+                variant=variant,
+                uuid="TODO: Replace with your endpoint UUID",
             )
 
         endpoint_info = KNOWN_ENDPOINTS[base_name]
         uuid = endpoint_info["uuid"]
+        base_defaults = endpoint_info.get("base", {})
         variant_defaults = endpoint_info["variants"].get(variant, {})
 
         return EndpointSpec(
             name=base_name,
             variant=variant,
             uuid=uuid,
+            base_defaults=base_defaults,
             variant_defaults=variant_defaults,
         )
 
-    # Must be a known endpoint name
+    # Must be a known endpoint name, or stub out unknown ones
     if spec not in KNOWN_ENDPOINTS:
-        known = ", ".join(KNOWN_ENDPOINTS.keys())
-        raise ValueError(f"Unknown endpoint '{spec}'. Known endpoints: {known}")
+        # Stub out unknown endpoint with TODO placeholder
+        return EndpointSpec(
+            name=spec,
+            variant=None,
+            uuid="TODO: Replace with your endpoint UUID",
+        )
 
     endpoint_info = KNOWN_ENDPOINTS[spec]
-    return EndpointSpec(name=spec, variant=None, uuid=endpoint_info["uuid"])
+    base_defaults = endpoint_info.get("base", {})
+    return EndpointSpec(
+        name=spec, variant=None, uuid=endpoint_info["uuid"], base_defaults=base_defaults
+    )
 
 
 def generate_endpoint_config(spec: EndpointSpec) -> dict[str, dict[str, Any]]:
@@ -158,10 +176,22 @@ def generate_endpoint_config(spec: EndpointSpec) -> dict[str, dict[str, Any]]:
     """
     result: dict[str, Any] = {}
 
+    # If UUID is a TODO placeholder, skip schema fetching
+    if spec.uuid.startswith("TODO"):
+        filtered_base_defaults = spec.base_defaults.copy()
+    else:
+        # Filter base_defaults to only include fields present in the endpoint schema
+        schema = get_endpoint_schema(spec.uuid)
+        schema_fields = set(schema.get("properties", {}).keys())
+        filtered_base_defaults = {
+            k: v for k, v in spec.base_defaults.items() if k in schema_fields
+        }
+
     # Base configuration
     base_config = {
         "endpoint": spec.uuid,
-        # Other fields will be added by user, we just provide the endpoint UUID
+        **filtered_base_defaults,
+        # Other fields will be added by user, we just provide the endpoint UUID + defaults
     }
     result[spec.name] = base_config
 
@@ -243,15 +273,18 @@ def format_endpoint_config_to_toml(
     """
     lines = []
 
+    # If UUID is a TODO placeholder, skip schema fetching
+    is_todo = endpoint_uuid.startswith("TODO")
+
     # Get display name and schema comments
-    display_name = get_endpoint_display_name(endpoint_uuid)
+    display_name = None if is_todo else get_endpoint_display_name(endpoint_uuid)
 
     # Calculate padding for aligned inline comments
     # Align to UUID line length (approx 51 chars: "# endpoint = "uuid..."")
     # For schema comments: "# # field_name = " should align comment to ~column 52
     alignment_column = 52
 
-    if include_schema_comments:
+    if include_schema_comments and not is_todo:
         comments = get_endpoint_schema_comments(endpoint_uuid)
 
     for endpoint_name, config in config_dict.items():
@@ -278,9 +311,12 @@ def format_endpoint_config_to_toml(
                     lines.append(f"# {key} = {value}")
 
             # Add schema comments if requested (commented out, so prefix with # #)
-            if include_schema_comments:
+            if include_schema_comments and not is_todo:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
+                    # Skip fields that are already in the active config
+                    if field_name in base_config:
+                        continue
                     # Pad to align inline comments (left-align, pad to alignment_column)
                     lines.append(
                         f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"
@@ -311,9 +347,12 @@ def format_endpoint_config_to_toml(
                     lines.append(f"# {key} = {value}")
 
             # Add schema comments if requested (commented out, so prefix with # #)
-            if include_schema_comments:
+            if include_schema_comments and not is_todo:
                 comments = get_endpoint_schema_comments(endpoint_uuid)
                 for field_name, comment in comments.items():
+                    # Skip fields that are already in the active config
+                    if field_name in config:
+                        continue
                     # Pad to align inline comments (left-align, pad to alignment_column)
                     lines.append(
                         f"# # {field_name} = {'':<{alignment_column - 7 - len(field_name)}}# {comment}"

@@ -173,7 +173,7 @@ def _get_status_display(
         display.append(")", style="dim")
 
     display.append(" | ", style="dim")
-    display.append(spinner.render(current_time))
+    display.append(spinner.render(current_time))  # type: ignore[arg-type]
 
     return display
 

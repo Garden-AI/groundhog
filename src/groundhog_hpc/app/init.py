@@ -72,8 +72,6 @@ def init(
     if endpoints:
         try:
             endpoint_blocks = fetch_and_format_endpoints(endpoints)
-            for endpoint in endpoint_blocks:
-                console.print(f"[green]✓[/green] Fetched schema for {endpoint.name}")
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             raise typer.Exit(1)
