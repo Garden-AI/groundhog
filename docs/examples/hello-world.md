@@ -134,4 +134,3 @@ result = hello_world.remote(
 
 - **[Dependencies](dependencies.md)** - Learn how to add external packages
 - **[Parallel Execution](parallel-execution.md)** - Execute multiple functions concurrently
-- **[Execution Modes](../concepts/execution-modes.md)** - When to use the four execution modes

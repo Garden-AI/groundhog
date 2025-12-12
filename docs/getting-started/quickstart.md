@@ -164,11 +164,9 @@ result = hello_world.local("Local Machine")
 print(result)  # "Hello, Local Machine!"
 ```
 
-1. **Important:** Always import `groundhog_hpc` to initialize groundhog's import hook _before_ importing functions from groundhog scripts. If not marked as safe by the import hook, `.remote`, `.local`, and `.submit` calls will fail with a `ModuleImportError`. See [Import Safety](../concepts/import-safety.md) for details.
+1. **Important:** Always import `groundhog_hpc` to initialize groundhog's import hook _before_ importing functions from groundhog scripts. If not marked as safe by the import hook, `.remote`, `.local`, and `.submit` calls will fail with a `ModuleImportError`. See also: [Imported Functions Example](../examples/imported_function.md).
 
 ## Next steps
 
-- **[Examples](../examples/index.md)**: See more complete examples including dependencies and parallel execution
-- **[Execution Modes](../concepts/execution-modes.md)**: Learn about the different ways to invoke groundhog functions
-- **[Configuration](../concepts/configuration.md)**: Understand the configuration system
-- **[CLI Reference](../api/cli.md)**: Full documentation of `hog` commands
+- **[Examples](../examples/index.md)**: See more complete examples
+- **[CLI Reference](../api/cli.md)**: Full documentation of `hog` CLI commands

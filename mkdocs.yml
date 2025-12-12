@@ -101,20 +101,13 @@ nav:
     - Endpoint Configuration: examples/configuration.md
     - Importing Groundhog Functions: examples/imported_function.md
   - Concepts:
-    - Execution Modes: concepts/execution-modes.md
-    - Remote Execution Flow: concepts/remote-execution.md
     - PEP 723 Metadata: concepts/pep723.md
-    - Configuration System: concepts/configuration.md
-    - Import Safety: concepts/import-safety.md
+    - Remote Execution Flow: concepts/remote-execution.md
     - Serialization: concepts/serialization.md
   - Reference:
     - CLI Commands: api/cli.md
     - Environment Variables: api/environment_variables.md
-    - PEP 723 Metadata: api/pep723.md
-    - Endpoint Configuration: api/endpoint-config.md
-    - Configuration Resolution: api/config-resolution.md
-    - Serialization: api/serialization.md
     - Decorators: api/decorators.md
     - Function: api/function.md
-    - GroundhogFuture: api/future.md
     - Harness: api/harness.md
+    - GroundhogFuture: api/future.md

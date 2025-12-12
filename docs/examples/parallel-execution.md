@@ -119,4 +119,3 @@ Parallel execution with .submit():
 
 - **[Configuration](configuration.md)** - Configure multiple endpoints
 - **[GroundhogFuture Reference](../api/future.md)** - Full API documentation for futures
-- **[Execution Modes](../concepts/execution-modes.md)** - Deep dive into all execution modes
