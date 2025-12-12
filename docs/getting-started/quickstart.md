@@ -169,4 +169,4 @@ print(result)  # "Hello, Local Machine!"
 ## Next steps
 
 - **[Examples](../examples/index.md)**: See more complete examples
-- **[CLI Reference](../api/cli.md)**: Full documentation of `hog` CLI commands
+<!-- - **[CLI Reference](../api/cli.md)**: Full documentation of `hog` CLI commands -->

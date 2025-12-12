@@ -114,6 +114,7 @@ hog run analysis.py
 
     [Concepts →](concepts/pep723.md)
 
+<!--
 -   **API Reference**
 
     ---
@@ -121,5 +122,6 @@ hog run analysis.py
     Complete reference for decorators, CLI commands, classes, and environment variables
 
     [Reference →](api/cli.md)
+-->
 
 </div>

@@ -118,4 +118,4 @@ Parallel execution with .submit():
 ## Next Steps
 
 - **[Configuration](configuration.md)** - Configure multiple endpoints
-- **[GroundhogFuture Reference](../api/future.md)** - Full API documentation for futures
+<!-- - **[GroundhogFuture Reference](../api/future.md)** - Full API documentation for futures -->
