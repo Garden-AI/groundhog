@@ -22,12 +22,12 @@ print("=" * 60)
 # This means the import hook hasn't been installed yet, so the module
 # won't have __groundhog_imported__ flag set
 print("\n1. Importing hello_world module BEFORE groundhog...")
-import hello_world
+import hello_world  # noqa: E402
 
 # now import groundhog (so import hook gets installed)
 # functions from *subsequent* imports can be called like normal ...
 print("\n2. Now importing groundhog_hpc...")
-import groundhog_hpc as hog
+import groundhog_hpc as hog  # noqa: E402
 
 # but try to call hello_world.local() and it will fail,
 # because we imported hello_world *before* groundhog_hpc
@@ -54,7 +54,7 @@ except Exception as e:
 # groundhog was already imported when this module was imported, so
 # the import hook marked it as safe automatically.
 print("\n6. Importing hello_dependencies (after groundhog)...")
-import hello_dependencies
+import hello_dependencies  # noqa: E402
 
 print("\n7. Calling hello_hog.local() from hello_dependencies...")
 try:
