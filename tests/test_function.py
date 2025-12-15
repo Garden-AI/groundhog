@@ -31,16 +31,14 @@ class TestFunctionInitialization:
         func = Function(dummy_function, endpoint=mock_endpoint_uuid)
         assert func.endpoint == mock_endpoint_uuid
 
-    def test_reads_script_path_from_environment(self):
+    def test_reads_script_path_from_environment(self, function_with_script):
         """Test that script path is read from environment variable."""
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = "/path/to/script.py"
-        try:
-            func = Function(dummy_function)
-            # script_path property lazily reads from environment
-            assert func.script_path == "/path/to/script.py"
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        func = function_with_script()
+        # script_path property lazily reads from environment
+        # The fixture sets up a temp script path
+        assert func.script_path is not None
+        assert os.path.exists(func.script_path)
 
 
 class TestLocalExecution:
@@ -166,364 +164,212 @@ class TestSubmitMethod:
             if had_flag:
                 test_module.__groundhog_imported__ = True
 
-    def test_submit_returns_future(self, tmp_path, mock_endpoint_uuid):
+    def test_submit_returns_future(self, function_with_script, mock_submission_stack):
         """Test that submit() returns a Future object."""
 
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        func = function_with_script()
+        result = func.submit()
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        assert result is mock_submission_stack["future"]
 
-            mock_future = MagicMock()
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ):
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        result = func.submit()
-
-            assert result is mock_future
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
-
-    def test_submit_serializes_arguments(self, tmp_path, mock_endpoint_uuid):
+    def test_submit_serializes_arguments(
+        self, function_with_script, mock_submission_stack
+    ):
         """Test that submit() properly serializes function arguments."""
 
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        func = function_with_script()
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        with patch("groundhog_hpc.function.serialize") as mock_serialize:
+            mock_serialize.return_value = "serialized_payload"
+            func.submit(1, 2, kwarg1="value1")
 
-            mock_future = MagicMock()
-            with patch(
-                "groundhog_hpc.function.script_to_submittable"
-            ) as mock_script_to_submittable:
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ):
-                    with patch("groundhog_hpc.function.serialize") as mock_serialize:
-                        with patch(
-                            "groundhog_hpc.compute.get_endpoint_schema",
-                            return_value={},
-                        ):
-                            mock_serialize.return_value = "serialized_payload"
-                            func.submit(1, 2, kwarg1="value1")
+        # Verify serialize was called with args and kwargs
+        mock_serialize.assert_called_once()
+        call_args = mock_serialize.call_args[0][0]
+        assert call_args == ((1, 2), {"kwarg1": "value1"})
 
-            # Verify serialize was called with args and kwargs
-            mock_serialize.assert_called_once()
-            call_args = mock_serialize.call_args[0][0]
-            assert call_args == ((1, 2), {"kwarg1": "value1"})
+        # Verify script_to_submittable received the serialized payload
+        assert (
+            mock_submission_stack["script_to_submittable"].call_args[0][2]
+            == "serialized_payload"
+        )
 
-            # Verify script_to_submittable received the serialized payload
-            assert mock_script_to_submittable.call_args[0][2] == "serialized_payload"
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
-
-    def test_submit_passes_endpoint_and_config(self, tmp_path, mock_endpoint_uuid):
+    def test_submit_passes_endpoint_and_config(
+        self, function_with_script, mock_submission_stack, mock_endpoint_uuid
+    ):
         """Test that submit() passes endpoint and user config to submit_to_executor."""
 
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        func = function_with_script(account="test")
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid, account="test")
+        # Mock schema that includes the "account" field
+        mock_schema = {"properties": {"account": {"type": "string"}}}
+        mock_submission_stack["get_endpoint_schema"].return_value = mock_schema
 
-            mock_future = MagicMock()
-            # Mock schema that includes the "account" field
-            mock_schema = {"properties": {"account": {"type": "string"}}}
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema",
-                        return_value=mock_schema,
-                    ):
-                        func.submit()
+        func.submit()
 
-            # Verify endpoint was passed
-            from uuid import UUID
+        # Verify endpoint was passed
+        from uuid import UUID
 
-            assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
 
-            # Verify user config was passed
-            config = mock_submit.call_args[1]["user_endpoint_config"]
-            assert "account" in config
-            assert config["account"] == "test"
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        # Verify user config was passed
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert "account" in config
+        assert config["account"] == "test"
 
-    def test_remote_uses_submit_internally(self, tmp_path, mock_endpoint_uuid):
+    def test_remote_uses_submit_internally(
+        self, function_with_script, mock_submission_stack
+    ):
         """Test that remote() calls submit() and returns its result."""
 
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        func = function_with_script()
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        mock_future = mock_submission_stack["future"]
+        mock_future.result.return_value = "final_result"
 
-            mock_future = MagicMock()
-            mock_future.result.return_value = "final_result"
+        result = func.remote()
 
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ):
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        result = func.remote()
+        # Verify that result() was called on the future
+        mock_future.result.assert_called_once()
+        assert result == "final_result"
 
-            # Verify that result() was called on the future
-            mock_future.result.assert_called_once()
-            assert result == "final_result"
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
-
-    def test_callsite_endpoint_overrides_default(self, tmp_path, mock_endpoint_uuid):
+    def test_callsite_endpoint_overrides_default(
+        self, function_with_script, mock_submission_stack, mock_endpoint_uuid
+    ):
         """Test that endpoint provided at callsite overrides default endpoint."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        # Initialize with default endpoint
+        default_endpoint = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        func = function_with_script(endpoint=default_endpoint)
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            # Initialize with default endpoint
-            default_endpoint = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-            func = Function(dummy_function, endpoint=default_endpoint)
+        # Call with override endpoint
+        func.submit(endpoint=mock_endpoint_uuid)
 
-            mock_future = MagicMock()
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        # Call with override endpoint
-                        func.submit(endpoint=mock_endpoint_uuid)
+        # Verify the override endpoint was used
+        from uuid import UUID
 
-            # Verify the override endpoint was used
-            from uuid import UUID
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
 
-            assert mock_submit.call_args[0][0] == UUID(mock_endpoint_uuid)
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
-
-    def test_callsite_walltime_goes_to_config(self, tmp_path, mock_endpoint_uuid):
+    def test_callsite_walltime_goes_to_config(
+        self, function_with_script, mock_submission_stack
+    ):
         """Test that walltime provided at callsite goes to endpoint config."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        func = function_with_script()
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        # Call with walltime in user_endpoint_config
+        func.submit(user_endpoint_config={"walltime": 120})
 
-            mock_future = MagicMock()
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        # Call with walltime in user_endpoint_config
-                        func.submit(user_endpoint_config={"walltime": 120})
-
-            # Verify submit_to_executor was called with walltime in config
-            config = mock_submit.call_args[1]["user_endpoint_config"]
-            assert config["walltime"] == 120
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        # Verify submit_to_executor was called with walltime in config
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert config["walltime"] == 120
 
     def test_function_walltime_sets_shellfunction_walltime(
-        self, tmp_path, mock_endpoint_uuid
+        self, function_with_script, mock_submission_stack
     ):
         """Test that Function.walltime attribute sets ShellFunction walltime (escape hatch)."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        # Create function and manually set walltime (escape hatch)
+        func = function_with_script()
+        func.walltime = 120
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            # Create function and manually set walltime (escape hatch)
-            func = Function(dummy_function, endpoint=mock_endpoint_uuid)
-            func.walltime = 120
+        func.submit()
 
-            mock_future = MagicMock()
-            with patch(
-                "groundhog_hpc.function.script_to_submittable"
-            ) as mock_script_to_submittable:
-                mock_shell_func = MagicMock()
-                mock_script_to_submittable.return_value = mock_shell_func
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ):
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema", return_value={}
-                    ):
-                        func.submit()
+        # Verify script_to_submittable was called with walltime parameter
+        mock_script_to_submittable = mock_submission_stack["script_to_submittable"]
+        call_args = mock_script_to_submittable.call_args
+        assert call_args[1]["walltime"] == 120
 
-            # Verify script_to_submittable was called with walltime parameter
-            call_args = mock_script_to_submittable.call_args
-            assert call_args[1]["walltime"] == 120
-
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
-
-    def test_callsite_user_config_overrides_default(self, tmp_path, mock_endpoint_uuid):
+    def test_callsite_user_config_overrides_default(
+        self, function_with_script, mock_submission_stack
+    ):
         """Test that user_endpoint_config at callsite overrides default config."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        # Initialize with default config
+        func = function_with_script(
+            account="default_account",
+            cores_per_node=4,
+        )
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            # Initialize with default config
-            func = Function(
-                dummy_function,
-                endpoint=mock_endpoint_uuid,
-                account="default_account",
-                cores_per_node=4,
-            )
-
-            mock_future = MagicMock()
-            # Mock schema that includes the config fields we're testing
-            mock_schema = {
-                "properties": {
-                    "account": {"type": "string"},
-                    "cores_per_node": {"type": "integer"},
-                    "queue": {"type": "string"},
-                }
+        # Mock schema that includes the config fields we're testing
+        mock_schema = {
+            "properties": {
+                "account": {"type": "string"},
+                "cores_per_node": {"type": "integer"},
+                "queue": {"type": "string"},
             }
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema",
-                        return_value=mock_schema,
-                    ):
-                        # Call with override config
-                        func.submit(
-                            user_endpoint_config={
-                                "account": "override_account",
-                                "queue": "gpu",
-                            }
-                        )
+        }
+        mock_submission_stack["get_endpoint_schema"].return_value = mock_schema
 
-            # Verify the override config was used
-            config = mock_submit.call_args[1]["user_endpoint_config"]
-            assert config["account"] == "override_account"
-            assert config["queue"] == "gpu"
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        # Call with override config
+        func.submit(
+            user_endpoint_config={
+                "account": "override_account",
+                "queue": "gpu",
+            }
+        )
+
+        # Verify the override config was used
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert config["account"] == "override_account"
+        assert config["queue"] == "gpu"
 
     def test_worker_init_is_appended_not_overwritten(
-        self, tmp_path, mock_endpoint_uuid
+        self, function_with_script, mock_submission_stack
     ):
         """Test that worker_init from callsite is appended to default, not overwritten."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        # Initialize with default worker_init
+        default_worker_init = "module load default"
+        func = function_with_script(worker_init=default_worker_init)
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            # Initialize with default worker_init
-            default_worker_init = "module load default"
-            func = Function(
-                dummy_function,
-                endpoint=mock_endpoint_uuid,
-                worker_init=default_worker_init,
-            )
+        # Mock schema that includes worker_init
+        mock_schema = {"properties": {"worker_init": {"type": "string"}}}
+        mock_submission_stack["get_endpoint_schema"].return_value = mock_schema
 
-            mock_future = MagicMock()
-            # Mock schema that includes worker_init
-            mock_schema = {"properties": {"worker_init": {"type": "string"}}}
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema",
-                        return_value=mock_schema,
-                    ):
-                        # Call with custom worker_init
-                        custom_worker_init = "module load custom"
-                        func.submit(
-                            user_endpoint_config={"worker_init": custom_worker_init}
-                        )
+        # Call with custom worker_init
+        custom_worker_init = "module load custom"
+        func.submit(user_endpoint_config={"worker_init": custom_worker_init})
 
-            # Verify all are present (decorator + call-time)
-            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
-            config = mock_submit.call_args[1]["user_endpoint_config"]
-            assert "worker_init" in config
-            # Should have decorator and call-time values concatenated
-            assert custom_worker_init in config["worker_init"]
-            assert default_worker_init in config["worker_init"]
-            # Verify order: decorator first (natural precedence), then call-time
-            assert config["worker_init"].startswith(default_worker_init)
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        # Verify all are present (decorator + call-time)
+        # Note: DEFAULT worker_init is now empty (uv handled in shell template)
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert "worker_init" in config
+        # Should have decorator and call-time values concatenated
+        assert custom_worker_init in config["worker_init"]
+        assert default_worker_init in config["worker_init"]
+        # Verify order: decorator first (natural precedence), then call-time
+        assert config["worker_init"].startswith(default_worker_init)
 
     def test_default_worker_init_preserved_when_no_callsite_override(
-        self, tmp_path, mock_endpoint_uuid
+        self, function_with_script, mock_submission_stack
     ):
         """Test that default worker_init is used when no override provided."""
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text("# test")
+        # Initialize with default worker_init
+        default_worker_init = "module load default"
+        func = function_with_script(worker_init=default_worker_init)
 
-        os.environ["GROUNDHOG_SCRIPT_PATH"] = str(script_path)
-        try:
-            # Initialize with default worker_init
-            default_worker_init = "module load default"
-            func = Function(
-                dummy_function,
-                endpoint=mock_endpoint_uuid,
-                worker_init=default_worker_init,
-            )
+        # Mock schema that includes worker_init
+        mock_schema = {"properties": {"worker_init": {"type": "string"}}}
+        mock_submission_stack["get_endpoint_schema"].return_value = mock_schema
 
-            mock_future = MagicMock()
-            # Mock schema that includes worker_init
-            mock_schema = {"properties": {"worker_init": {"type": "string"}}}
-            with patch("groundhog_hpc.function.script_to_submittable"):
-                with patch(
-                    "groundhog_hpc.function.submit_to_executor",
-                    return_value=mock_future,
-                ) as mock_submit:
-                    with patch(
-                        "groundhog_hpc.compute.get_endpoint_schema",
-                        return_value=mock_schema,
-                    ):
-                        # Call without any override
-                        func.submit()
+        # Call without any override
+        func.submit()
 
-            # Verify decorator worker_init is in the config
-            # Note: DEFAULT worker_init is now empty (uv handled in shell template)
-            config = mock_submit.call_args[1]["user_endpoint_config"]
-            assert "worker_init" in config
-            assert default_worker_init in config["worker_init"]
-        finally:
-            del os.environ["GROUNDHOG_SCRIPT_PATH"]
+        # Verify decorator worker_init is in the config
+        # Note: DEFAULT worker_init is now empty (uv handled in shell template)
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert "worker_init" in config
+        assert default_worker_init in config["worker_init"]
 
 
 class TestLocalMethod:
     """Test the local() method for running functions in local subprocess."""
 
-    def test_local_executes_function_and_returns_result(self, tmp_path):
+    def test_local_executes_function_and_returns_result(
+        self, tmp_path, mock_local_result
+    ):
         """Test that local() executes the function via ShellFunction and returns result."""
         # Create a test script
         script_path = tmp_path / "test_local.py"
@@ -541,29 +387,22 @@ def add(a, b):
         func = Function(add)
         func._script_path = str(script_path)
 
-        # Mock ShellFunction result
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"result": 5}'
-        mock_result.stderr = ""
-        mock_result.exception_name = None
-
-        # Mock ShellFunction to return our mock result
-        mock_shell_function = MagicMock(return_value=mock_result)
+        # Create mock result
+        shell_func, result = mock_local_result(stdout='{"result": 5}')
 
         with patch(
             "groundhog_hpc.function.script_to_submittable",
-            return_value=mock_shell_function,
+            return_value=shell_func,
         ):
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 5)
             ) as mock_deserialize:
-                result = func.local(2, 3)
+                result_value = func.local(2, 3)
 
-        assert result == 5
+        assert result_value == 5
         mock_deserialize.assert_called_once_with('{"result": 5}')
 
-    def test_local_serializes_arguments(self, tmp_path):
+    def test_local_serializes_arguments(self, tmp_path, mock_local_result):
         """Test that local() serializes arguments correctly using proxy mode."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
@@ -571,20 +410,14 @@ def add(a, b):
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"result": "success"}'
-        mock_result.stderr = ""
-        mock_result.exception_name = None
-
-        mock_shell_function = MagicMock(return_value=mock_result)
+        shell_func, result = mock_local_result(stdout='{"result": "success"}')
 
         with patch(
             "groundhog_hpc.function.serialize", return_value="serialized"
         ) as mock_serialize:
             with patch(
                 "groundhog_hpc.function.script_to_submittable",
-                return_value=mock_shell_function,
+                return_value=shell_func,
             ):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout",
@@ -663,7 +496,7 @@ def add(a, b):
             with pytest.raises(ValueError, match="Could not determine script path"):
                 func.local()
 
-    def test_local_uses_script_to_submittable(self, tmp_path):
+    def test_local_uses_script_to_submittable(self, tmp_path, mock_local_result):
         """Test that local() uses script_to_submittable to create ShellFunction."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
@@ -677,17 +510,11 @@ def add(a, b):
         test_module = sys.modules.get("tests.test_fixtures")
         test_module.__groundhog_imported__ = True
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "result"
-        mock_result.stderr = ""
-        mock_result.exception_name = None
-
-        mock_shell_function = MagicMock(return_value=mock_result)
+        shell_func, result = mock_local_result(stdout="result")
 
         with patch(
             "groundhog_hpc.function.script_to_submittable",
-            return_value=mock_shell_function,
+            return_value=shell_func,
         ) as mock_script_to_submittable:
             with patch(
                 "groundhog_hpc.function.deserialize_stdout",
@@ -702,7 +529,7 @@ def add(a, b):
         assert call_args[1] == "simple_function"
         assert len(call_args) == 3  # script_path, function_name, payload
 
-    def test_local_calls_shell_function(self, tmp_path):
+    def test_local_calls_shell_function(self, tmp_path, mock_local_result):
         """Test that local() calls the ShellFunction returned by script_to_submittable."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
@@ -710,17 +537,11 @@ def add(a, b):
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "result"
-        mock_result.stderr = ""
-        mock_result.exception_name = None
-
-        mock_shell_function = MagicMock(return_value=mock_result)
+        shell_func, result = mock_local_result(stdout="result")
 
         with patch(
             "groundhog_hpc.function.script_to_submittable",
-            return_value=mock_shell_function,
+            return_value=shell_func,
         ):
             with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
                 with patch(
@@ -730,9 +551,9 @@ def add(a, b):
                     func.local()
 
         # Verify ShellFunction was called (invoked via __call__)
-        mock_shell_function.assert_called_once()
+        shell_func.assert_called_once()
         # Verify it was called with no arguments (ShellFunction handles its own execution)
-        assert mock_shell_function.call_args[0] == ()
+        assert shell_func.call_args[0] == ()
 
     def test_local_infers_script_path_from_function(self, tmp_path):
         """Test that local() can infer script path from function's source file."""
@@ -776,7 +597,9 @@ def add(a, b):
 class TestLocalAlwaysUsesSubprocess:
     """Test that .local() always uses subprocess (no direct call fallback)."""
 
-    def test_local_always_uses_subprocess_with_flag_set(self, tmp_path):
+    def test_local_always_uses_subprocess_with_flag_set(
+        self, tmp_path, mock_local_result
+    ):
         """Test that .local() always uses subprocess when flag is set."""
         script_path = tmp_path / "test_fixtures.py"
         script_content = """
@@ -801,25 +624,19 @@ def test_func(x):
         test_module = sys.modules[func._local_function.__module__]
         test_module.__groundhog_imported__ = True
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "84"
-        mock_result.stderr = ""
-        mock_result.exception_name = None
-
-        mock_shell_function = MagicMock(return_value=mock_result)
+        shell_func, result = mock_local_result(stdout="84")
 
         # Mock script_to_submittable to verify subprocess is used
         with patch(
             "groundhog_hpc.function.script_to_submittable",
-            return_value=mock_shell_function,
+            return_value=shell_func,
         ) as mock_script_to_submittable:
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
             ):
-                result = func.local(42)
+                result_value = func.local(42)
 
         # Should always use subprocess (ShellFunction)
-        assert result == 84
+        assert result_value == 84
         mock_script_to_submittable.assert_called_once()
-        mock_shell_function.assert_called_once()
+        shell_func.assert_called_once()

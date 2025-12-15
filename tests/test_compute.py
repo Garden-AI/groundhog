@@ -1,7 +1,7 @@
 """Tests for the compute module helper functions."""
 
 from concurrent.futures import Future
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 from groundhog_hpc.compute import (
@@ -53,14 +53,11 @@ class TestScriptToSubmittable:
 class TestSubmitToExecutor:
     """Test the submit_to_executor function."""
 
-    def test_creates_executor_and_submits(self, mock_endpoint_uuid):
+    def test_creates_executor_and_submits(self, mock_endpoint_uuid, mock_executor):
         """Test that Executor is created and submit is called."""
         mock_shell_func = MagicMock()
         mock_future = Future()
-        mock_executor = MagicMock()
         mock_executor.submit.return_value = mock_future
-        mock_executor.__enter__ = Mock(return_value=mock_executor)
-        mock_executor.__exit__ = Mock(return_value=False)
 
         user_config = {"account": "test"}
 
@@ -83,14 +80,11 @@ class TestSubmitToExecutor:
                 # Result should be a Future (the deserializing one, not the original)
                 assert isinstance(result, Future)
 
-    def test_returns_deserializing_future(self, mock_endpoint_uuid):
+    def test_returns_deserializing_future(self, mock_endpoint_uuid, mock_executor):
         """Test that a deserializing future is returned, not the original."""
         mock_shell_func = MagicMock()
         mock_future = Future()
-        mock_executor = MagicMock()
         mock_executor.submit.return_value = mock_future
-        mock_executor.__enter__ = Mock(return_value=mock_executor)
-        mock_executor.__exit__ = Mock(return_value=False)
 
         with patch("groundhog_hpc.compute.gc.Executor", return_value=mock_executor):
             with patch("groundhog_hpc.compute.get_endpoint_schema", return_value=None):
@@ -102,14 +96,13 @@ class TestSubmitToExecutor:
                 assert result is not mock_future
                 assert isinstance(result, Future)
 
-    def test_walltime_in_config_passed_to_executor(self, mock_endpoint_uuid):
+    def test_walltime_in_config_passed_to_executor(
+        self, mock_endpoint_uuid, mock_executor
+    ):
         """Test that walltime in config is passed to Executor, not extracted to ShellFunction."""
         mock_shell_func = MagicMock()
         mock_future = Future()
-        mock_executor = MagicMock()
         mock_executor.submit.return_value = mock_future
-        mock_executor.__enter__ = Mock(return_value=mock_executor)
-        mock_executor.__exit__ = Mock(return_value=False)
 
         user_config = {"account": "test", "walltime": 600}
 

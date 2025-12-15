@@ -1,6 +1,7 @@
 """Tests for import-based execution and module-level call prevention."""
 
 import importlib.util
+import os
 import sys
 
 import pytest
@@ -111,7 +112,7 @@ future = my_func.submit()
             # Cleanup
             sys.modules.pop("test_module3", None)
 
-    def test_flag_allows_calls_after_import(self, tmp_path):
+    def test_flag_allows_calls_after_import(self, tmp_path, mock_submission_stack):
         """Test that .remote() calls work after import when flag is set."""
         script_path = tmp_path / "test_script.py"
         script_content = """# /// script
@@ -127,13 +128,7 @@ def my_func():
 
 def call_remote():
     '''This function calls .remote() - should work after flag is set'''
-    try:
-        return my_func.submit()
-    except Exception as e:
-        # May fail for other reasons (no endpoint, etc) but shouldn't be import error
-        if "during module import" in str(e):
-            raise
-        return None
+    return my_func.submit()
 """
         script_path.write_text(script_content)
 
@@ -147,12 +142,11 @@ def call_remote():
             module.__groundhog_imported__ = True  # Set flag after import completes
 
             # Now calling a function that uses .remote() should work (flag is set)
-            # It may fail for other reasons but shouldn't raise "during module import" error
-            try:
-                module.call_remote()
-            except RuntimeError as e:
-                # Should not be an import error
-                assert "during module import" not in str(e)
+            # Should not raise "during module import" error
+            result = module.call_remote()  # noqa: F841
+
+            # Verify submit was actually called (proves the flag check passed)
+            assert mock_submission_stack["submit_to_executor"].called
         finally:
             # Cleanup
             sys.modules.pop("test_module4", None)
@@ -369,7 +363,11 @@ if __name__ == "__main__":
             [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
-            timeout=10,  # 10 second timeout to prevent hanging
+            timeout=5,  # Reduced timeout since this should be fast
+            env={
+                **os.environ,
+                "GROUNDHOG_NO_IMPORT_HOOK": "1",
+            },  # Skip import hook for faster execution
         )
 
         # __main__ block should have executed
