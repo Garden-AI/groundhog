@@ -1,6 +1,6 @@
 # Groundhog 🌤️🦫
 
-**Iterative HPC function development. As many 'first tries' as you need.**
+**Iterative HPC function development. As many "first tries" as you need.**
 
 Groundhog makes it easy to run, tweak, and re-run python functions on HPC clusters via [Globus Compute](https://www.globus.org/compute) using simple decorators.
 
@@ -15,7 +15,7 @@ Iterative development on HPC clusters is slow and frustrating:
 1. Write code locally
 2. Submit to the queue
 3. **Wait**
-4. Job fails because of a missing dependency
+4. Job fails because of a missing remote dependency
 5. SSH into the cluster
 6. Manually fix the virtual environment
 7. Submit again

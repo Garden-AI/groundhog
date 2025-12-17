@@ -7,6 +7,9 @@ repo_name: Garden-AI/groundhog
 repo_url: https://github.com/Garden-AI/groundhog
 edit_uri: edit/main/docs/
 
+exclude_docs: |
+  plans/
+
 theme:
   name: material
   palette:
@@ -104,10 +107,9 @@ nav:
     - PEP 723 Metadata: concepts/pep723.md
     - Remote Execution Flow: concepts/remote-execution.md
     - Serialization: concepts/serialization.md
-  # - Reference:
-  #   - CLI Commands: api/cli.md
-  #   - Environment Variables: api/environment_variables.md
-  #   - Decorators: api/decorators.md
-  #   - Function: api/function.md
-  #   - Harness: api/harness.md
-  #   - GroundhogFuture: api/future.md
+  - Reference:
+    - CLI Commands: api/cli.md
+    - Environment Variables: api/environment_variables.md
+    - Decorators: api/decorators.md
+    - Function: api/function.md
+    - GroundhogFuture: api/future.md
