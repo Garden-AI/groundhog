@@ -32,6 +32,16 @@ KNOWN_ENDPOINTS: dict[str, dict[str, Any]] = {
         "base": {},
         "variants": {},
     },
+    "sophia": {
+        "uuid": "fad4d968-8c9a-45ce-9fb4-60a9ab90be60",
+        "base": {},
+        "variants": {},
+    },
+    "edith": {
+        "uuid": "a01b9350-e57d-4c8e-ad95-b4cb3c4cd1bb",
+        "base": {},
+        "variants": {},
+    },
 }
 
 
