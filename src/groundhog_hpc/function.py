@@ -44,13 +44,15 @@ class Function:
     """Wrapper that enables a Python function to be executed remotely on Globus Compute.
 
     Decorated functions can be called in four ways:
-    1. Direct call: func(*args) - executes locally (regular python call)
-    2. Remote call: func.remote(*args) - executes remotely and blocks until complete
-    3. Async submit: func.submit(*args) - executes remotely and returns a Future
-    4. Local subprocess: func.local(*args) - executes locally in a separate process
+
+    1. Direct call: `func(*args)` - executes locally (regular python call)
+    2. Remote call: `func.remote(*args)` - executes remotely and blocks until complete
+    3. Async submit: `func.submit(*args)` - executes remotely and returns a GroundhogFuture
+    4. Local subprocess: `func.local(*args)` - executes locally in a separate process
 
     Attributes:
-        endpoint: Default Globus Compute endpoint UUID or None to use resolved config
+        endpoint: Default Globus Compute endpoint UUID or named endpoint from
+            `[tool.hog.<name>]` PEP 723 metadata, or None to use resolved config
         default_user_endpoint_config: Default endpoint configuration (e.g., worker_init, walltime)
     """
 
@@ -77,10 +79,10 @@ class Function:
         # hatch if users need to set it after the function's been created
         self.walltime: int | float | None = None
 
-        self._local_function: FunctionType = func
+        self._wrapped_function: FunctionType = func
         self._config_resolver: ConfigResolver | None = None
 
-    def __call__(self, *args, **kwargs) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the function locally (not remotely).
 
         Args:
@@ -90,7 +92,7 @@ class Function:
         Returns:
             The result of the local function execution
         """
-        return self._local_function(*args, **kwargs)
+        return self._wrapped_function(*args, **kwargs)
 
     def _get_available_endpoints_from_pep723(self) -> list[str]:
         """Get list of endpoint names defined in PEP 723 [tool.hog.*] sections."""
@@ -111,7 +113,8 @@ class Function:
 
         Args:
             *args: Positional arguments to pass to the function
-            endpoint: Globus Compute endpoint UUID (overrides decorator default)
+            endpoint: Globus Compute endpoint UUID (or named endpoint from
+                `[tool.hog.<name>]` PEP 723 metadata). Replaces decorator default.
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
             **kwargs: Keyword arguments to pass to the function
 
@@ -124,10 +127,12 @@ class Function:
             PayloadTooLargeError: If serialized arguments exceed 10MB
         """
         # Check if module has been marked as safe for .remote() calls
-        module = sys.modules.get(self._local_function.__module__)
+        module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
             raise ModuleImportError(
-                self._local_function.__name__, "submit", self._local_function.__module__
+                self._wrapped_function.__name__,
+                "submit",
+                self._wrapped_function.__module__,
             )
 
         endpoint = endpoint or self.endpoint
@@ -188,7 +193,8 @@ class Function:
 
         Args:
             *args: Positional arguments to pass to the function
-            endpoint: Globus Compute endpoint UUID (overrides decorator default)
+            endpoint: Globus Compute endpoint UUID (or named endpoint from
+                `[tool.hog.<name>]` PEP 723 metadata). Replaces decorator default.
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
             **kwargs: Keyword arguments to pass to the function
 
@@ -226,10 +232,12 @@ class Function:
             LocalExecutionError: If local execution fails (non-zero exit code)
         """
         # Check if module has been marked as safe for .local() calls
-        module = sys.modules.get(self._local_function.__module__)
+        module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
             raise ModuleImportError(
-                self._local_function.__name__, "local", self._local_function.__module__
+                self._wrapped_function.__name__,
+                "local",
+                self._wrapped_function.__module__,
             )
 
         with prefix_output(prefix="[local]", prefix_color="blue"):
@@ -290,7 +298,7 @@ class Function:
             return self._script_path
 
         try:
-            source_file = inspect.getfile(self._local_function)
+            source_file = inspect.getfile(self._wrapped_function)
             self._script_path = str(Path(source_file).resolve())
             return self._script_path
         except (TypeError, OSError) as e:
@@ -308,13 +316,13 @@ class Function:
 
     @property
     def name(self) -> str:
-        return self._local_function.__qualname__
+        return self._wrapped_function.__qualname__
 
 
 class Method(Function):
-    """Descriptor variant of Function for use as class methods.
+    """Minimal descriptor variant of Function for use as class methods.
 
-    Provides staticmethod-like semantics (no self) with remote execution.
+    Provides staticmethod-like semantics (no `self`/`cls`) with remote execution.
     """
 
     def __get__(self, obj, objtype=None):

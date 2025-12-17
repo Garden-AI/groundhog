@@ -10,4 +10,5 @@ build:
   commands:
     - pip install uv
     - uv sync --group docs
+    - uv run typer groundhog_hpc.app.main utils docs --title "Groundhog CLI Reference" --name hog --output docs/api/cli.md
     - uv run mkdocs build --site-dir $READTHEDOCS_OUTPUT/html

@@ -88,7 +88,7 @@ class MyClass:
         method._script_path = str(script_path)
 
         # Manually set qualname to simulate class method
-        method._local_function.__qualname__ = "MyClass.compute"
+        method._wrapped_function.__qualname__ = "MyClass.compute"
 
         mock_shell_func = MagicMock()
         mock_future = MagicMock()

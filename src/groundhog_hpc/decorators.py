@@ -19,9 +19,10 @@ def harness() -> Callable[[FunctionType], Harness]:
     """Decorator to mark a function as a local orchestrator harness.
 
     Harness functions:
+
     - Must be called via the CLI: `hog run script.py harness_name`
     - Cannot accept any arguments
-    - Can call .remote() or .submit() on @hog.function decorated functions
+    - Can call `.remote()` or `.submit()` on `@hog.function`-decorated functions
 
     Returns:
         A decorator function that wraps the harness
@@ -50,9 +51,11 @@ def function(
     """Decorator to mark a function for remote execution on Globus Compute.
 
     Decorated functions can be:
-    - Called locally: func(args)
-    - Called remotely (blocking): func.remote(args)
-    - Submitted asynchronously: func.submit(args)
+
+    - Called locally: `func(args)`
+    - Called remotely (blocking): `func.remote(args)`
+    - Submitted asynchronously: `func.submit(args)`
+    - Called locally in an isolated environment: `func.local(args)`
 
     Args:
         endpoint: Globus Compute endpoint UUID or named endpoint from
@@ -93,13 +96,15 @@ def method(
 ) -> Callable[[FunctionType], Method]:
     """Decorator to mark a class method for remote execution on Globus Compute.
 
-    Similar to @hog.function() but designed for use as class methods. Provides
-    staticmethod-like semantics - the decorated method does not receive self.
+    Analogous to `@hog.function()` but for use with class methods. Provides
+    staticmethod-like semantics - the decorated method does not receive self or cls.
 
     Decorated methods can be:
-    - Called locally: MyClass.method(args) or obj.method(args)
-    - Called remotely (blocking): obj.method.remote(args)
-    - Submitted asynchronously: obj.method.submit(args)
+
+    - Called locally: `MyClass.method(args)` or `obj.method(args)`
+    - Called remotely (blocking): `MyClass.method.remote(args)`
+    - Submitted asynchronously: `MyClass.method.submit(args)`
+    - Called locally in an isolated environment: `MyClass.method.local(args)`
 
     Args:
         endpoint: Globus Compute endpoint UUID

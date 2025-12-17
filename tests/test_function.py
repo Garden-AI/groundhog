@@ -21,7 +21,7 @@ class TestFunctionInitialization:
 
         func = Function(dummy_function)
 
-        assert func._local_function == dummy_function
+        assert func._wrapped_function == dummy_function
         assert func.endpoint is None
         assert func.walltime is None
 
@@ -44,7 +44,7 @@ class TestFunctionInitialization:
 class TestLocalExecution:
     """Test local function execution."""
 
-    def test_call_executes_local_function(self):
+    def test_call_executes_wrapped_function(self):
         """Test that __call__ executes the local function."""
 
         def add(a, b):
@@ -621,7 +621,7 @@ def test_func(x):
         # Set the import flag to allow .local() call
         import sys
 
-        test_module = sys.modules[func._local_function.__module__]
+        test_module = sys.modules[func._wrapped_function.__module__]
         test_module.__groundhog_imported__ = True
 
         shell_func, result = mock_local_result(stdout="84")
