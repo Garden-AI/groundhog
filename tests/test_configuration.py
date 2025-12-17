@@ -339,6 +339,94 @@ class TestConfigResolverWorkerInit:
         assert expected in result["worker_init"]
 
 
+class TestConfigResolverEndpointSetup:
+    """Test special endpoint_setup concatenation behavior."""
+
+    def test_endpoint_setup_concatenation(self, pep723_script):
+        """Test that endpoint_setup commands are concatenated across layers."""
+        script_path = pep723_script(
+            endpoints={
+                "anvil": {
+                    "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+                    "endpoint_setup": "module load python",
+                }
+            }
+        )
+
+        resolver = ConfigResolver(script_path=str(script_path))
+
+        decorator_config = {"endpoint_setup": "module load gcc"}
+        call_time_config = {"endpoint_setup": "export MY_VAR=1"}
+
+        result = resolver.resolve(
+            endpoint_name="anvil",
+            decorator_config=decorator_config,
+            call_time_config=call_time_config,
+        )
+
+        # All endpoint_setup commands should be concatenated
+        # Order: PEP 723, decorator, call-time (natural precedence)
+        expected = "module load python\nmodule load gcc\nexport MY_VAR=1\n"
+        assert expected in result["endpoint_setup"]
+
+    def test_endpoint_setup_variant_concatenation(self, pep723_script):
+        """Test endpoint_setup concatenation with base and variant configs."""
+        script_path = pep723_script(
+            endpoints={
+                "anvil": {
+                    "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+                    "endpoint_setup": "module load python",
+                },
+                "anvil.gpu": {
+                    "endpoint_setup": "module load cuda",
+                },
+            }
+        )
+
+        resolver = ConfigResolver(script_path=str(script_path))
+
+        result = resolver.resolve(
+            endpoint_name="anvil.gpu",
+            decorator_config={},
+        )
+
+        # Base endpoint_setup should come before variant (natural precedence)
+        expected = "module load python\nmodule load cuda\n"
+        assert expected in result["endpoint_setup"]
+
+    def test_endpoint_setup_and_worker_init_independent(self, pep723_script):
+        """Test that endpoint_setup and worker_init are concatenated independently."""
+        script_path = pep723_script(
+            endpoints={
+                "anvil": {
+                    "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+                    "worker_init": "module load gcc",
+                    "endpoint_setup": "module load python",
+                }
+            }
+        )
+
+        resolver = ConfigResolver(script_path=str(script_path))
+
+        decorator_config = {
+            "worker_init": "pip install uv",
+            "endpoint_setup": "module load cmake",
+        }
+
+        result = resolver.resolve(
+            endpoint_name="anvil",
+            decorator_config=decorator_config,
+        )
+
+        # worker_init should be concatenated independently
+        expected_worker_init = "module load gcc\npip install uv\n"
+        assert expected_worker_init in result["worker_init"]
+
+        # endpoint_setup should be concatenated independently
+        expected_endpoint_setup = "module load python\nmodule load cmake\n"
+        assert expected_endpoint_setup in result["endpoint_setup"]
+
+
 class TestConfigResolverEndpointUUID:
     """Test endpoint UUID resolution from PEP 723."""
 

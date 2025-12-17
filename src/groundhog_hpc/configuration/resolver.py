@@ -30,10 +30,10 @@ from groundhog_hpc.configuration.pep723 import read_pep723
 def _merge_endpoint_configs(
     base_endpoint_config: dict, override_config: dict | None = None
 ) -> dict:
-    """Merge endpoint configurations, ensuring worker_init commands are combined.
+    """Merge endpoint configurations, ensuring worker_init and endpoint_setup commands are combined.
 
-    The worker_init field is special-cased: if both configs provide it, they are
-    concatenated with the base's worker_init executed first, followed by the override's.
+    The worker_init and endpoint_setup fields are special-cased: if both configs provide them, they are
+    concatenated with the base's commands executed first, followed by the override's.
     All other fields from override_config simply replace fields from base_endpoint_config.
 
     Args:
@@ -44,10 +44,10 @@ def _merge_endpoint_configs(
         A new merged configuration dict
 
     Example:
-        >>> base = {"worker_init": "pip install uv"}
-        >>> override = {"worker_init": "module load gcc", "cores": 4}
+        >>> base = {"worker_init": "pip install uv", "endpoint_setup": "module load gcc"}
+        >>> override = {"worker_init": "module load python", "endpoint_setup": "module load cuda", "cores": 4}
         >>> _merge_endpoint_configs(base, override)
-        {'worker_init': 'pip install uv\\nmodule load gcc', 'cores': 4}
+        {'worker_init': 'pip install uv\\nmodule load python', 'endpoint_setup': 'module load gcc\\nmodule load cuda', 'cores': 4}
     """
     if not override_config:
         return base_endpoint_config.copy()
@@ -61,6 +61,13 @@ def _merge_endpoint_configs(
         # pop worker_init so update doesn't clobber concatenated value
         override_init = override_config.pop("worker_init")
         merged["worker_init"] = f"{base_init.strip()}\n{override_init.strip()}\n"
+
+    # Special handling for endpoint_setup: prepend base to override
+    if "endpoint_setup" in override_config and "endpoint_setup" in base_endpoint_config:
+        base_setup = base_endpoint_config["endpoint_setup"]
+        # pop endpoint_setup so update doesn't clobber concatenated value
+        override_setup = override_config.pop("endpoint_setup")
+        merged["endpoint_setup"] = f"{base_setup.strip()}\n{override_setup.strip()}\n"
 
     merged.update(override_config)
     return merged
@@ -80,7 +87,7 @@ class ConfigResolver:
     5. Call-time config (.remote(user_endpoint_config={...}))
 
     Special handling:
-    - worker_init commands are concatenated (not replaced) across all layers
+    - worker_init and endpoint_setup commands are concatenated (not replaced) across all layers
     - endpoint field in PEP 723 config can override the endpoint UUID
     - Variants inherit from their base configuration
 

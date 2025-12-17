@@ -25,10 +25,12 @@ class EndpointConfig(BaseModel, extra="allow"):
     Attributes:
         endpoint: Globus Compute endpoint UUID (required for base configs)
         worker_init: Shell commands to run in worker initialization
+        endpoint_setup: Shell commands to run in endpoint setup
     """
 
     endpoint: str | UUID
     worker_init: str | None = None
+    endpoint_setup: str | None = None
 
 
 class EndpointVariant(BaseModel, extra="allow"):
@@ -45,10 +47,12 @@ class EndpointVariant(BaseModel, extra="allow"):
     Attributes:
         endpoint: Always None (variants must inherit endpoint from base)
         worker_init: Additional worker init commands (concatenated with base)
+        endpoint_setup: Additional endpoint setup commands (concatenated with base)
     """
 
     endpoint: None = None
     worker_init: str | None = None
+    endpoint_setup: str | None = None
 
     @model_validator(mode="before")
     @classmethod

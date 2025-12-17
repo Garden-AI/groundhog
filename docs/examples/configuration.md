@@ -11,7 +11,7 @@ Configuration comes from four sources, listed from lowest to highest priority:
 3. **Decorator config** - Keyword arguments to `@hog.function()`
 4. **Call-time config** - `user_endpoint_config` parameter to `.remote()` or `.submit()`
 
-Later sources override earlier ones, except for `worker_init` commands which are concatenated.
+Later sources override earlier ones, except for `worker_init` and `endpoint_setup` commands which are concatenated.
 
 ## Basic Configuration
 
@@ -131,26 +131,29 @@ result = quick_task.remote(  #  (1)!
 
 Call-time config has highest priority. This call runs as `"different-account"` and has a 30 minute walltime instead of 10.
 
-## The `worker_init` Special Case
+## The `worker_init` and `endpoint_setup` Special Cases
 
-Unlike other settings, `worker_init` commands are concatenated across all layers:
+Unlike other settings, `worker_init` and `endpoint_setup` commands are concatenated across all layers:
 
 ```python
 # /// script
 # [tool.hog.anvil]
 # worker_init = "module load python"
+# endpoint_setup = "module load gcc"
 # ///
 
 @hog.function(
     endpoint="anvil",
     worker_init="export MY_VAR=value",
+    endpoint_setup="module load cuda",
 )
 def example():
     pass
 
 example.remote(
     user_endpoint_config={
-        "worker_init": "echo 'starting job'"
+        "worker_init": "echo 'starting job'",
+        "endpoint_setup": "export CUDA_VISIBLE_DEVICES=0",
     }
 )
 ```
@@ -162,6 +165,14 @@ module load python
 export MY_VAR=value
 echo 'starting job'
 pip show -qq uv || pip install uv || true # (1)!
+```
+
+And the final `endpoint_setup` contains:
+
+```bash
+module load gcc
+module load cuda
+export CUDA_VISIBLE_DEVICES=0
 ```
 
 1. Groundhog adds this automatically, just in case `uv` isn't present in the remote environment to bootstrap the groundhog runner. If you or your endpoint administrator could ensure `uv` is available for groundhog, your sailing will be smoother ⛵️🦫.
@@ -186,7 +197,7 @@ The [`examples/configuration.py`](https://github.com/Garden-AI/groundhog/blob/ma
 - All four configuration layers
 - Configuration precedence
 - Variant inheritance
-- The `worker_init` concatenation behavior
+- The `worker_init` and `endpoint_setup` concatenation behavior
 - Switching between multiple base endpoints
 - Inspecting resolved config
 
