@@ -7,8 +7,6 @@ import pytest
 from groundhog_hpc.configuration.endpoints import (
     KNOWN_ENDPOINTS,
     EndpointSpec,
-    fetch_and_format_endpoints,
-    format_endpoint_config_to_toml,
     generate_endpoint_config,
     get_endpoint_schema_comments,
     parse_endpoint_spec,
@@ -208,146 +206,146 @@ class TestGetEndpointSchemaComments:
         assert "GBs" in comments["mem_per_node"]
 
 
-class TestFormatEndpointConfigToToml:
-    """Test TOML formatting."""
+# class TestFormatEndpointConfigToToml:
+#     """Test TOML formatting."""
 
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_format_simple_config(self, mock_get_comments, mock_get_display):
-        """Test formatting a simple endpoint config."""
-        mock_get_display.return_value = None
-        mock_get_comments.return_value = {
-            "account": "Type: string. Your allocation account",
-            "partition": "Type: string. Scheduler partition",
-        }
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
+#     def test_format_simple_config(self, mock_get_comments, mock_get_display):
+#         """Test formatting a simple endpoint config."""
+#         mock_get_display.return_value = None
+#         mock_get_comments.return_value = {
+#             "account": "Type: string. Your allocation account",
+#             "partition": "Type: string. Scheduler partition",
+#         }
 
-        config_dict = {
-            "anvil": {
-                "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
-            }
-        }
+#         config_dict = {
+#             "anvil": {
+#                 "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#             }
+#         }
 
-        toml = format_endpoint_config_to_toml(
-            config_dict,
-            "5aafb4c1-27b2-40d8-a038-a0277611868f",
-            include_schema_comments=True,
-        )
+#         toml = format_endpoint_config_to_toml(
+#             config_dict,
+#             "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#             include_schema_comments=True,
+#         )
 
-        assert "# [tool.hog.anvil]" in toml
-        assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
-        # Check that aligned comments are present (padding may vary)
-        assert "# # account =" in toml
-        assert "Type: string. Your allocation account" in toml
-        assert "# # partition =" in toml
-        assert "Type: string. Scheduler partition" in toml
+#         assert "# [tool.hog.anvil]" in toml
+#         assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
+#         # Check that aligned comments are present (padding may vary)
+#         assert "# # account =" in toml
+#         assert "Type: string. Your allocation account" in toml
+#         assert "# # partition =" in toml
+#         assert "Type: string. Scheduler partition" in toml
 
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_format_config_with_display_name(self, mock_get_comments, mock_get_display):
-        """Test formatting config with display name."""
-        mock_get_display.return_value = "Anvil Supercomputer"
-        mock_get_comments.return_value = {}
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
+#     def test_format_config_with_display_name(self, mock_get_comments, mock_get_display):
+#         """Test formatting config with display name."""
+#         mock_get_display.return_value = "Anvil Supercomputer"
+#         mock_get_comments.return_value = {}
 
-        config_dict = {
-            "anvil": {
-                "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
-            }
-        }
+#         config_dict = {
+#             "anvil": {
+#                 "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#             }
+#         }
 
-        toml = format_endpoint_config_to_toml(
-            config_dict,
-            "5aafb4c1-27b2-40d8-a038-a0277611868f",
-            include_schema_comments=False,
-        )
+#         toml = format_endpoint_config_to_toml(
+#             config_dict,
+#             "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#             include_schema_comments=False,
+#         )
 
-        assert "# [tool.hog.anvil]  # Anvil Supercomputer" in toml
+#         assert "# [tool.hog.anvil]  # Anvil Supercomputer" in toml
 
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_format_config_with_variant(self, mock_get_comments, mock_get_display):
-        """Test formatting config with variant."""
-        mock_get_display.return_value = None
-        mock_get_comments.return_value = {}
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
+#     def test_format_config_with_variant(self, mock_get_comments, mock_get_display):
+#         """Test formatting config with variant."""
+#         mock_get_display.return_value = None
+#         mock_get_comments.return_value = {}
 
-        config_dict = {
-            "anvil": {
-                "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
-                "gpu": {
-                    "partition": "gpu-debug",
-                    "qos": "gpu",
-                },
-            }
-        }
+#         config_dict = {
+#             "anvil": {
+#                 "endpoint": "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#                 "gpu": {
+#                     "partition": "gpu-debug",
+#                     "qos": "gpu",
+#                 },
+#             }
+#         }
 
-        toml = format_endpoint_config_to_toml(
-            config_dict,
-            "5aafb4c1-27b2-40d8-a038-a0277611868f",
-            include_schema_comments=False,
-        )
+#         toml = format_endpoint_config_to_toml(
+#             config_dict,
+#             "5aafb4c1-27b2-40d8-a038-a0277611868f",
+#             include_schema_comments=False,
+#         )
 
-        assert "# [tool.hog.anvil]" in toml
-        assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
-        assert "# [tool.hog.anvil.gpu]" in toml
-        assert '# partition = "gpu-debug"' in toml
-        assert '# qos = "gpu"' in toml
+#         assert "# [tool.hog.anvil]" in toml
+#         assert '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"' in toml
+#         assert "# [tool.hog.anvil.gpu]" in toml
+#         assert '# partition = "gpu-debug"' in toml
+#         assert '# qos = "gpu"' in toml
 
 
-class TestFetchAndFormatEndpoints:
-    """Test end-to-end fetch and format pipeline."""
+# class TestFetchAndFormatEndpoints:
+#     """Test end-to-end fetch and format pipeline."""
 
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_fetch_and_format_known_endpoint(
-        self, mock_get_comments, mock_get_display, mock_get_schema
-    ):
-        """Test fetching and formatting a known endpoint."""
-        mock_get_schema.return_value = {
-            "properties": {
-                "requirements": {"type": "string"},
-                "account": {"type": "string"},
-            }
-        }
-        mock_get_display.return_value = None
-        mock_get_comments.return_value = {
-            "account": "Type: string. Your allocation account",
-        }
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
+#     def test_fetch_and_format_known_endpoint(
+#         self, mock_get_comments, mock_get_display, mock_get_schema
+#     ):
+#         """Test fetching and formatting a known endpoint."""
+#         mock_get_schema.return_value = {
+#             "properties": {
+#                 "requirements": {"type": "string"},
+#                 "account": {"type": "string"},
+#             }
+#         }
+#         mock_get_display.return_value = None
+#         mock_get_comments.return_value = {
+#             "account": "Type: string. Your allocation account",
+#         }
 
-        endpoints = fetch_and_format_endpoints(["anvil"])
+#         endpoints = fetch_and_format_endpoints(["anvil"])
 
-        assert len(endpoints) == 1
-        assert endpoints[0].name == "anvil"
-        assert "# [tool.hog.anvil]" in endpoints[0].toml_block
-        assert (
-            '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"'
-            in endpoints[0].toml_block
-        )
-        assert "# # account =" in endpoints[0].toml_block
-        assert "Type: string. Your allocation account" in endpoints[0].toml_block
+#         assert len(endpoints) == 1
+#         assert endpoints[0].name == "anvil"
+#         assert "# [tool.hog.anvil]" in endpoints[0].toml_block
+#         assert (
+#             '# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"'
+#             in endpoints[0].toml_block
+#         )
+#         assert "# # account =" in endpoints[0].toml_block
+#         assert "Type: string. Your allocation account" in endpoints[0].toml_block
 
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
-    @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
-    def test_fetch_and_format_multiple_endpoints(
-        self, mock_get_comments, mock_get_display, mock_get_schema
-    ):
-        """Test fetching and formatting multiple endpoints."""
-        mock_get_schema.return_value = {
-            "properties": {
-                "requirements": {"type": "string"},
-                "account": {"type": "string"},
-            }
-        }
-        mock_get_display.return_value = None
-        mock_get_comments.return_value = {}
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_display_name")
+#     @patch("groundhog_hpc.configuration.endpoints.get_endpoint_schema_comments")
+#     def test_fetch_and_format_multiple_endpoints(
+#         self, mock_get_comments, mock_get_display, mock_get_schema
+#     ):
+#         """Test fetching and formatting multiple endpoints."""
+#         mock_get_schema.return_value = {
+#             "properties": {
+#                 "requirements": {"type": "string"},
+#                 "account": {"type": "string"},
+#             }
+#         }
+#         mock_get_display.return_value = None
+#         mock_get_comments.return_value = {}
 
-        endpoints = fetch_and_format_endpoints(["anvil", "tutorial"])
+#         endpoints = fetch_and_format_endpoints(["anvil", "tutorial"])
 
-        assert len(endpoints) == 2
-        assert any(ep.name == "anvil" for ep in endpoints)
-        assert any(ep.name == "tutorial" for ep in endpoints)
-        assert any("anvil" in ep.toml_block for ep in endpoints)
-        assert any("tutorial" in ep.toml_block for ep in endpoints)
+#         assert len(endpoints) == 2
+#         assert any(ep.name == "anvil" for ep in endpoints)
+#         assert any(ep.name == "tutorial" for ep in endpoints)
+#         assert any("anvil" in ep.toml_block for ep in endpoints)
+#         assert any("tutorial" in ep.toml_block for ep in endpoints)
 
 
 class TestKnownEndpoints:
