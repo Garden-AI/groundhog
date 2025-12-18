@@ -11,9 +11,14 @@ from rich.console import Console
 from groundhog_hpc.app.utils import normalize_python_version_with_uv
 from groundhog_hpc.configuration.endpoints import (
     KNOWN_ENDPOINTS,
-    fetch_and_format_endpoints,
+    get_endpoint_schema_comments,
+    parse_endpoint_spec,
 )
-from groundhog_hpc.configuration.pep723 import Pep723Metadata
+from groundhog_hpc.configuration.pep723 import (
+    Pep723Metadata,
+    add_endpoint_to_script,
+    remove_endpoint_from_script,
+)
 
 console = Console()
 
@@ -67,30 +72,59 @@ def init(
     assert default_meta.tool and default_meta.tool.uv
     exclude_newer = default_meta.tool.uv.exclude_newer
 
-    # Fetch and format endpoint configurations if provided
-    endpoint_blocks = []
+    # Parse endpoint specs if provided
+    endpoint_specs = []
     if endpoints:
         try:
-            endpoint_blocks = fetch_and_format_endpoints(endpoints)
+            endpoint_specs = [parse_endpoint_spec(spec) for spec in endpoints]
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             raise typer.Exit(1)
 
+    # Determine endpoint name for decorator (first endpoint or placeholder)
+    first_endpoint_name = endpoint_specs[0].name if endpoint_specs else "my_endpoint"
+
+    # Render template (always includes my_endpoint placeholder)
     env = Environment(loader=PackageLoader("groundhog_hpc", "templates"))
     template = env.get_template("init_script.py.jinja")
     content = template.render(
         filename=filename,
         python=python,
         exclude_newer=exclude_newer,
-        endpoint_blocks=endpoint_blocks,
+        endpoint_name=first_endpoint_name,
     )
+
+    # If endpoints provided, replace placeholder with real endpoints
+    if endpoint_specs:
+        # Remove placeholder
+        content = remove_endpoint_from_script(content, "my_endpoint")
+
+        # Add each requested endpoint
+        for spec in endpoint_specs:
+            endpoint_config = {"endpoint": spec.uuid, **spec.base_defaults}
+            variant_config = spec.variant_defaults if spec.variant else None
+
+            # Fetch schema comments if UUID is valid (not a TODO placeholder)
+            schema_comments = None
+            if not spec.uuid.startswith("TODO"):
+                schema_comments = get_endpoint_schema_comments(spec.uuid)
+
+            content, _ = add_endpoint_to_script(
+                content,
+                endpoint_name=spec.name,
+                endpoint_config=endpoint_config,
+                variant_name=spec.variant,
+                variant_config=variant_config,
+                schema_comments=schema_comments,
+            )
+
     Path(filename).write_text(content)
 
     console.print(f"[green]✓[/green] Created {filename}")
-    if endpoint_blocks:
+    if endpoint_specs:
         console.print("\nNext steps:")
         console.print(
-            f"  1. Update fields in the \\[tool.hog.{endpoint_blocks[0].name}] block"
+            f"  1. Update fields in the \\[tool.hog.{endpoint_specs[0].name}] block"
         )
         console.print(f"  2. Run with: [bold]hog run {filename} main[/bold]")
     else:

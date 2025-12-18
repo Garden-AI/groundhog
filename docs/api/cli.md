@@ -18,7 +18,7 @@ $ hog [OPTIONS] COMMAND [ARGS]...
 * `run`: Run a Python script on a Globus Compute...
 * `init`: Create a new groundhog script with PEP 723...
 * `add`: Add dependencies or update Python version...
-* `remove`: Remove dependencies from a script&#x27;s PEP...
+* `remove`: Remove dependencies or endpoint...
 
 ## `hog run`
 
@@ -79,23 +79,25 @@ $ hog add [OPTIONS] SCRIPT [PACKAGES]...
 
 * `-r, --requirements, --requirement PATH`: Add dependencies from file
 * `-p, --python TEXT`: Python version specifier
+* `-e, --endpoint TEXT`: Add endpoint configuration (e.g., anvil, anvil.gpu, name:uuid). Known endpoints: anvil, anvil.gpu, tutorial. Can specify multiple.
 * `--help`: Show this message and exit.
 
 ## `hog remove`
 
-Remove dependencies from a script&#x27;s PEP 723 metadata.
+Remove dependencies or endpoint configurations from a script&#x27;s PEP 723 metadata.
 
 **Usage**:
 
 ```console
-$ hog remove [OPTIONS] SCRIPT PACKAGES...
+$ hog remove [OPTIONS] SCRIPT [PACKAGES]...
 ```
 
 **Arguments**:
 
 * `SCRIPT`: Path to the script to modify  [required]
-* `PACKAGES...`: Packages to remove  [required]
+* `[PACKAGES]...`: Packages to remove
 
 **Options**:
 
+* `-e, --endpoint TEXT`: Remove endpoint or variant configuration (e.g., anvil, anvil.gpu, my_endpoint). Known endpoints: anvil, anvil.gpu, tutorial. Can specify multiple. Note: Removing a base endpoint (e.g., anvil) removes all its variants. Removing a specific variant (e.g., anvil.gpu) leaves the base and other variants intact.
 * `--help`: Show this message and exit.

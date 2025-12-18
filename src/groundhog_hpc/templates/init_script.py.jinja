@@ -4,19 +4,17 @@
 #
 # [tool.uv]
 # exclude-newer = "{{ exclude_newer }}"
-# {% if endpoint_blocks %}{% for endpoint in endpoint_blocks %}
-{{ endpoint.toml_block }}
-# {% endfor %}{% else %}
+#
 # [tool.hog.my_endpoint]
 # endpoint = "TODO: Add Globus Compute endpoint UUID here"
 # # Uncomment and configure default options for "my_endpoint" here (available options vary by endpoint):
 # # account = "my-account"
-# # partition = "standard" {% endif %}
+# # partition = "standard"
 # ///
 
 import groundhog_hpc as hog
 
-@hog.function(endpoint="{{ endpoint_blocks[0].name if endpoint_blocks else 'my_endpoint' }}")
+@hog.function(endpoint="{{ endpoint_name }}")
 def hello_world(name: str = "World") -> str:
     """Example function that can be run remotely on your HPC cluster. """
     return f"Hello, {name}!"

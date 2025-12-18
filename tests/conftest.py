@@ -73,7 +73,14 @@ def mock_globus_client():
     """Mock Globus Compute client to prevent network calls during tests.
 
     This prevents the 20+ second timeout when running tests offline.
+    Also clears the lru_cache on get_endpoint_metadata to ensure
+    test isolation.
     """
+    # Clear cached metadata to ensure mock is used
+    from groundhog_hpc.compute import get_endpoint_metadata
+
+    get_endpoint_metadata.cache_clear()
+
     with patch("groundhog_hpc.compute._get_compute_client") as mock_client:
         # Create a mock client that returns sensible defaults
         client = MagicMock()
@@ -86,6 +93,9 @@ def mock_globus_client():
         }
         mock_client.return_value = client
         yield mock_client
+
+    # Clear cache again after test to avoid leaking state
+    get_endpoint_metadata.cache_clear()
 
 
 @pytest.fixture
