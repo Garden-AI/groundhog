@@ -285,6 +285,119 @@ import numpy as np
             assert "not found" in result.output.lower()
 
 
+class TestSchemaPreFilling:
+    """Tests for endpoint schema pre-filling functionality."""
+
+    def test_init_prefills_schema_fields_as_comments(self, mock_globus_client):
+        """Test that hog init pre-fills endpoint schema fields as comments."""
+        # Configure mock to return a schema with documented fields
+        mock_globus_client.return_value.get_endpoint_metadata.return_value = {
+            "name": "test_endpoint",
+            "display_name": "Test Endpoint",
+            "user_config_schema": {
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "$comment": "Your allocation account name",
+                    },
+                    "partition": {
+                        "type": "string",
+                        "$comment": "Scheduler partition to use",
+                    },
+                    "walltime": {
+                        "type": "number",
+                        "$comment": "Maximum job runtime in minutes",
+                    },
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+
+            # Use a custom endpoint spec with UUID
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    str(script_path),
+                    "-e",
+                    "myendpoint:4b116d3c-1703-4f8f-9f6f-39921e5864df",
+                ],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+
+            content = script_path.read_text()
+
+            # Should have the endpoint config
+            assert "[tool.hog.myendpoint]" in content
+            assert "4b116d3c-1703-4f8f-9f6f-39921e5864df" in content
+
+            # Should have commented-out schema fields with type info
+            # These appear as double-comments (# # field = # Type...) in PEP 723 blocks
+            # with aligned padding before the comment
+            assert "# # account =" in content
+            assert "# Type: string. Your allocation account name" in content
+
+            assert "# # partition =" in content
+            assert "# Type: string. Scheduler partition to use" in content
+
+            assert "# # walltime =" in content
+            assert "# Type: number. Maximum job runtime in minutes" in content
+
+    def test_add_prefills_schema_fields_as_comments(self, mock_globus_client):
+        """Test that hog add pre-fills endpoint schema fields as comments."""
+        # Configure mock to return a schema with documented fields
+        mock_globus_client.return_value.get_endpoint_metadata.return_value = {
+            "name": "test_endpoint",
+            "user_config_schema": {
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "$comment": "Your allocation account",
+                    },
+                    "partition": {
+                        "type": "string",
+                    },
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                [
+                    "add",
+                    str(script_path),
+                    "-e",
+                    "myendpoint:4b116d3c-1703-4f8f-9f6f-39921e5864df",
+                ],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+
+            content = script_path.read_text()
+
+            # Should have the endpoint config
+            assert "[tool.hog.myendpoint]" in content
+
+            # Should have commented-out schema fields with aligned padding
+            assert "# # account =" in content
+            assert "# Type: string. Your allocation account" in content
+
+            # Fields without $comment should still show type
+            assert "# # partition =" in content
+            assert "# Type: string" in content
+
+
 class TestInitEndpoint:
     """Tests for hog init with --endpoint flag."""
 

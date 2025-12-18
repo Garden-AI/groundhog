@@ -13,6 +13,7 @@ from groundhog_hpc.app.utils import (
 )
 from groundhog_hpc.configuration.endpoints import (
     KNOWN_ENDPOINTS,
+    get_endpoint_schema_comments,
     parse_endpoint_spec,
 )
 from groundhog_hpc.configuration.pep723 import add_endpoint_to_script
@@ -98,12 +99,18 @@ def add(
             endpoint_config = {"endpoint": spec.uuid, **spec.base_defaults}
             variant_config = spec.variant_defaults if spec.variant else None
 
+            # Fetch schema comments if UUID is valid (not a TODO placeholder)
+            schema_comments = None
+            if not spec.uuid.startswith("TODO"):
+                schema_comments = get_endpoint_schema_comments(spec.uuid)
+
             content, skip_msg = add_endpoint_to_script(
                 content,
                 endpoint_name=spec.name,
                 endpoint_config=endpoint_config,
                 variant_name=spec.variant,
                 variant_config=variant_config,
+                schema_comments=schema_comments,
             )
 
             if skip_msg:

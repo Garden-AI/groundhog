@@ -234,6 +234,7 @@ def add_endpoint_to_toml(
     endpoint_config: dict[str, Any],
     variant_name: str | None = None,
     variant_config: dict[str, Any] | None = None,
+    schema_comments: dict[str, str] | None = None,
 ) -> str | None:
     """Add endpoint config to TOML document in-place.
 
@@ -243,6 +244,8 @@ def add_endpoint_to_toml(
         endpoint_config: Base endpoint config dict
         variant_name: Optional variant name (e.g., "gpu")
         variant_config: Optional variant config dict
+        schema_comments: Optional dict mapping field names to comment strings
+            (e.g., {"account": "Type: string. Your allocation account"})
 
     Returns:
         Skip message if endpoint/variant already exists, None on success.
@@ -271,6 +274,8 @@ def add_endpoint_to_toml(
             hog[endpoint_name] = tomlkit.table()
             for key, value in endpoint_config.items():
                 hog[endpoint_name][key] = value
+            # Add schema comments for fields not already in config
+            _add_schema_comments(hog[endpoint_name], endpoint_config, schema_comments)
             hog[endpoint_name][variant_name] = tomlkit.table()
             for key, value in (variant_config or {}).items():
                 hog[endpoint_name][variant_name][key] = value
@@ -282,7 +287,39 @@ def add_endpoint_to_toml(
         hog[endpoint_name] = tomlkit.table()
         for key, value in endpoint_config.items():
             hog[endpoint_name][key] = value
+        # Add schema comments for fields not already in config
+        _add_schema_comments(hog[endpoint_name], endpoint_config, schema_comments)
         return None
+
+
+def _add_schema_comments(
+    table: tomlkit.items.Table,
+    existing_config: dict[str, Any],
+    schema_comments: dict[str, str] | None,
+) -> None:
+    """Add commented-out schema fields to a tomlkit table.
+
+    Args:
+        table: tomlkit Table to add comments to
+        existing_config: Dict of fields already in the config (to skip)
+        schema_comments: Dict mapping field names to comment strings
+    """
+    if not schema_comments:
+        return
+
+    # Align comments to column 52 (matches format_endpoint_config_to_toml)
+    alignment_column = 52
+
+    for field_name, comment in schema_comments.items():
+        # Skip fields already in the active config
+        if field_name in existing_config:
+            continue
+        # Add as a commented-out field with documentation
+        # Format: # field_name =                  # Type: string. Description
+        # Note: tomlkit.comment adds "# " prefix, embed_pep723_toml adds another "# "
+        # so final output is "# # field_name = {padding}# comment"
+        padding = " " * max(1, alignment_column - 5 - len(field_name))
+        table.add(tomlkit.comment(f"{field_name} ={padding}# {comment}"))
 
 
 def remove_endpoint_from_script(script_content: str, endpoint_name: str) -> str:
@@ -314,6 +351,7 @@ def add_endpoint_to_script(
     endpoint_config: dict[str, Any],
     variant_name: str | None = None,
     variant_config: dict[str, Any] | None = None,
+    schema_comments: dict[str, str] | None = None,
 ) -> tuple[str, str | None]:
     """Add endpoint config to existing script, preserving formatting.
 
@@ -326,6 +364,8 @@ def add_endpoint_to_script(
         endpoint_config: Base endpoint config dict
         variant_name: Optional variant name (e.g., "gpu")
         variant_config: Optional variant config dict
+        schema_comments: Optional dict mapping field names to comment strings
+            (e.g., {"account": "Type: string. Your allocation account"})
 
     Returns:
         Tuple of (updated_content, skip_message)
@@ -341,7 +381,12 @@ def add_endpoint_to_script(
         doc["dependencies"] = []
 
     skip_msg = add_endpoint_to_toml(
-        doc, endpoint_name, endpoint_config, variant_name, variant_config
+        doc,
+        endpoint_name,
+        endpoint_config,
+        variant_name,
+        variant_config,
+        schema_comments,
     )
 
     updated_content = embed_pep723_toml(script_content, doc, match)

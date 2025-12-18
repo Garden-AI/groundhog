@@ -11,6 +11,7 @@ from rich.console import Console
 from groundhog_hpc.app.utils import normalize_python_version_with_uv
 from groundhog_hpc.configuration.endpoints import (
     KNOWN_ENDPOINTS,
+    get_endpoint_schema_comments,
     parse_endpoint_spec,
 )
 from groundhog_hpc.configuration.pep723 import (
@@ -103,12 +104,18 @@ def init(
             endpoint_config = {"endpoint": spec.uuid, **spec.base_defaults}
             variant_config = spec.variant_defaults if spec.variant else None
 
+            # Fetch schema comments if UUID is valid (not a TODO placeholder)
+            schema_comments = None
+            if not spec.uuid.startswith("TODO"):
+                schema_comments = get_endpoint_schema_comments(spec.uuid)
+
             content, _ = add_endpoint_to_script(
                 content,
                 endpoint_name=spec.name,
                 endpoint_config=endpoint_config,
                 variant_name=spec.variant,
                 variant_config=variant_config,
+                schema_comments=schema_comments,
             )
 
     Path(filename).write_text(content)
