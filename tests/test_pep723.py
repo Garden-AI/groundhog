@@ -3,6 +3,7 @@
 import sys
 
 import pytest
+import tomlkit
 from pydantic import ValidationError
 
 from groundhog_hpc.configuration.models import (
@@ -12,8 +13,13 @@ from groundhog_hpc.configuration.models import (
     ToolMetadata,
 )
 from groundhog_hpc.configuration.pep723 import (
+    add_endpoint_to_script,
+    add_endpoint_to_toml,
+    embed_pep723_toml,
+    extract_pep723_toml,
     insert_or_update_metadata,
     read_pep723,
+    remove_endpoint_from_script,
     write_pep723,
 )
 
@@ -215,9 +221,8 @@ class TestDumpsPep723:
 
         # Should contain expected fields
         assert '# requires-python = ">=3.10"' in result
-        assert "# dependencies = [" in result
-        assert '"numpy",' in result
-        assert '"pandas",' in result
+        assert '"numpy"' in result
+        assert '"pandas"' in result
 
     def test_dumps_empty_dependencies(self):
         """Test dumping metadata with empty dependencies."""
@@ -562,3 +567,488 @@ class TestToolMetadata:
 
         assert "anvil" in tool.hog
         assert tool.uv.exclude_newer == "2024-01-01T00:00:00Z"
+
+
+class TestExtractPep723Toml:
+    """Test extracting PEP 723 TOML with tomlkit for round-trip preservation."""
+
+    def test_extract_returns_none_for_script_without_block(self):
+        """Test that scripts without PEP 723 block return None."""
+        script = """import numpy as np
+
+def main():
+    pass
+"""
+        doc, match = extract_pep723_toml(script)
+        assert doc is None
+        assert match is None
+
+    def test_extract_returns_tomlkit_document(self):
+        """Test that extraction returns a tomlkit TOMLDocument."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = ["numpy"]
+# ///
+
+import numpy as np
+"""
+        doc, match = extract_pep723_toml(script)
+        assert doc is not None
+        assert match is not None
+        assert isinstance(doc, tomlkit.TOMLDocument)
+        assert doc["requires-python"] == ">=3.10"
+        assert doc["dependencies"] == ["numpy"]
+
+    def test_extract_preserves_comments(self):
+        """Test that tomlkit document preserves inline comments."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# account = "my-custom-account"  # user's custom account
+# ///
+"""
+        doc, match = extract_pep723_toml(script)
+        assert doc is not None
+        # When we dump back, comments should be preserved
+        dumped = tomlkit.dumps(doc)
+        assert "my-custom-account" in dumped
+
+    def test_extract_preserves_field_ordering(self):
+        """Test that field order is preserved in tomlkit document."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+# account = "my-account"
+# partition = "shared"
+# ///
+"""
+        doc, match = extract_pep723_toml(script)
+        assert doc is not None
+        anvil = doc["tool"]["hog"]["anvil"]
+        # Fields should maintain order
+        keys = list(anvil.keys())
+        assert keys == ["endpoint", "account", "partition"]
+
+    def test_extract_with_nested_variants(self):
+        """Test extraction with nested variant configurations."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+# ///
+"""
+        doc, match = extract_pep723_toml(script)
+        assert doc is not None
+        assert "anvil" in doc["tool"]["hog"]
+        assert "gpu" in doc["tool"]["hog"]["anvil"]
+        assert doc["tool"]["hog"]["anvil"]["gpu"]["partition"] == "gpu-debug"
+
+
+class TestEmbedPep723Toml:
+    """Test embedding TOML documents back into scripts."""
+
+    def test_embed_replaces_existing_block(self):
+        """Test that embedding replaces the existing PEP 723 block."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+
+import numpy as np
+"""
+        doc, match = extract_pep723_toml(script)
+        doc["requires-python"] = ">=3.11"
+        doc["dependencies"] = ["pandas"]
+
+        result = embed_pep723_toml(script, doc, match)
+
+        assert '# requires-python = ">=3.11"' in result
+        assert "pandas" in result
+        assert "import numpy as np" in result
+
+    def test_embed_inserts_new_block_when_none_exists(self):
+        """Test that embedding inserts block at appropriate location."""
+        script = """import numpy as np
+
+def main():
+    pass
+"""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        result = embed_pep723_toml(script, doc, None)
+
+        assert result.startswith("# /// script")
+        assert "import numpy as np" in result
+
+    def test_embed_inserts_after_shebang(self):
+        """Test that new block is inserted after shebang."""
+        script = """#!/usr/bin/env python3
+import numpy as np
+"""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        result = embed_pep723_toml(script, doc, None)
+
+        lines = result.split("\n")
+        assert lines[0] == "#!/usr/bin/env python3"
+        assert lines[1].startswith("# /// script")
+
+    def test_embed_inserts_after_encoding(self):
+        """Test that new block is inserted after encoding declaration."""
+        script = """# -*- coding: utf-8 -*-
+import numpy as np
+"""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        result = embed_pep723_toml(script, doc, None)
+
+        lines = result.split("\n")
+        assert lines[0] == "# -*- coding: utf-8 -*-"
+        assert lines[1].startswith("# /// script")
+
+
+class TestAddEndpointToToml:
+    """Test adding endpoint configurations to TOML documents."""
+
+    def test_add_new_base_endpoint(self):
+        """Test adding a new base endpoint to TOML doc."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        skip_msg = add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid-here", "account": "my-account"},
+        )
+
+        assert skip_msg is None
+        assert "tool" in doc
+        assert "hog" in doc["tool"]
+        assert "anvil" in doc["tool"]["hog"]
+        assert doc["tool"]["hog"]["anvil"]["endpoint"] == "uuid-here"
+
+    def test_add_base_with_variant(self):
+        """Test adding base endpoint with variant."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        skip_msg = add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid-here"},
+            variant_name="gpu",
+            variant_config={"partition": "gpu-debug", "qos": "gpu"},
+        )
+
+        assert skip_msg is None
+        assert doc["tool"]["hog"]["anvil"]["endpoint"] == "uuid-here"
+        assert doc["tool"]["hog"]["anvil"]["gpu"]["partition"] == "gpu-debug"
+
+    def test_skip_existing_base_endpoint(self):
+        """Test that existing base endpoint is skipped with message."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+        doc["tool"] = {"hog": {"anvil": {"endpoint": "existing-uuid"}}}
+
+        skip_msg = add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "new-uuid"},
+        )
+
+        assert skip_msg is not None
+        assert "anvil" in skip_msg
+        assert "exists" in skip_msg.lower()
+        # Original should be unchanged
+        assert doc["tool"]["hog"]["anvil"]["endpoint"] == "existing-uuid"
+
+    def test_add_variant_to_existing_base(self):
+        """Test adding new variant when base already exists."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+        doc["tool"] = {"hog": {"anvil": {"endpoint": "uuid", "account": "custom"}}}
+
+        skip_msg = add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid"},
+            variant_name="gpu",
+            variant_config={"partition": "gpu-debug"},
+        )
+
+        assert skip_msg is None
+        # Base should be unchanged
+        assert doc["tool"]["hog"]["anvil"]["account"] == "custom"
+        # Variant should be added
+        assert doc["tool"]["hog"]["anvil"]["gpu"]["partition"] == "gpu-debug"
+
+    def test_skip_existing_variant(self):
+        """Test that existing variant is skipped with message."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+        doc["tool"] = {
+            "hog": {
+                "anvil": {
+                    "endpoint": "uuid",
+                    "gpu": {"partition": "existing-partition"},
+                }
+            }
+        }
+
+        skip_msg = add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid"},
+            variant_name="gpu",
+            variant_config={"partition": "new-partition"},
+        )
+
+        assert skip_msg is not None
+        assert "anvil.gpu" in skip_msg
+        assert "exists" in skip_msg.lower()
+        # Original should be unchanged
+        assert doc["tool"]["hog"]["anvil"]["gpu"]["partition"] == "existing-partition"
+
+    def test_add_multiple_endpoints(self):
+        """Test adding multiple independent endpoints."""
+        doc = tomlkit.document()
+        doc["requires-python"] = ">=3.10"
+        doc["dependencies"] = []
+
+        add_endpoint_to_toml(
+            doc,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid-1"},
+        )
+        add_endpoint_to_toml(
+            doc,
+            endpoint_name="polaris",
+            endpoint_config={"endpoint": "uuid-2"},
+        )
+
+        assert "anvil" in doc["tool"]["hog"]
+        assert "polaris" in doc["tool"]["hog"]
+
+
+class TestRemoveEndpointFromScript:
+    """Test removing endpoints from scripts."""
+
+    def test_remove_single_endpoint(self):
+        """Test removing a single endpoint from script."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.my_endpoint]
+# endpoint = "uuid"
+# ///
+
+import numpy as np
+"""
+        result = remove_endpoint_from_script(script, "my_endpoint")
+
+        assert "[tool.hog.my_endpoint]" not in result
+        assert '# endpoint = "uuid"' not in result
+        assert "import numpy as np" in result
+        # Should still have valid PEP 723 block
+        assert "# /// script" in result
+        assert "# ///" in result
+
+    def test_remove_endpoint_with_variants(self):
+        """Test removing endpoint also removes its variants."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+#
+# [tool.hog.anvil.cpu]
+# partition = "shared"
+# ///
+"""
+        result = remove_endpoint_from_script(script, "anvil")
+
+        assert "[tool.hog.anvil]" not in result
+        assert "[tool.hog.anvil.gpu]" not in result
+        assert "[tool.hog.anvil.cpu]" not in result
+
+    def test_remove_keeps_other_endpoints(self):
+        """Test removing one endpoint keeps others intact."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid-1"
+#
+# [tool.hog.polaris]
+# endpoint = "uuid-2"
+# ///
+"""
+        result = remove_endpoint_from_script(script, "anvil")
+
+        assert "[tool.hog.anvil]" not in result
+        assert "[tool.hog.polaris]" in result
+        assert 'endpoint = "uuid-2"' in result
+
+
+class TestAddEndpointToScript:
+    """Test the convenience wrapper for adding endpoints to scripts."""
+
+    def test_add_endpoint_to_script_with_existing_block(self):
+        """Test adding endpoint to script with existing PEP 723 block."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = ["numpy"]
+# ///
+
+import numpy as np
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid-here"},
+        )
+
+        assert skip_msg is None
+        assert "[tool.hog.anvil]" in result
+        assert 'endpoint = "uuid-here"' in result
+        assert "import numpy as np" in result
+
+    def test_add_endpoint_to_script_without_block(self):
+        """Test adding endpoint creates PEP 723 block if missing."""
+        script = """import numpy as np
+
+def main():
+    pass
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid-here"},
+        )
+
+        assert skip_msg is None
+        assert "# /// script" in result
+        assert "[tool.hog.anvil]" in result
+
+    def test_add_endpoint_with_variant(self):
+        """Test adding endpoint with variant configuration."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid"},
+            variant_name="gpu",
+            variant_config={"partition": "gpu-debug", "qos": "gpu"},
+        )
+
+        assert skip_msg is None
+        assert "[tool.hog.anvil]" in result
+        assert "[tool.hog.anvil.gpu]" in result
+        assert 'partition = "gpu-debug"' in result
+
+    def test_add_returns_skip_message_for_duplicate(self):
+        """Test that adding duplicate returns skip message."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "existing-uuid"
+# ///
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "new-uuid"},
+        )
+
+        assert skip_msg is not None
+        assert "anvil" in skip_msg
+        # Script should be unchanged
+        assert 'endpoint = "existing-uuid"' in result
+
+    def test_add_variant_to_existing_base_preserves_customizations(self):
+        """Test that adding variant preserves user's base config customizations."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+# account = "my-custom-account"
+# ///
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "uuid"},
+            variant_name="gpu",
+            variant_config={"partition": "gpu-debug"},
+        )
+
+        assert skip_msg is None
+        # User's customization should be preserved
+        assert 'account = "my-custom-account"' in result
+        # Variant should be added
+        assert "[tool.hog.anvil.gpu]" in result
+
+    def test_add_preserves_formatting_and_comments(self):
+        """Test that adding endpoint preserves existing formatting."""
+        script = """# /// script
+# requires-python = ">=3.12"
+# dependencies = ["numpy"]
+#
+# [tool.hog.anvil]
+# endpoint = "5aafb4c1-..."
+# account = "my-custom-account"
+#
+# [tool.hog.anvil.gpu-debug]
+# partition = "gpu-debug"
+# ///
+"""
+        result, skip_msg = add_endpoint_to_script(
+            script,
+            endpoint_name="anvil",
+            endpoint_config={"endpoint": "5aafb4c1-..."},
+            variant_name="gpu",
+            variant_config={"partition": "gpu-debug", "qos": "gpu"},
+        )
+
+        assert skip_msg is None
+        # Original content should be preserved
+        assert 'account = "my-custom-account"' in result
+        assert "[tool.hog.anvil.gpu-debug]" in result
+        # New variant should be added
+        assert "[tool.hog.anvil.gpu]" in result

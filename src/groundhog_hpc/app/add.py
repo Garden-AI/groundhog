@@ -11,8 +11,20 @@ from groundhog_hpc.app.utils import (
     normalize_python_version_with_uv,
     update_requires_python,
 )
+from groundhog_hpc.configuration.endpoints import (
+    KNOWN_ENDPOINTS,
+    parse_endpoint_spec,
+)
+from groundhog_hpc.configuration.pep723 import add_endpoint_to_script
 
 console = Console()
+
+KNOWN_ENDPOINT_ALIASES = []
+for name in KNOWN_ENDPOINTS.keys():
+    KNOWN_ENDPOINT_ALIASES += [name]
+    KNOWN_ENDPOINT_ALIASES += [
+        f"{name}.{variant}" for variant in KNOWN_ENDPOINTS[name]["variants"].keys()
+    ]
 
 
 def add(
@@ -23,6 +35,15 @@ def add(
     ),
     python: str | None = typer.Option(
         None, "--python", "-p", help="Python version specifier"
+    ),
+    endpoints: list[str] = typer.Option(
+        [],
+        "--endpoint",
+        "-e",
+        help=(
+            "Add endpoint configuration (e.g., anvil, anvil.gpu, name:uuid). "
+            f"Known endpoints: {', '.join(KNOWN_ENDPOINT_ALIASES)}. Can specify multiple."
+        ),
     ),
 ) -> None:
     """Add dependencies or update Python version in a script's PEP 723 metadata."""
@@ -60,3 +81,37 @@ def add(
         except subprocess.CalledProcessError as e:
             console.print(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
+
+    # handle --endpoint flags
+    if endpoints:
+        content = script.read_text()
+        added_any = False
+
+        for endpoint_spec_str in endpoints:
+            try:
+                spec = parse_endpoint_spec(endpoint_spec_str)
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+                raise typer.Exit(1)
+
+            # Build config dict from the spec
+            endpoint_config = {"endpoint": spec.uuid, **spec.base_defaults}
+            variant_config = spec.variant_defaults if spec.variant else None
+
+            content, skip_msg = add_endpoint_to_script(
+                content,
+                endpoint_name=spec.name,
+                endpoint_config=endpoint_config,
+                variant_name=spec.variant,
+                variant_config=variant_config,
+            )
+
+            if skip_msg:
+                console.print(f"[yellow]{skip_msg}[/yellow]")
+            else:
+                added_any = True
+
+        script.write_text(content)
+
+        if added_any:
+            console.print(f"[green]Added endpoint configuration to {script}[/green]")
