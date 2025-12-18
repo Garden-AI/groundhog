@@ -463,3 +463,277 @@ class TestInitEndpoint:
             # Should have both requested endpoints
             assert "[tool.hog.ep1]" in content
             assert "[tool.hog.ep2]" in content
+
+
+class TestRemoveEndpoint:
+    """Tests for hog remove --endpoint CLI command."""
+
+    def test_remove_single_endpoint(self):
+        """Test removing a single endpoint from script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.my_endpoint]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+# ///
+
+import numpy as np
+""")
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "my_endpoint"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "Removed endpoint configuration(s)" in result.output
+
+            content = script_path.read_text()
+            assert "[tool.hog.my_endpoint]" not in content
+            # Should still have valid PEP 723 block
+            assert "# /// script" in content
+            assert "# ///" in content
+
+    def test_remove_endpoint_with_variants(self):
+        """Test removing endpoint also removes all its variants."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+#
+# [tool.hog.anvil.cpu]
+# partition = "shared"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "anvil"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "Removed endpoint configuration(s)" in result.output
+
+            content = script_path.read_text()
+            assert "[tool.hog.anvil]" not in content
+            assert "[tool.hog.anvil.gpu]" not in content
+            assert "[tool.hog.anvil.cpu]" not in content
+
+    def test_remove_endpoint_with_variant_spec(self):
+        """Test removing a specific variant leaves the base endpoint intact."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+#
+# [tool.hog.anvil.cpu]
+# partition = "shared"
+# ///
+""")
+
+            # Remove only the gpu variant
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "anvil.gpu"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "Removed endpoint configuration(s)" in result.output
+
+            content = script_path.read_text()
+            # Base endpoint should still exist
+            assert "[tool.hog.anvil]" in content
+            assert "4b116d3c-1703-4f8f-9f6f-39921e5864df" in content
+            # gpu variant should be removed
+            assert "[tool.hog.anvil.gpu]" not in content
+            assert 'partition = "gpu-debug"' not in content
+            # cpu variant should still exist
+            assert "[tool.hog.anvil.cpu]" in content
+            assert 'partition = "shared"' in content
+
+    def test_remove_keeps_other_endpoints(self):
+        """Test removing one endpoint keeps others intact."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
+# [tool.hog.polaris]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "anvil"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+
+            content = script_path.read_text()
+            assert "[tool.hog.anvil]" not in content
+            assert "[tool.hog.polaris]" in content
+            assert "5aafb4c1-27b2-40d8-a038-a0277611868f" in content
+
+    def test_remove_multiple_endpoints(self):
+        """Test removing multiple endpoints with multiple -e flags."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.endpoint1]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
+# [tool.hog.endpoint2]
+# endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
+#
+# [tool.hog.endpoint3]
+# endpoint = "6bbfc5d2-38c3-51e9-b149-b1388722979f"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                [
+                    "remove",
+                    str(script_path),
+                    "-e",
+                    "endpoint1",
+                    "-e",
+                    "endpoint2",
+                ],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+
+            content = script_path.read_text()
+            assert "[tool.hog.endpoint1]" not in content
+            assert "[tool.hog.endpoint2]" not in content
+            # endpoint3 should remain
+            assert "[tool.hog.endpoint3]" in content
+
+    def test_remove_nonexistent_endpoint(self):
+        """Test removing non-existent endpoint shows warning."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.my_endpoint]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "nonexistent"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "not found" in result.output.lower()
+
+            # Original endpoint should remain
+            content = script_path.read_text()
+            assert "[tool.hog.my_endpoint]" in content
+
+    def test_remove_nonexistent_variant(self):
+        """Test removing non-existent variant shows warning."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "anvil.nonexistent"],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "not found" in result.output.lower()
+
+            # Original endpoint and variant should remain
+            content = script_path.read_text()
+            assert "[tool.hog.anvil]" in content
+            assert "[tool.hog.anvil.gpu]" in content
+
+    def test_remove_endpoint_script_not_found(self):
+        """Test that removing endpoint from non-existent script fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "nonexistent.py"
+
+            result = runner.invoke(
+                app,
+                ["remove", str(script_path), "-e", "my_endpoint"],
+            )
+
+            assert result.exit_code != 0
+            assert "not found" in result.output.lower()
+
+    def test_remove_endpoint_and_packages(self):
+        """Test removing endpoint together with packages."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "script.py"
+            script_path.write_text("""# /// script
+# requires-python = ">=3.10"
+# dependencies = ["numpy", "pandas"]
+#
+# [tool.hog.my_endpoint]
+# endpoint = "4b116d3c-1703-4f8f-9f6f-39921e5864df"
+# ///
+""")
+
+            result = runner.invoke(
+                app,
+                [
+                    "remove",
+                    str(script_path),
+                    "numpy",
+                    "-e",
+                    "my_endpoint",
+                ],
+            )
+
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "Removed packages" in result.output
+            assert "Removed endpoint configuration(s)" in result.output
+
+            content = script_path.read_text()
+            # numpy should be removed
+            metadata = read_pep723(content)
+            assert metadata is not None
+            assert "numpy" not in metadata.dependencies
+            # endpoint should be removed
+            assert "[tool.hog.my_endpoint]" not in content

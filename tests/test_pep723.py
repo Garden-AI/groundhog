@@ -917,6 +917,52 @@ import numpy as np
         assert "[tool.hog.polaris]" in result
         assert 'endpoint = "uuid-2"' in result
 
+    def test_remove_specific_variant(self):
+        """Test removing a specific variant keeps base and other variants."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+#
+# [tool.hog.anvil.cpu]
+# partition = "shared"
+# ///
+"""
+        result = remove_endpoint_from_script(script, "anvil", "gpu")
+
+        # Base endpoint should remain
+        assert "[tool.hog.anvil]" in result
+        assert 'endpoint = "uuid"' in result
+        # gpu variant should be removed
+        assert "[tool.hog.anvil.gpu]" not in result
+        assert 'partition = "gpu-debug"' not in result
+        # cpu variant should remain
+        assert "[tool.hog.anvil.cpu]" in result
+        assert 'partition = "shared"' in result
+
+    def test_remove_nonexistent_variant(self):
+        """Test removing a non-existent variant doesn't change the script."""
+        script = """# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+#
+# [tool.hog.anvil]
+# endpoint = "uuid"
+#
+# [tool.hog.anvil.gpu]
+# partition = "gpu-debug"
+# ///
+"""
+        result = remove_endpoint_from_script(script, "anvil", "nonexistent")
+
+        # Nothing should change
+        assert result == script
+
 
 class TestAddEndpointToScript:
     """Test the convenience wrapper for adding endpoints to scripts."""

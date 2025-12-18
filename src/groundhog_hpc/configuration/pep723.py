@@ -322,25 +322,35 @@ def _add_schema_comments(
         table.add(tomlkit.comment(f"{field_name} ={padding}# {comment}"))
 
 
-def remove_endpoint_from_script(script_content: str, endpoint_name: str) -> str:
-    """Remove an endpoint (and all its variants) from a script's PEP 723 block.
+def remove_endpoint_from_script(
+    script_content: str, endpoint_name: str, variant_name: str | None = None
+) -> str:
+    """Remove an endpoint or variant from a script's PEP 723 block.
 
     Args:
         script_content: Full script file content
-        endpoint_name: Name of the endpoint to remove (e.g., "my_endpoint")
+        endpoint_name: Name of the endpoint (e.g., "my_endpoint")
+        variant_name: Optional variant name. If provided, only removes that variant.
+                     If None, removes the entire endpoint and all its variants.
 
     Returns:
-        Updated script content with the endpoint removed
+        Updated script content with the endpoint/variant removed
     """
     doc, match = extract_pep723_toml(script_content)
     if doc is None or match is None:
         return script_content
 
-    # Remove the endpoint from tool.hog if it exists
     if "tool" in doc and "hog" in doc["tool"]:
         hog = doc["tool"]["hog"]
-        if endpoint_name in hog:
-            del hog[endpoint_name]
+
+        if variant_name is not None:
+            # Remove only the specific variant
+            if endpoint_name in hog and variant_name in hog[endpoint_name]:
+                del hog[endpoint_name][variant_name]
+        else:
+            # Remove the entire endpoint (and all its variants)
+            if endpoint_name in hog:
+                del hog[endpoint_name]
 
     return embed_pep723_toml(script_content, doc, match)
 
