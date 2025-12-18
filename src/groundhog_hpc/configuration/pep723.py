@@ -6,9 +6,10 @@ using the PEP 723 inline script metadata format (# /// script ... # ///).
 
 import re
 import sys
-from typing import Any
+from typing import Any, cast
 
 import tomlkit
+import tomlkit.items
 
 from groundhog_hpc.configuration.models import Pep723Metadata
 
@@ -253,42 +254,49 @@ def add_endpoint_to_toml(
     # Ensure tool.hog exists
     if "tool" not in doc:
         doc["tool"] = tomlkit.table()
-    if "hog" not in doc["tool"]:
-        doc["tool"]["hog"] = tomlkit.table()
 
-    hog = doc["tool"]["hog"]
+    tool_table = cast(tomlkit.items.Table, doc["tool"])
+    if "hog" not in tool_table:
+        tool_table["hog"] = tomlkit.table()
+
+    hog = cast(tomlkit.items.Table, tool_table["hog"])
 
     # Check if we're just adding a variant to an existing base
     if variant_name is not None:
         if endpoint_name in hog:
             # Base exists - check if variant exists
-            if variant_name in hog[endpoint_name]:
+            endpoint_table = cast(tomlkit.items.Table, hog[endpoint_name])
+            if variant_name in endpoint_table:
                 return f"Variant '{endpoint_name}.{variant_name}' already exists"
             # Add variant to existing base
-            hog[endpoint_name][variant_name] = tomlkit.table()
+            endpoint_table[variant_name] = tomlkit.table()
             for key, value in (variant_config or {}).items():
-                hog[endpoint_name][variant_name][key] = value
+                variant_table = cast(tomlkit.items.Table, endpoint_table[variant_name])
+                variant_table[key] = value
             return None
         else:
             # Base doesn't exist - add base + variant
             hog[endpoint_name] = tomlkit.table()
+            endpoint_table = cast(tomlkit.items.Table, hog[endpoint_name])
             for key, value in endpoint_config.items():
-                hog[endpoint_name][key] = value
+                endpoint_table[key] = value
             # Add schema comments for fields not already in config
-            _add_schema_comments(hog[endpoint_name], endpoint_config, schema_comments)
-            hog[endpoint_name][variant_name] = tomlkit.table()
+            _add_schema_comments(endpoint_table, endpoint_config, schema_comments)
+            endpoint_table[variant_name] = tomlkit.table()
             for key, value in (variant_config or {}).items():
-                hog[endpoint_name][variant_name][key] = value
+                variant_table = cast(tomlkit.items.Table, endpoint_table[variant_name])
+                variant_table[key] = value
             return None
     else:
         # Just adding base endpoint
         if endpoint_name in hog:
             return f"Endpoint '{endpoint_name}' already exists"
         hog[endpoint_name] = tomlkit.table()
+        endpoint_table = cast(tomlkit.items.Table, hog[endpoint_name])
         for key, value in endpoint_config.items():
-            hog[endpoint_name][key] = value
+            endpoint_table[key] = value
         # Add schema comments for fields not already in config
-        _add_schema_comments(hog[endpoint_name], endpoint_config, schema_comments)
+        _add_schema_comments(endpoint_table, endpoint_config, schema_comments)
         return None
 
 
@@ -340,17 +348,21 @@ def remove_endpoint_from_script(
     if doc is None or match is None:
         return script_content
 
-    if "tool" in doc and "hog" in doc["tool"]:
-        hog = doc["tool"]["hog"]
+    if "tool" in doc:
+        tool_table = cast(tomlkit.items.Table, doc["tool"])
+        if "hog" in tool_table:
+            hog = cast(tomlkit.items.Table, tool_table["hog"])
 
-        if variant_name is not None:
-            # Remove only the specific variant
-            if endpoint_name in hog and variant_name in hog[endpoint_name]:
-                del hog[endpoint_name][variant_name]
-        else:
-            # Remove the entire endpoint (and all its variants)
-            if endpoint_name in hog:
-                del hog[endpoint_name]
+            if variant_name is not None:
+                # Remove only the specific variant
+                if endpoint_name in hog:
+                    endpoint_table = cast(tomlkit.items.Table, hog[endpoint_name])
+                    if variant_name in endpoint_table:
+                        del endpoint_table[variant_name]
+            else:
+                # Remove the entire endpoint (and all its variants)
+                if endpoint_name in hog:
+                    del hog[endpoint_name]
 
     return embed_pep723_toml(script_content, doc, match)
 
