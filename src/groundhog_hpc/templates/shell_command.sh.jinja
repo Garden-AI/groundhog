@@ -56,7 +56,7 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
 
-"$UV_BIN" run --managed-python --with {{ version_spec }} \
+"$UV_BIN" run --with {{ version_spec }} \
   {{ runner_name }}.py
 
 echo "__GROUNDHOG_RESULT__"

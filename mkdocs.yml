@@ -102,6 +102,7 @@ nav:
     - Organizing with Classes: examples/methods.md
     - Parallel Execution: examples/parallel-execution.md
     - Endpoint Configuration: examples/configuration.md
+    - Customizing Package Sources: examples/pytorch_custom_index.md
     - Importing Groundhog Functions: examples/imported_function.md
   - Concepts:
     - PEP 723 Metadata: concepts/pep723.md
