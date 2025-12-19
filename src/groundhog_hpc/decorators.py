@@ -7,12 +7,14 @@ orchestration.
 
 import functools
 import inspect
-import warnings
+import logging
 from types import FunctionType
 from typing import Any, Callable
 
 from groundhog_hpc.function import Function, Method
 from groundhog_hpc.harness import Harness
+
+logger = logging.getLogger(__name__)
 
 
 def harness() -> Callable[[FunctionType], Harness]:
@@ -131,12 +133,10 @@ def method(
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
         if params and params[0] in ("self", "cls"):
-            warnings.warn(
+            logger.warning(
                 f"Method '{func.__name__}' has first parameter '{params[0]}', "
                 f"but @hog.method provides staticmethod-like semantics and will not "
-                f"pass the instance or class. Consider removing '{params[0]}' from the signature.",
-                UserWarning,
-                stacklevel=2,
+                f"pass the instance or class. Consider removing '{params[0]}' from the signature."
             )
 
         wrapper = Method(func, endpoint, **user_endpoint_config)

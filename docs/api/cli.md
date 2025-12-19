@@ -38,6 +38,7 @@ $ hog run [OPTIONS] SCRIPT [HARNESS]
 **Options**:
 
 * `--no-fun-allowed`: Suppress emoji output
+* `--log-level TEXT`: Set logging level (DEBUG, INFO, WARNING, ERROR)
 * `--help`: Show this message and exit.
 
 ## `hog init`
@@ -80,6 +81,7 @@ $ hog add [OPTIONS] SCRIPT [PACKAGES]...
 * `-r, --requirements, --requirement PATH`: Add dependencies from file
 * `-p, --python TEXT`: Python version specifier
 * `-e, --endpoint TEXT`: Add endpoint configuration (e.g., anvil, anvil.gpu, name:uuid). Known endpoints: anvil, anvil.gpu, tutorial. Can specify multiple.
+* `--log-level TEXT`: Set logging level (DEBUG, INFO, WARNING, ERROR)
 * `--help`: Show this message and exit.
 
 ## `hog remove`

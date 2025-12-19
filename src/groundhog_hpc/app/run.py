@@ -13,6 +13,7 @@ from groundhog_hpc.app.utils import (
 from groundhog_hpc.configuration.pep723 import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.harness import Harness
+from groundhog_hpc.logging import setup_logging
 from groundhog_hpc.utils import (
     get_groundhog_version_spec,
     import_user_script,
@@ -32,10 +33,20 @@ def run(
         "--no-fun-allowed",
         help="Suppress emoji output\n\n[env: GROUNDHOG_NO_FUN_ALLOWED=]",
     ),
+    log_level: str = typer.Option(
+        None,
+        "--log-level",
+        help="Set logging level (DEBUG, INFO, WARNING, ERROR)\n\n[env: GROUNDHOG_LOG_LEVEL=]",
+    ),
 ) -> None:
     """Run a Python script on a Globus Compute endpoint."""
     if no_fun_allowed:
         os.environ["GROUNDHOG_NO_FUN_ALLOWED"] = str(no_fun_allowed)
+
+    if log_level:
+        os.environ["GROUNDHOG_LOG_LEVEL"] = log_level.upper()
+        # Reconfigure logging with the new level
+        setup_logging()
 
     script_path = script.resolve()
     if not script_path.exists():

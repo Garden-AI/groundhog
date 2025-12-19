@@ -1,9 +1,5 @@
 """Tests for the decorators module."""
 
-import warnings
-
-import pytest
-
 from groundhog_hpc.decorators import function, method
 from groundhog_hpc.function import Function, Method
 
@@ -108,30 +104,46 @@ class TestMethodDecorator:
         assert MyClass.compute(5) == 10
         assert MyClass().compute(5) == 10
 
-    def test_warns_when_first_param_is_self(self):
-        """Test that a warning is emitted when first parameter is named 'self'."""
-        with pytest.warns(UserWarning, match=r".*'self'.*staticmethod.*"):
+    def test_warns_when_first_param_is_self(self, caplog):
+        """Test that a warning is logged when first parameter is named 'self'."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="groundhog_hpc"):
 
             @method()
             def compute(self, x):
                 return x * 2
 
-    def test_warns_when_first_param_is_cls(self):
-        """Test that a warning is emitted when first parameter is named 'cls'."""
-        with pytest.warns(UserWarning, match=r".*'cls'.*staticmethod.*"):
+        assert any(
+            "'self'" in record.message and "staticmethod" in record.message
+            for record in caplog.records
+        )
+
+    def test_warns_when_first_param_is_cls(self, caplog):
+        """Test that a warning is logged when first parameter is named 'cls'."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="groundhog_hpc"):
 
             @method()
             def compute(cls, x):
                 return x * 2
 
-    def test_no_warning_when_first_param_is_not_self_or_cls(self):
-        """Test that no warning is emitted when first parameter is not 'self' or 'cls'."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # Turn warnings into errors
+        assert any(
+            "'cls'" in record.message and "staticmethod" in record.message
+            for record in caplog.records
+        )
+
+    def test_no_warning_when_first_param_is_not_self_or_cls(self, caplog):
+        """Test that no warning is logged when first parameter is not 'self' or 'cls'."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
 
             @method()
             def compute(data, x):
                 return data + x
 
-            # Should not raise any warnings
-            assert isinstance(compute, Method)
+        assert len(caplog.records) == 0
+        # Should not raise any warnings
+        assert isinstance(compute, Method)

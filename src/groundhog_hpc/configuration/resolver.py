@@ -19,12 +19,15 @@ PEP 723 metadata sets sharable defaults, decorators customize per-function,
 and call-time overrides allow runtime changes.
 """
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from groundhog_hpc.configuration.defaults import DEFAULT_USER_CONFIG
 from groundhog_hpc.configuration.models import EndpointConfig, EndpointVariant
 from groundhog_hpc.configuration.pep723 import read_pep723
+
+logger = logging.getLogger(__name__)
 
 
 def _merge_endpoint_configs(
@@ -139,9 +142,12 @@ class ConfigResolver:
             ValidationError: If any config level has invalid fields (e.g., negative walltime)
         """
 
+        logger.debug(f"Resolving config for endpoint: {endpoint_name}")
+
         # Layer 1: Start with DEFAULT_USER_CONFIG
         config = DEFAULT_USER_CONFIG.copy()
         base_name, *variant_path = endpoint_name.split(".")
+        logger.debug(f"Starting with DEFAULT_USER_CONFIG: {config}")
 
         # Layer 2-3: walk base[.variant[.sub]] path hierarchically
         metadata: dict = self._load_pep723_metadata()
@@ -149,8 +155,11 @@ class ConfigResolver:
             metadata.get("tool", {}).get("hog", {}).get(base_name, {}).copy()
         )
         if base_variant:
+            logger.debug(f"Found base config for '{base_name}': {base_variant}")
             EndpointConfig.model_validate(base_variant)
             config["endpoint"] = base_variant.pop("endpoint")
+        else:
+            logger.debug(f"No PEP 723 config found for '{base_name}'")
 
         def _merge_variant_path(
             variant_names: list[str], current_variant: dict, accumulated_config: dict
@@ -171,12 +180,18 @@ class ConfigResolver:
                     + variant_path[: len(variant_path) - len(remaining_names)]
                 )
                 if next_variant is None:
+                    logger.error(f"Variant '{next_name}' not found in '{path_so_far}'")
                     raise ValueError(f"Variant {next_name} not found in {path_so_far}")
                 else:
+                    logger.error(
+                        f"Variant '{next_name}' in '{path_so_far}' is not a valid variant "
+                        f"(expected dict, got {type(next_variant).__name__})"
+                    )
                     raise ValueError(
                         f"Variant {next_name} in {path_so_far} is not a valid variant "
                         f"(expected dict, got {type(next_variant).__name__})"
                     )
+            logger.debug(f"Merging variant '{next_name}' config: {next_variant}")
             return _merge_variant_path(
                 remaining_names, next_variant, accumulated_config
             )
@@ -184,9 +199,13 @@ class ConfigResolver:
         config = _merge_variant_path(variant_path, base_variant, config)
 
         # Layer 4: Merge decorator config
+        if decorator_config:
+            logger.debug(f"Merging decorator config: {decorator_config}")
         config = _merge_endpoint_configs(config, decorator_config)
 
         # Layer 5: Call-time overrides
+        if call_time_config:
+            logger.debug(f"Merging call-time config: {call_time_config}")
         config = _merge_endpoint_configs(config, call_time_config)
 
         # Layer 5 1/2: we want to ensure uv is installed *after* any user
@@ -194,6 +213,8 @@ class ConfigResolver:
         # templated shell command's ability to `uv.find_uv_bin()`
         uv_init_config = {"worker_init": "pip show -qq uv || pip install uv || true"}
         config = _merge_endpoint_configs(config, uv_init_config)
+
+        logger.debug(f"Final resolved config: {config}")
         return config
 
     def _load_pep723_metadata(self) -> dict[str, Any]:

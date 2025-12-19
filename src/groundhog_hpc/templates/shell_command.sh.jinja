@@ -33,6 +33,17 @@ fi
 mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 {% endraw %}
 
+# Propagate log level to remote environment
+{% if log_level %}
+# Local override - use value from dispatching environment
+export GROUNDHOG_LOG_LEVEL="{{ log_level }}"
+{% else %}
+{% raw %}
+# Respect remote environment if set, otherwise default to WARNING
+export GROUNDHOG_LOG_LEVEL="${{GROUNDHOG_LOG_LEVEL:-WARNING}}"
+{% endraw %}
+{% endif %}
+
 cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
 {{ user_script_contents | escape_braces }}
 USER_SCRIPT_EOF

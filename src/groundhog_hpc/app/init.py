@@ -1,5 +1,6 @@
 """Init command for creating new Groundhog scripts."""
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,7 @@ from groundhog_hpc.configuration.pep723 import (
     add_endpoint_to_script,
     remove_endpoint_from_script,
 )
+from groundhog_hpc.logging import setup_logging
 
 console = Console()
 
@@ -51,8 +53,18 @@ def init(
             "Can specify multiple."
         ),
     ),
+    log_level: str = typer.Option(
+        None,
+        "--log-level",
+        help="Set logging level (DEBUG, INFO, WARNING, ERROR)\n\n[env: GROUNDHOG_LOG_LEVEL=]",
+    ),
 ) -> None:
     """Create a new groundhog script with PEP 723 metadata and example code."""
+    if log_level:
+        os.environ["GROUNDHOG_LOG_LEVEL"] = log_level.upper()
+        # Reconfigure logging with the new level
+        setup_logging()
+
     if Path(filename).exists():
         console.print(f"[red]Error: {filename} already exists[/red]")
         raise typer.Exit(1)

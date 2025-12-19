@@ -7,6 +7,8 @@ user functions remotely. It creates shell commands that:
 3. Execute the runner with uv, which imports the user script, calls the function, and serializes results
 """
 
+import logging
+import os
 import uuid
 from hashlib import sha1
 from pathlib import Path
@@ -15,6 +17,8 @@ from jinja2 import Environment, FileSystemLoader
 
 from groundhog_hpc.configuration.pep723 import read_pep723, write_pep723
 from groundhog_hpc.utils import get_groundhog_version_spec, path_to_module_name
+
+logger = logging.getLogger(__name__)
 
 
 def escape_braces(text: str) -> str:
@@ -44,6 +48,10 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         A fully-formed shell command string ready to be executed via Globus
         Compute or local subprocess
     """
+    logger.debug(
+        f"Templating shell command for function '{function_name}' in script '{script_path}'"
+    )
+
     with open(script_path, "r") as f_in:
         user_script = f_in.read()
 
@@ -64,6 +72,7 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     outfile_path = f"{script_name}.out"
 
     version_spec = get_groundhog_version_spec()
+    logger.debug(f"Using groundhog version spec: {version_spec}")
 
     # Load runner template
     templates_dir = Path(__file__).parent / "templates"
@@ -81,6 +90,11 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         module_name=path_to_module_name(script_path),
     )
 
+    # Read local log level (None if not set)
+    local_log_level = os.getenv("GROUNDHOG_LOG_LEVEL")
+    if local_log_level:
+        logger.debug(f"Propagating log level to remote: {local_log_level}")
+
     # Render shell command
     shell_template = jinja_env.get_template("shell_command.sh.jinja")
     shell_command_string = shell_template.render(
@@ -91,7 +105,10 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         script_name=script_name,
         version_spec=version_spec,
         payload=payload,
+        log_level=local_log_level,
     )
+
+    logger.debug(f"Generated shell command ({len(shell_command_string)} chars)")
 
     return shell_command_string
 
