@@ -67,9 +67,31 @@ class EndpointVariant(BaseModel, extra="allow"):
 
 
 class UvMetadata(BaseModel, extra="allow", serialize_by_alias=True):
+    """Configuration for uv package manager via [tool.uv].
+
+    Common fields are modeled for validation and defaults. Additional uv settings
+    are supported via extra="allow" - see https://docs.astral.sh/uv/reference/settings/
+
+    Note: Environment variables (UV_*) and CLI flags take precedence over TOML config.
+    See uv documentation for full precedence hierarchy.
+
+    Attributes:
+        exclude_newer: Limit packages to versions uploaded before cutoff (ISO 8601 timestamp)
+        python_preference: Control system vs managed Python ("managed" | "only-managed" | "system" | "only-system")
+        index_url: Primary package index URL (default: PyPI)
+        extra_index_url: Additional package indexes (searched after index_url)
+        python_downloads: Control automatic Python downloads ("automatic" | "manual" | "never")
+        offline: Disable all network access (use only cache and local files)
+    """
+
     exclude_newer: str | None = Field(
         default_factory=_default_exclude_newer, alias="exclude-newer"
     )
+    python_preference: str | None = Field(default="managed", alias="python-preference")
+    index_url: str | None = Field(default=None, alias="index-url")
+    extra_index_url: list[str] | None = Field(default=None, alias="extra-index-url")
+    python_downloads: str | None = Field(default=None, alias="python-downloads")
+    offline: bool | None = None
 
 
 class ToolMetadata(BaseModel, extra="allow"):

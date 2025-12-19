@@ -83,6 +83,60 @@ def foo():
         assert '"numpy"' in shell_command
         assert '"torch"' in shell_command
 
+    def test_runner_contains_tool_uv_configuration(self, tmp_path):
+        """Test that runner includes [tool.uv] configuration from user script."""
+        script_path = tmp_path / "test_script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-01-01T00:00:00Z"
+# python-preference = "only-managed"
+# index-url = "https://private-pypi.example.com/simple"
+# extra-index-url = ["https://pytorch.org/whl/cpu"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def foo():
+    return 42
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+
+        # Runner should contain the [tool.uv] section
+        assert "[tool.uv]" in shell_command
+        assert 'exclude-newer = "2025-01-01T00:00:00Z"' in shell_command
+        assert 'python-preference = "only-managed"' in shell_command
+        assert 'index-url = "https://private-pypi.example.com/simple"' in shell_command
+        assert '"https://pytorch.org/whl/cpu"' in shell_command
+
+    def test_shell_command_does_not_include_managed_python_flag(self, tmp_path):
+        """Test that --managed-python is NOT in the shell command (controlled by TOML)."""
+        script_path = tmp_path / "test_script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def foo():
+    return 42
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+
+        # Should NOT contain --managed-python (it's now in [tool.uv])
+        assert "--managed-python" not in shell_command
+        # Should still have --with for version matching
+        assert "--with" in shell_command
+
     def test_generates_valid_shell_command(self, tmp_path):
         """Test that a valid shell command string is generated."""
         script_path = tmp_path / "test_script.py"
