@@ -5,6 +5,7 @@ ShellFunctions, registering them, and submitting them for execution on remote
 endpoints.
 """
 
+import logging
 import os
 import warnings
 from functools import lru_cache
@@ -13,6 +14,8 @@ from uuid import UUID
 
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.templating import template_shell_command
+
+logger = logging.getLogger(__name__)
 
 warnings.filterwarnings(
     "ignore",
@@ -92,10 +95,21 @@ def submit_to_executor(
         expected_keys = set(schema.get("properties", {}).keys())
         unexpected_keys = set(config.keys()) - expected_keys
         if unexpected_keys:
+            logger.debug(
+                f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
+            )
             config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
+    logger.debug(f"Creating Globus Compute executor for endpoint {endpoint}")
     with gc.Executor(endpoint, user_endpoint_config=config) as executor:
+        func_name = getattr(
+            shell_function, "__name__", getattr(shell_function, "name", "unknown")
+        )
+        logger.info(f"Submitting function '{func_name}' to endpoint '{endpoint}'")
         future = executor.submit(shell_function)
+        task_id = getattr(future, "task_id", None)
+        if task_id:
+            logger.info(f"Task submitted with ID: {task_id}")
         deserializing_future = GroundhogFuture(future)
         return deserializing_future
 
@@ -114,7 +128,8 @@ def get_task_status(task_id: str | UUID | None) -> dict[str, Any]:
         return {"status": "status pending", "exception": None}
 
     client = _get_compute_client()
-    return client.get_task(task_id)
+    task_status = client.get_task(task_id)
+    return task_status
 
 
 @lru_cache

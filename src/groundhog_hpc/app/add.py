@@ -1,5 +1,6 @@
 """Add command for managing PEP 723 script dependencies."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from groundhog_hpc.configuration.endpoints import (
     parse_endpoint_spec,
 )
 from groundhog_hpc.configuration.pep723 import add_endpoint_to_script
+from groundhog_hpc.logging import setup_logging
 
 console = Console()
 
@@ -45,9 +47,18 @@ def add(
             "Add endpoint configuration (e.g., anvil, anvil.gpu, name:uuid). "
             f"Known endpoints: {', '.join(KNOWN_ENDPOINT_ALIASES)}. Can specify multiple."
         ),
+    log_level: str = typer.Option(
+        None,
+        "--log-level",
+        help="Set logging level (DEBUG, INFO, WARNING, ERROR)\n\n[env: GROUNDHOG_LOG_LEVEL=]",
     ),
 ) -> None:
     """Add dependencies or update Python version in a script's PEP 723 metadata."""
+    if log_level:
+        os.environ["GROUNDHOG_LOG_LEVEL"] = log_level.upper()
+        # Reconfigure logging with the new level
+        setup_logging()
+
     if not script.exists():
         console.print(f"[red]Error: Script '{script}' not found[/red]")
         raise typer.Exit(1)

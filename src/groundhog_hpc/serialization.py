@@ -1,6 +1,7 @@
 import atexit
 import base64
 import json
+import logging
 import os
 import pickle
 import shutil
@@ -12,6 +13,8 @@ from proxystore.connectors.file import FileConnector
 from proxystore.store import Store, get_store
 
 from groundhog_hpc.errors import DeserializationError, PayloadTooLargeError
+
+logger = logging.getLogger(__name__)
 
 # Globus Compute payload size limit (10 MB)
 PAYLOAD_SIZE_LIMIT_BYTES = 10 * 1024 * 1024
@@ -137,18 +140,29 @@ def serialize(
         >>> serialize(maybe_large_obj, proxy_threshold_mb=5)
     """
     if use_proxy:
+        logger.debug("Using ProxyStore for serialization (explicitly requested)")
         return _proxy_serialize(obj)
 
     payload = _direct_serialize(obj)
     payload_size = len(payload.encode("utf-8"))
     payload_size_mb = payload_size / (1024 * 1024)
 
+    logger.debug(f"Payload size: {payload_size_mb:.2f}MB")
+
     if proxy_threshold_mb is not None and payload_size_mb > proxy_threshold_mb:
+        logger.warning(
+            f"Payload size {payload_size_mb:.1f}MB exceeds threshold {proxy_threshold_mb}MB, "
+            f"using ProxyStore for efficient transfer"
+        )
         return _proxy_serialize(obj)
 
     if payload_size > size_limit_bytes:
+        logger.error(
+            f"Payload size {payload_size_mb:.2f}MB exceeds limit {size_limit_bytes / (1024 * 1024):.2f}MB"
+        )
         raise PayloadTooLargeError(payload_size_mb)
 
+    logger.debug(f"Using direct serialization for {payload_size_mb:.2f}MB payload")
     return payload
 
 
@@ -187,6 +201,7 @@ def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
     user_output = None
 
     try:
+        logger.debug("Starting deserialization of stdout")
         if delimiter in stdout:
             parts = stdout.split(delimiter, 1)
             user_output = parts[0].rstrip(
@@ -196,8 +211,13 @@ def deserialize_stdout(stdout: str) -> tuple[str | None, Any]:
                 "\n"
             )  # Remove leading newline from echo
 
-            return user_output, deserialize(serialized_result)
+            result = deserialize(serialized_result)
+            logger.debug("Successfully deserialized result from stdout")
+            return user_output, result
         else:
-            return None, deserialize(stdout)
+            result = deserialize(stdout)
+            logger.debug("Successfully deserialized result (no delimiter found)")
+            return None, result
     except Exception as e:
+        logger.error(f"Failed to deserialize result: {e}", exc_info=True)
         raise DeserializationError(user_output, e, stdout) from e

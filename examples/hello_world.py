@@ -8,8 +8,8 @@
 # [tool.hog.anvil]  # Anvil Multi-User Globus Compute Endpoint
 # endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
 # account = "cis250461"                            # Type: string
-# walltime = 100                                   # Type: int
-# requirements = ""                                # Type: string
+# walltime = "00:30:00"                            # Type: string
+# # requirements = ""                                # Type: string
 #
 # ///
 

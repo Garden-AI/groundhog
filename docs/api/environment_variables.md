@@ -18,6 +18,22 @@ GROUNDHOG_NO_IMPORT_HOOK=1 python script.py
 !!! warning
     Disabling the import hook means you must manually call `hog.mark_import_safe()` on any modules with groundhog functions to avoid `ModuleImportError` exceptions when calling them with `.local()` or `.remote()`/`.submit()'`.
 
+## GROUNDHOG_LOG_LEVEL
+
+**Type:** string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+**Default:** WARNING
+
+Controls the logging verbosity for groundhog operations. Set to `DEBUG` to see detailed diagnostics about config resolution, serialization, templating, and remote execution. Can also be set via the `--log-level` flag to CLI commands.
+
+**Example:**
+```bash
+GROUNDHOG_LOG_LEVEL=DEBUG hog run script.py
+```
+
+!!! note
+    The log level set locally automatically propagates to remote execution, so both local and remote operations will use the same log level.
+
 ## GROUNDHOG_NO_FUN_ALLOWED
 
 **Type:** boolean (any truthy value)

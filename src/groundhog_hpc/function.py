@@ -10,6 +10,7 @@ as defaults but overridden when calling .remote() or .submit().
 """
 
 import inspect
+import logging
 import os
 import sys
 import tempfile
@@ -29,6 +30,8 @@ from groundhog_hpc.errors import (
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
 from groundhog_hpc.utils import prefix_output
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -129,12 +132,16 @@ class Function:
         # Check if module has been marked as safe for .remote() calls
         module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
+            logger.error(
+                f"Import safety check failed for module '{self._wrapped_function.__module__}'"
+            )
             raise ModuleImportError(
                 self._wrapped_function.__name__,
                 "submit",
                 self._wrapped_function.__module__,
             )
 
+        logger.debug(f"Preparing to submit function '{self.name}'")
         endpoint = endpoint or self.endpoint
 
         decorator_config = self.default_user_endpoint_config.copy()
@@ -157,13 +164,18 @@ class Function:
             available_endpoints = self._get_available_endpoints_from_pep723()
             if available_endpoints:
                 endpoints_str = ", ".join(f"'{e}'" for e in available_endpoints)
+                logger.error(f"No endpoint specified. Available: {endpoints_str}")
                 raise ValueError(
                     f"No endpoint specified. Available endpoints found in config: {endpoints_str}. "
                     f"Call with endpoint=<name>, or specify a function default endpoint in decorator."
                 )
             else:
+                logger.error("No endpoint specified and none found in config")
                 raise ValueError("No endpoint specified")
 
+        logger.debug(
+            f"Serializing {len(args)} args and {len(kwargs)} kwargs for '{self.name}'"
+        )
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
         shell_function = script_to_submittable(
             self.script_path, self.name, payload, walltime=self.walltime
@@ -207,6 +219,7 @@ class Function:
             PayloadTooLargeError: If serialized arguments exceed 10MB
             RemoteExecutionError: If remote execution fails (non-zero exit code)
         """
+        logger.debug(f"Calling remote execution for '{self.name}'")
         future = self.submit(
             *args,
             endpoint=endpoint,
@@ -214,7 +227,9 @@ class Function:
             **kwargs,
         )
         display_task_status(future)
-        return future.result()
+        result = future.result()
+        logger.debug(f"Remote execution of '{self.name}' completed successfully")
+        return result
 
     def local(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the function locally in an isolated subprocess.
@@ -234,12 +249,16 @@ class Function:
         # Check if module has been marked as safe for .local() calls
         module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
+            logger.error(
+                f"Import safety check failed for module '{self._wrapped_function.__module__}'"
+            )
             raise ModuleImportError(
                 self._wrapped_function.__name__,
                 "local",
                 self._wrapped_function.__module__,
             )
 
+        logger.debug(f"Executing function '{self.name}' in local subprocess")
         with prefix_output(prefix="[local]", prefix_color="blue"):
             # Create ShellFunction just like we do for remote execution
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
@@ -255,6 +274,9 @@ class Function:
                 assert not isinstance(result, dict)
 
                 if result.returncode != 0:
+                    logger.error(
+                        f"Local subprocess failed with exit code {result.returncode}"
+                    )
                     if result.stderr:
                         print(result.stderr, file=sys.stderr)
                     if result.stdout:
@@ -267,12 +289,16 @@ class Function:
                 try:
                     user_stdout, deserialized_result = deserialize_stdout(result.stdout)
                 except DeserializationError as e:
+                    logger.error(f"Failed to deserialize local result: {e}")
                     if result.stderr:
                         print(result.stderr, file=sys.stderr)
                     if e.user_output:
                         print(e.user_output)
                     raise
                 else:
+                    logger.debug(
+                        f"Local execution of '{self.name}' completed successfully"
+                    )
                     if result.stderr:
                         print(result.stderr, file=sys.stderr)
                     if user_stdout:
