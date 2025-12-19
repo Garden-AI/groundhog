@@ -17,6 +17,7 @@ Examples showing how to handle typical workflows:
 
 - **[Parallel Execution](parallel-execution.md)** - Using `.submit()` for concurrent remote execution
 - **[Endpoint Configuration](configuration.md)** - How the configuration system merges settings from multiple sources (PEP 723, decorators, call-time overrides)
+- **[PyTorch from Custom Sources](pytorch_custom_index.md)** - Configuring uv to install packages from cluster-specific indexes, local paths, or internal mirrors
 - **[Importing Groundhog Functions](imported_function.md)** - Calling Groundhog functions from regular Python scripts, REPLs, and notebooks (includes import safety and `mark_import_safe()`)
 
 ## Running the Examples

@@ -24,6 +24,7 @@ This creates `hello.py` with the following structure:
 #
 # [tool.uv]
 # exclude-newer = "2025-12-10T00:00:00Z"
+# python-preference = "managed"
 #
 # [tool.hog.my-endpoint]
 # endpoint = "your-endpoint-uuid"
