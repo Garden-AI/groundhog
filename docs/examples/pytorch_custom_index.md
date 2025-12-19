@@ -23,11 +23,11 @@ This example demonstrates how to configure uv to install PyTorch from cluster-sp
 # exclude-newer = "2025-12-19T00:00:00Z"
 # python-preference = "managed"
 #
-# [[tool.uv.index]]  # (1)!
+# [[tool.uv.index]]  (1)
 # name = "pytorch-cpu"
 # url = "https://download.pytorch.org/whl/cpu"
 #
-# [tool.uv.sources]  # (2)!
+# [tool.uv.sources]  (2)
 # torch = { index = "pytorch-cpu" }
 # torchvision = { index = "pytorch-cpu" }
 #

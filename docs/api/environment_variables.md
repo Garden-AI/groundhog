@@ -88,18 +88,6 @@ export GROUNDHOG_CACHE_DIR=/gpfs/shared/uv-cache
 
 Groundhog uses `uv` to manage Python environments on remote endpoints. Any `UV_*` environment variable can be used to override `[tool.uv]` configuration in your script.
 
-**Configuration precedence:** CLI flags > Environment variables > `[tool.uv]` settings
-
-### Common `uv` environment variables
-
-- **`UV_INDEX_URL`** - Override the primary package index (default: PyPI)
-- **`UV_EXTRA_INDEX_URL`** - Additional package indexes (can be a space-separated list)
-- **`UV_CACHE_DIR`** - Directory for uv's package cache
-- **`UV_PYTHON_INSTALL_DIR`** - Directory for uv-managed Python installations
-- **`UV_PYTHON_PREFERENCE`** - Override `python-preference` (`managed`, `only-managed`, `system`, `only-system`)
-- **`UV_OFFLINE`** - Set to `1` to disable all network access (use only cached packages)
-- **`UV_NO_INDEX`** - Set to `1` to disable package index access (use only local sources)
-
 **Example - Per-endpoint package index:**
 ```toml
 [tool.hog.cpu_endpoint]
@@ -116,5 +104,6 @@ export UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu121
 ```
 
 **See also:**
-- [uv Environment Variables Reference](https://docs.astral.sh/uv/reference/environment/) - Complete list of uv env vars
+
+- [`uv` environment variable reference](https://docs.astral.sh/uv/reference/environment/) - Official documentation of `UV_*` env vars
 - [PEP 723 Concepts](../concepts/pep723.md#configuring-uv-via-tooluv) - Configuring uv via `[tool.uv]`
