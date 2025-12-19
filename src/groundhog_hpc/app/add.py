@@ -47,6 +47,7 @@ def add(
             "Add endpoint configuration (e.g., anvil, anvil.gpu, name:uuid). "
             f"Known endpoints: {', '.join(KNOWN_ENDPOINT_ALIASES)}. Can specify multiple."
         ),
+    ),
     log_level: str = typer.Option(
         None,
         "--log-level",
