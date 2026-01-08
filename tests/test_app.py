@@ -809,3 +809,86 @@ class TestInvokeHarnessWithArgs:
         captured = capsys.readouterr()
         assert "NAME" in captured.out
         assert "--count" in captured.out
+
+
+class TestRunParameterizedHarness:
+    """Test hog run with parameterized harnesses."""
+
+    def test_run_with_args_after_separator(self, pep723_script):
+        """hog run script.py harness -- arg1 --flag works."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(name: str, count: int = 1):
+    print(f"{name}:{count}")
+"""
+        )
+        result = runner.invoke(
+            app, ["run", str(script), "main", "--", "test", "--count=5"]
+        )
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "test:5" in result.output
+
+    def test_run_default_harness_with_args(self, pep723_script):
+        """hog run script.py -- args uses main harness."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(x: int):
+    print(x * 2)
+"""
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "21"])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "42" in result.output
+
+    def test_run_zero_arg_without_separator(self, pep723_script):
+        """Backward compat: hog run script.py still works."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main():
+    print("no args")
+"""
+        )
+        result = runner.invoke(app, ["run", str(script)])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "no args" in result.output
+
+    def test_error_zero_arg_harness_with_args(self, pep723_script):
+        """Error when zero-arg harness given args."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main():
+    pass
+"""
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "arg1"])
+        assert result.exit_code == 1
+        assert "takes no arguments" in result.output
+
+    def test_harness_help_via_separator(self, pep723_script):
+        """hog run script.py harness -- --help shows harness help."""
+        script = pep723_script(
+            extra_content='''
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(dataset: str, epochs: int = 10):
+    """Train model."""
+    pass
+'''
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "--help"])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "DATASET" in result.output or "dataset" in result.output.lower()
+        assert "--epochs" in result.output
