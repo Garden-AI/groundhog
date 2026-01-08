@@ -60,7 +60,7 @@ The comment block at the top uses [PEP 723](https://peps.python.org/pep-0723/) i
 ### Functions and harnesses
 
 - **`@hog.function()`**: Decorates a Python function to make it executable remotely
-- **`@hog.harness()`**: Decorates a zero-argument orchestrator function that calls other functions
+- **`@hog.harness()`**: Decorates an orchestrator function that coordinates remote calls. Harnesses can accept parameters passed as CLI arguments (see [Functions and Harnesses](../concepts/functions-and-harnesses.md))
 - **`.remote()`**: Executes the function remotely and blocks until complete (alternatively, use **`.submit()`** for async execution)
 
 ## Add dependencies
