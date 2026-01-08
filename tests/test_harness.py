@@ -8,15 +8,6 @@ from groundhog_hpc.harness import Harness
 class TestHarnessInitialization:
     """Test Harness initialization and validation."""
 
-    def test_harness_rejects_functions_with_arguments(self):
-        """Test that Harness raises TypeError for functions with arguments."""
-
-        def bad_harness(arg1):
-            pass
-
-        with pytest.raises(TypeError, match="must not accept any arguments"):
-            Harness(bad_harness)
-
     def test_harness_accepts_zero_argument_functions(self):
         """Test that Harness accepts functions with no arguments."""
 
@@ -72,3 +63,45 @@ class TestHarnessExecution:
 
         with pytest.raises(ValueError, match="intentional error"):
             harness()
+
+
+class TestParameterizedHarness:
+    """Test harnesses that accept parameters (new feature)."""
+
+    def test_harness_accepts_typed_parameters(self):
+        """Harnesses can now have parameters with type hints."""
+
+        def my_harness(dataset: str, epochs: int = 10):
+            return f"{dataset}-{epochs}"
+
+        harness = Harness(my_harness)
+        assert isinstance(harness, Harness)
+
+    def test_harness_can_be_called_with_args(self):
+        """Harnesses can be invoked with positional and keyword args."""
+
+        def my_harness(name: str, count: int = 5):
+            return f"{name}:{count}"
+
+        harness = Harness(my_harness)
+        assert harness("test", count=3) == "test:3"
+
+    def test_harness_stores_signature(self):
+        """Harness exposes function signature for CLI generation."""
+
+        def my_harness(x: int, y: str = "default"):
+            pass
+
+        harness = Harness(my_harness)
+        sig = harness.signature
+        assert "x" in sig.parameters
+        assert "y" in sig.parameters
+
+    def test_zero_arg_harness_still_works(self):
+        """Backward compatibility: zero-arg harnesses work as before."""
+
+        def main():
+            return "result"
+
+        harness = Harness(main)
+        assert harness() == "result"

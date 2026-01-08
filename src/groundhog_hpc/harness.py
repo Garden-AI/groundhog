@@ -1,7 +1,8 @@
 """Harness wrapper for orchestrating remote function execution.
 
-This module provides the Harness class, which wraps zero-argument entry point
-functions that orchestrate calls to remote @hog.function decorated functions.
+This module provides the Harness class, which wraps entry point functions that
+orchestrate calls to remote @hog.function decorated functions. Harnesses can
+accept parameters which are parsed from CLI arguments via `hog run`.
 """
 
 import inspect
@@ -10,13 +11,15 @@ from typing import Any
 
 
 class Harness:
-    """Wrapper for a zero-argument orchestrator function.
+    """Wrapper for an orchestrator function.
 
     Harness functions are entry points that typically coordinate calls to
-    @hog.function decorated functions. They must not accept any arguments.
+    @hog.function decorated functions. They can accept parameters that are
+    parsed from CLI arguments when invoked via `hog run script.py -- args`.
 
     Attributes:
         func: The wrapped orchestrator function
+        signature: The function's signature for CLI argument parsing
     """
 
     def __init__(self, func: FunctionType):
@@ -24,25 +27,18 @@ class Harness:
 
         Args:
             func: The orchestrator function to wrap
-
-        Raises:
-            TypeError: If the function accepts any arguments
         """
         self.func: FunctionType = func
-        self._validate_signature()
+        self.signature: inspect.Signature = inspect.signature(func)
 
-    def __call__(self) -> Any:
-        """Execute the harness function.
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute the harness function with optional arguments.
+
+        Args:
+            *args: Positional arguments to pass to the harness function
+            **kwargs: Keyword arguments to pass to the harness function
 
         Returns:
             The result of the harness function execution
         """
-        return self.func()
-
-    def _validate_signature(self) -> None:
-        sig = inspect.signature(self.func)
-        if len(sig.parameters) > 0:
-            raise TypeError(
-                f"Harness function '{self.func.__qualname__}' must not accept any arguments, "
-                f"but has parameters: {list(sig.parameters.keys())}"
-            )
+        return self.func(*args, **kwargs)
