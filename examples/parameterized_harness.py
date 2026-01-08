@@ -59,7 +59,7 @@ def main(dataset: str = "default_dataset", epochs: int = 10, debug: bool = False
 
     result = train_model.remote(dataset, epochs)
 
-    print(f"Training complete!")
+    print("Training complete!")
     print(f"  Dataset: {result['dataset']}")
     print(f"  Epochs: {result['epochs']}")
     print(f"  Accuracy: {result['accuracy']:.3f}")
