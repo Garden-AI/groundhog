@@ -737,3 +737,75 @@ import numpy as np
             assert "numpy" not in metadata.dependencies
             # endpoint should be removed
             assert "[tool.hog.my_endpoint]" not in content
+
+
+class TestInvokeHarnessWithArgs:
+    """Test the invoke_harness_with_args() helper function."""
+
+    def test_invokes_with_positional_args(self):
+        """Test invoking harness with positional arguments."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(name: str):
+            return f"Hello {name}"
+
+        result = invoke_harness_with_args(my_harness, ["World"])
+        assert result == "Hello World"
+
+    def test_invokes_with_options(self):
+        """Test invoking harness with optional keyword arguments."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(name: str, count: int = 1):
+            return f"{name}:{count}"
+
+        result = invoke_harness_with_args(my_harness, ["test", "--count=5"])
+        assert result == "test:5"
+
+    def test_invokes_with_bool_flag(self):
+        """Test invoking harness with boolean flags."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(verbose: bool = False):
+            return "verbose" if verbose else "quiet"
+
+        result = invoke_harness_with_args(my_harness, ["--verbose"])
+        assert result == "verbose"
+
+    def test_raises_on_missing_required_arg(self):
+        """Test that missing required arguments raise MissingParameter."""
+        import pytest
+        from click.exceptions import MissingParameter
+
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(required: str):
+            return required
+
+        with pytest.raises(MissingParameter):
+            invoke_harness_with_args(my_harness, [])
+
+    def test_help_flag_works(self, capsys):
+        """Test that --help shows help text."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(name: str, count: int = 10):
+            """Process data."""
+            pass
+
+        # With standalone_mode=False, --help returns 0 (exit code) and prints help
+        result = invoke_harness_with_args(my_harness, ["--help"])
+        assert result == 0  # Exit code for successful help
+        captured = capsys.readouterr()
+        assert "NAME" in captured.out
+        assert "--count" in captured.out

@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -19,6 +20,36 @@ from groundhog_hpc.utils import (
     import_user_script,
     path_to_module_name,
 )
+
+
+def invoke_harness_with_args(harness: Harness, args: list[str]) -> Any:
+    """Parse CLI args and invoke harness function.
+
+    Reproduces typer.run() logic but with explicit args and standalone_mode=False
+    to capture return values and exceptions instead of sys.exit().
+
+    Args:
+        harness: The harness to invoke
+        args: CLI arguments to parse (e.g., ["arg1", "--count=5"])
+
+    Returns:
+        The return value from the harness function
+
+    Raises:
+        SystemExit: If argument parsing fails (from Click/Typer)
+        Any exception raised by the harness function
+    """
+    original_argv = sys.argv
+    # Use harness name for better help/error messages
+    sys.argv = [harness.func.__name__] + args
+
+    try:
+        app = typer.Typer(add_completion=False)
+        app.command()(harness.func)
+        result = app(standalone_mode=False)
+        return result
+    finally:
+        sys.argv = original_argv
 
 
 def run(
