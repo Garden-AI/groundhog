@@ -793,13 +793,10 @@ class TestInvokeHarnessWithArgs:
         with pytest.raises(MissingParameter):
             invoke_harness_with_args(my_harness, [])
 
-    def test_help_flag_works(self, capsys, monkeypatch):
+    def test_help_flag_works(self, capsys):
         """Test that --help shows help text."""
         import groundhog_hpc as hog
         from groundhog_hpc.app.run import invoke_harness_with_args
-
-        # Disable rich formatting for consistent output
-        monkeypatch.setenv("NO_COLOR", "1")
 
         @hog.harness()
         def my_harness(name: str, count: int = 10):
@@ -891,10 +888,7 @@ def main(dataset: str, epochs: int = 10):
     pass
 '''
         )
-        # Disable rich formatting for consistent output
-        result = runner.invoke(
-            app, ["run", str(script), "--", "--help"], env={"NO_COLOR": "1"}
-        )
+        result = runner.invoke(app, ["run", str(script), "--", "--help"])
         assert result.exit_code == 0, f"Command failed: {result.output}"
         assert "DATASET" in result.output or "dataset" in result.output.lower()
         assert "--epochs" in result.output
