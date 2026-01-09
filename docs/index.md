@@ -222,9 +222,9 @@ hog run analysis.py
 
     ---
 
-    Understand how Groundhog handles PEP 723, serialization, and remote execution
+    Understand functions, harnesses, PEP 723, and remote execution
 
-    [Concepts →](concepts/pep723.md)
+    [Concepts →](concepts/functions-and-harnesses.md)
 
 <!--
 -   **API Reference**

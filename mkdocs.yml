@@ -101,10 +101,12 @@ nav:
     - Running Locally: examples/local.md
     - Organizing with Classes: examples/methods.md
     - Parallel Execution: examples/parallel-execution.md
+    - Parameterized Harnesses: examples/parameterized-harness.md
     - Endpoint Configuration: examples/configuration.md
     - Customizing Package Sources: examples/pytorch_custom_index.md
     - Importing Groundhog Functions: examples/imported_function.md
   - Concepts:
+    - Functions and Harnesses: concepts/functions-and-harnesses.md
     - PEP 723 Metadata: concepts/pep723.md
     - Remote Execution Flow: concepts/remote-execution.md
     - Serialization: concepts/serialization.md
