@@ -167,6 +167,8 @@ echo 'starting job'
 pip show -qq uv || pip install uv || true # (1)!
 ```
 
+1. Groundhog adds this automatically, just in case `uv` isn't present in the remote environment to bootstrap the groundhog runner. If you or your endpoint administrator could ensure `uv` is available for groundhog, your sailing will be smoother ⛵️🦫.
+
 And the final `endpoint_setup` contains:
 
 ```bash
@@ -175,7 +177,6 @@ module load cuda
 export CUDA_VISIBLE_DEVICES=0
 ```
 
-1. Groundhog adds this automatically, just in case `uv` isn't present in the remote environment to bootstrap the groundhog runner. If you or your endpoint administrator could ensure `uv` is available for groundhog, your sailing will be smoother ⛵️🦫.
 
 This allows you to build up initialization commands from multiple sources.
 
