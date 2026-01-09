@@ -16,7 +16,11 @@ from groundhog_hpc.app.run import run
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
-app.command(no_args_is_help=True)(run)
+# Enable extra args for run command to capture harness arguments after --
+app.command(
+    no_args_is_help=True,
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)(run)
 app.command(no_args_is_help=True)(init)
 app.command(no_args_is_help=True)(add)
 app.command(no_args_is_help=True)(remove)

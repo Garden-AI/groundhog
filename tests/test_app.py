@@ -737,3 +737,163 @@ import numpy as np
             assert "numpy" not in metadata.dependencies
             # endpoint should be removed
             assert "[tool.hog.my_endpoint]" not in content
+
+
+class TestInvokeHarnessWithArgs:
+    """Test the invoke_harness_with_args() helper function."""
+
+    def test_invokes_with_positional_args(self):
+        """Test invoking harness with positional arguments."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(name: str):
+            return f"Hello {name}"
+
+        result = invoke_harness_with_args(my_harness, ["World"])
+        assert result == "Hello World"
+
+    def test_invokes_with_options(self):
+        """Test invoking harness with optional keyword arguments."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(name: str, count: int = 1):
+            return f"{name}:{count}"
+
+        result = invoke_harness_with_args(my_harness, ["test", "--count=5"])
+        assert result == "test:5"
+
+    def test_invokes_with_bool_flag(self):
+        """Test invoking harness with boolean flags."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(verbose: bool = False):
+            return "verbose" if verbose else "quiet"
+
+        result = invoke_harness_with_args(my_harness, ["--verbose"])
+        assert result == "verbose"
+
+    def test_raises_on_missing_required_arg(self):
+        """Test that missing required arguments raise MissingParameter."""
+        import pytest
+        from click.exceptions import MissingParameter
+
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+
+        @hog.harness()
+        def my_harness(required: str):
+            return required
+
+        with pytest.raises(MissingParameter):
+            invoke_harness_with_args(my_harness, [])
+
+    def test_help_flag_works(self, capsys):
+        """Test that --help shows help text."""
+        import groundhog_hpc as hog
+        from groundhog_hpc.app.run import invoke_harness_with_args
+        from tests.conftest import strip_ansi
+
+        @hog.harness()
+        def my_harness(name: str, count: int = 10):
+            """Process data."""
+            pass
+
+        # With standalone_mode=False, --help returns 0 (exit code) and prints help
+        result = invoke_harness_with_args(my_harness, ["--help"])
+        assert result == 0  # Exit code for successful help
+        captured = capsys.readouterr()
+        output = strip_ansi(captured.out)
+        assert "NAME" in output
+        assert "--count" in output
+
+
+class TestRunParameterizedHarness:
+    """Test hog run with parameterized harnesses."""
+
+    def test_run_with_args_after_separator(self, pep723_script):
+        """hog run script.py harness -- arg1 --flag works."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(name: str, count: int = 1):
+    print(f"{name}:{count}")
+"""
+        )
+        result = runner.invoke(
+            app, ["run", str(script), "main", "--", "test", "--count=5"]
+        )
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "test:5" in result.output
+
+    def test_run_default_harness_with_args(self, pep723_script):
+        """hog run script.py -- args uses main harness."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(x: int):
+    print(x * 2)
+"""
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "21"])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "42" in result.output
+
+    def test_run_zero_arg_without_separator(self, pep723_script):
+        """Backward compat: hog run script.py still works."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main():
+    print("no args")
+"""
+        )
+        result = runner.invoke(app, ["run", str(script)])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "no args" in result.output
+
+    def test_error_zero_arg_harness_with_args(self, pep723_script):
+        """Error when zero-arg harness given args."""
+        script = pep723_script(
+            extra_content="""
+import groundhog_hpc as hog
+
+@hog.harness()
+def main():
+    pass
+"""
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "arg1"])
+        assert result.exit_code == 1
+        assert "takes no arguments" in result.output
+
+    def test_harness_help_via_separator(self, pep723_script):
+        """hog run script.py harness -- --help shows harness help."""
+        from tests.conftest import strip_ansi
+
+        script = pep723_script(
+            extra_content='''
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(dataset: str, epochs: int = 10):
+    """Train model."""
+    pass
+'''
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "--help"])
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        output = strip_ansi(result.output)
+        assert "DATASET" in output or "dataset" in output.lower()
+        assert "--epochs" in output

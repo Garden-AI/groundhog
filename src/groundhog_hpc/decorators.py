@@ -20,22 +20,36 @@ logger = logging.getLogger(__name__)
 def harness() -> Callable[[FunctionType], Harness]:
     """Decorator to mark a function as a local orchestrator harness.
 
+    Harness functions are entry points that coordinate remote function calls.
+    They run locally and can accept parameters passed as CLI arguments.
+
     Harness functions:
 
-    - Must be called via the CLI: `hog run script.py harness_name`
-    - Cannot accept any arguments
+    - Are invoked via the CLI: `hog run script.py [harness_name]`
+    - Can accept parameters, which map to CLI arguments
     - Can call `.remote()` or `.submit()` on `@hog.function`-decorated functions
 
     Returns:
         A decorator function that wraps the harness
 
     Example:
+        Zero-argument harness:
         ```python
         @hog.harness()
         def main():
             result = my_function.remote("far out, man!")
             return result
         ```
+
+        Parameterized harness:
+        ```python
+        @hog.harness()
+        def train(dataset: str, epochs: int = 10):
+            result = train_model.remote(dataset, epochs)
+            return result
+        ```
+
+        Run with: `hog run script.py train -- my_data --epochs=20`
     """
 
     def decorator(func: FunctionType) -> Harness:

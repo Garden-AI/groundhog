@@ -18,11 +18,14 @@ $ hog [OPTIONS] COMMAND [ARGS]...
 * `run`: Run a Python script on a Globus Compute...
 * `init`: Create a new groundhog script with PEP 723...
 * `add`: Add dependencies or update Python version...
-* `remove`: Remove dependencies or endpoint...
+* `remove`: Remove dependencies from a script&#x27;s PEP...
 
 ## `hog run`
 
 Run a Python script on a Globus Compute endpoint.
+
+Use -- to pass arguments to parameterized harnesses:
+    hog run script.py harness -- arg1 --option=value
 
 **Usage**:
 
@@ -59,6 +62,7 @@ $ hog init [OPTIONS] FILENAME
 
 * `-p, --python TEXT`: Python version specifier (e.g., --python &#x27;&gt;=3.11&#x27; or -p 3.11)
 * `-e, --endpoint TEXT`: Template config for endpoint with known fields, e.g. --endpoint my-endpoint-uuid. Can also be one of the following pre-configured names: anvil, anvil.gpu, tutorial (e.g. --endpoint anvil.gpu). Can specify multiple.
+* `--log-level TEXT`: Set logging level (DEBUG, INFO, WARNING, ERROR)
 * `--help`: Show this message and exit.
 
 ## `hog add`
@@ -86,7 +90,7 @@ $ hog add [OPTIONS] SCRIPT [PACKAGES]...
 
 ## `hog remove`
 
-Remove dependencies or endpoint configurations from a script&#x27;s PEP 723 metadata.
+Remove dependencies from a script&#x27;s PEP 723 metadata.
 
 **Usage**:
 
@@ -102,4 +106,5 @@ $ hog remove [OPTIONS] SCRIPT [PACKAGES]...
 **Options**:
 
 * `-e, --endpoint TEXT`: Remove endpoint or variant configuration (e.g., anvil, anvil.gpu, my_endpoint). Known endpoints: anvil, anvil.gpu, tutorial. Can specify multiple. Note: Removing a base endpoint (e.g., anvil) removes all its variants. Removing a specific variant (e.g., anvil.gpu) leaves the base and other variants intact.
+* `--log-level TEXT`: Set logging level (DEBUG, INFO, WARNING, ERROR)
 * `--help`: Show this message and exit.

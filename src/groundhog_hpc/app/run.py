@@ -1,8 +1,10 @@
 """Run command for executing Groundhog scripts on Globus Compute endpoints."""
 
+import inspect
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -21,7 +23,38 @@ from groundhog_hpc.utils import (
 )
 
 
+def invoke_harness_with_args(harness: Harness, args: list[str]) -> Any:
+    """Parse CLI args and invoke harness function.
+
+    Reproduces typer.run() logic but with explicit args and standalone_mode=False
+    to capture return values and exceptions instead of sys.exit().
+
+    Args:
+        harness: The harness to invoke
+        args: CLI arguments to parse (e.g., ["arg1", "--count=5"])
+
+    Returns:
+        The return value from the harness function
+
+    Raises:
+        SystemExit: If argument parsing fails (from Click/Typer)
+        Any exception raised by the harness function
+    """
+    original_argv = sys.argv
+    # Use harness name for better help/error messages
+    sys.argv = [harness.func.__name__] + args
+
+    try:
+        app = typer.Typer(add_completion=False)
+        app.command()(harness.func)
+        result = app(standalone_mode=False)
+        return result
+    finally:
+        sys.argv = original_argv
+
+
 def run(
+    ctx: typer.Context,
     script: Path = typer.Argument(
         ..., help="Path to script with PEP 723 dependencies to deploy to the endpoint"
     ),
@@ -39,7 +72,20 @@ def run(
         help="Set logging level (DEBUG, INFO, WARNING, ERROR)\n\n[env: GROUNDHOG_LOG_LEVEL=]",
     ),
 ) -> None:
-    """Run a Python script on a Globus Compute endpoint."""
+    """Run a Python script on a Globus Compute endpoint.
+
+    Use -- to pass arguments to parameterized harnesses:
+        hog run script.py harness -- arg1 --option=value
+    """
+    # Handle the -- separator for harness arguments
+    # ctx.args may contain ['--', 'arg1', 'arg2'] - strip the '--' if present
+    harness_args = ctx.args  # List of extra args, or empty list
+    if harness_args and harness_args[0] == "--":
+        harness_args = harness_args[1:]  # Strip leading '--'
+    if harness == "--":
+        # User typed: hog run script.py -- args
+        # Use default harness "main" and shift args
+        harness = "main"
     if no_fun_allowed:
         os.environ["GROUNDHOG_NO_FUN_ALLOWED"] = str(no_fun_allowed)
 
@@ -98,7 +144,18 @@ def run(
             )
             raise typer.Exit(1)
 
-        result = harness_func()
+        # Dispatch based on whether harness arguments were provided
+        if not harness_args:
+            # No extra args: zero-arg call (backward compatible)
+            result = harness_func()
+        else:
+            # Has extra args: parse and invoke parameterized harness
+            sig = inspect.signature(harness_func.func)
+            if len(sig.parameters) == 0:
+                typer.echo(f"Error: Harness '{harness}' takes no arguments", err=True)
+                raise typer.Exit(1)
+            result = invoke_harness_with_args(harness_func, harness_args)
+
         typer.echo(result)
     except RemoteExecutionError as e:
         if e.returncode == 124:
