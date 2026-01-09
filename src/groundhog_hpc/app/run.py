@@ -47,7 +47,7 @@ def invoke_harness_with_args(harness: Harness, args: list[str]) -> Any:
     try:
         app = typer.Typer(add_completion=False)
         app.command()(harness.func)
-        result = app(standalone_mode=False, color=False)
+        result = app(standalone_mode=False)
         return result
     finally:
         sys.argv = original_argv

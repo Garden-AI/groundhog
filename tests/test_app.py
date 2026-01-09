@@ -797,6 +797,7 @@ class TestInvokeHarnessWithArgs:
         """Test that --help shows help text."""
         import groundhog_hpc as hog
         from groundhog_hpc.app.run import invoke_harness_with_args
+        from tests.conftest import strip_ansi
 
         @hog.harness()
         def my_harness(name: str, count: int = 10):
@@ -807,8 +808,9 @@ class TestInvokeHarnessWithArgs:
         result = invoke_harness_with_args(my_harness, ["--help"])
         assert result == 0  # Exit code for successful help
         captured = capsys.readouterr()
-        assert "NAME" in captured.out
-        assert "--count" in captured.out
+        output = strip_ansi(captured.out)
+        assert "NAME" in output
+        assert "--count" in output
 
 
 class TestRunParameterizedHarness:
@@ -878,6 +880,8 @@ def main():
 
     def test_harness_help_via_separator(self, pep723_script):
         """hog run script.py harness -- --help shows harness help."""
+        from tests.conftest import strip_ansi
+
         script = pep723_script(
             extra_content='''
 import groundhog_hpc as hog
@@ -890,5 +894,6 @@ def main(dataset: str, epochs: int = 10):
         )
         result = runner.invoke(app, ["run", str(script), "--", "--help"])
         assert result.exit_code == 0, f"Command failed: {result.output}"
-        assert "DATASET" in result.output or "dataset" in result.output.lower()
-        assert "--epochs" in result.output
+        output = strip_ansi(result.output)
+        assert "DATASET" in output or "dataset" in output.lower()
+        assert "--epochs" in output

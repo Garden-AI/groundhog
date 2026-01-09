@@ -7,6 +7,30 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 
+@pytest.fixture(scope="session", autouse=True)
+def configure_rich_for_ci():
+    """Configure Rich/Typer for consistent output in CI environments.
+
+    Sets TTY_COMPATIBLE=1 and TTY_INTERACTIVE=0 to get plain text output
+    without ANSI escape codes, per Rich documentation.
+    """
+    os.environ["TTY_COMPATIBLE"] = "1"
+    os.environ["TTY_INTERACTIVE"] = "0"
+    yield
+    os.environ.pop("TTY_COMPATIBLE", None)
+    os.environ.pop("TTY_INTERACTIVE", None)
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text.
+
+    Useful for testing CLI output that may contain Rich formatting.
+    """
+    import re
+
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
 @pytest.fixture(autouse=True)
 def set_groundhog_imported_flag(request):
     """Automatically set __groundhog_imported__ flag for test modules."""
