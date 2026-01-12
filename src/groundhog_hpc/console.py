@@ -129,12 +129,15 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 console.print("\n[red]Force quitting...[/red]")
                 raise SystemExit(130)
 
-    # print for success case
-    with prefix_output(prefix="[remote]", prefix_color="green"):
-        if stderr := future.shell_result.stderr:
-            print(stderr, file=sys.stderr)
-        if stdout := future.user_stdout:
-            print(stdout, file=sys.stdout)
+    # print for success case (only if not cancelled)
+    if not future.cancelled():
+        with prefix_output(prefix="[remote]", prefix_color="green"):
+            if stderr := future.shell_result.stderr:
+                print(stderr, file=sys.stderr)
+            if stdout := future.user_stdout:
+                print(stdout, file=sys.stdout)
+    else:
+        console.print("[yellow]Task canceled successfully[/yellow]")
 
 
 def _get_status_display(

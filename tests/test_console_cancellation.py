@@ -15,6 +15,7 @@ def test_first_ctrl_c_attempts_cancellation():
     original_future = Mock(spec=Future)
     original_future.task_id = "test-task-123"
     original_future.cancel.return_value = True
+    original_future.cancelled.return_value = True  # Task was successfully cancelled
     original_future.done.return_value = False
 
     future = GroundhogFuture(original_future)
@@ -49,9 +50,12 @@ def test_first_ctrl_c_attempts_cancellation():
             # Verify cancel was called
             original_future.cancel.assert_called_once()
 
-            # Verify console message was printed
+            # Verify console messages were printed
             mock_console.print.assert_any_call(
                 "\nCanceling task... press Ctrl-C again to force quit"
+            )
+            mock_console.print.assert_any_call(
+                "[yellow]Task canceled successfully[/yellow]"
             )
 
 
@@ -60,6 +64,7 @@ def test_second_ctrl_c_force_quits():
     original_future = Mock(spec=Future)
     original_future.task_id = "test-task-456"
     original_future.cancel.return_value = True
+    original_future.cancelled.return_value = False
     original_future.done.return_value = False
 
     future = GroundhogFuture(original_future)
@@ -100,6 +105,7 @@ def test_cancel_fails_shows_warning():
     original_future = Mock(spec=Future)
     original_future.task_id = "test-task-789"
     original_future.cancel.return_value = False  # Cancel fails
+    original_future.cancelled.return_value = False  # Task was not cancelled
     original_future.done.return_value = False
 
     future = GroundhogFuture(original_future)
@@ -115,6 +121,13 @@ def test_cancel_fails_shows_warning():
         # Task completes normally
         original_future.done.return_value = True
         return Mock(returncode=0, stdout="__GROUNDHOG_RESULT__\ngASC4uA==\n.")
+
+    # Mock the shell_result and user_stdout properties for when task completes
+    mock_shell_result = Mock()
+    mock_shell_result.stderr = None
+    mock_shell_result.stdout = "test output"
+    future._shell_result = mock_shell_result
+    future._user_stdout = None
 
     future.result = mock_result
 

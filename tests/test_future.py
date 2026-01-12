@@ -216,6 +216,32 @@ class TestGroundhogFuture:
         assert result is False
         original_future.cancel.assert_called_once()
 
+    def test_future_cancelled_forwards_to_original(self):
+        """Test that GroundhogFuture.cancelled() forwards to wrapped future."""
+        from unittest.mock import Mock
+
+        original_future = Mock()
+        original_future.cancelled.return_value = True
+
+        future = GroundhogFuture(original_future)
+        result = future.cancelled()
+
+        assert result is True
+        original_future.cancelled.assert_called_once()
+
+    def test_future_cancelled_returns_false_when_not_cancelled(self):
+        """Test that cancelled() returns False when underlying future is not cancelled."""
+        from unittest.mock import Mock
+
+        original_future = Mock()
+        original_future.cancelled.return_value = False
+
+        future = GroundhogFuture(original_future)
+        result = future.cancelled()
+
+        assert result is False
+        original_future.cancelled.assert_called_once()
+
 
 class TestProcessShellResult:
     """Test the _process_shell_result function."""

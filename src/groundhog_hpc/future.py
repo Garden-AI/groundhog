@@ -160,6 +160,14 @@ class GroundhogFuture(Future):
 
         return result
 
+    def cancelled(self) -> bool:
+        """Check if the underlying Globus Compute task was cancelled.
+
+        Returns:
+            True if the task was cancelled, False otherwise
+        """
+        return self._original_future.cancelled()
+
 
 def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
     """Truncate the payload in a shell command for display purposes.
