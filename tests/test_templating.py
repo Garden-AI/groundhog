@@ -342,6 +342,41 @@ def func2():
         # They should have different hashes since content differs
         assert command1 != command2
 
+    def test_includes_exclude_newer_package_flag(self, tmp_path):
+        """Test that shell command always includes --exclude-newer-package for groundhog-hpc.
+
+        This prevents user's exclude-newer settings from blocking groundhog installation.
+        """
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2020-01-01T00:00:00Z"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "test_payload")
+
+        # Should include the package-specific exclude-newer override
+        assert "--exclude-newer-package groundhog-hpc=" in shell_command
+        # Timestamp should be in ISO format (basic validation)
+        import re
+
+        match = re.search(
+            r"--exclude-newer-package groundhog-hpc=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)",
+            shell_command,
+        )
+        assert match, "exclude-newer-package timestamp should be in ISO 8601 format"
+
 
 class TestDottedQualnames:
     """Test that templating handles dotted qualnames (class methods)."""
