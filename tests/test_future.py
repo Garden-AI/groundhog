@@ -190,57 +190,56 @@ class TestGroundhogFuture:
         assert shell_result.stderr == "Detailed error output"
         assert shell_result.stdout == "Partial output"
 
-    def test_future_cancel_forwards_to_original(self):
-        """Test that GroundhogFuture.cancel() forwards to wrapped future."""
+    def test_future_cancel_marks_wrapper_cancelled(self):
+        """Test that GroundhogFuture.cancel() marks the wrapper as cancelled."""
         from unittest.mock import Mock
 
         original_future = Mock()
-        original_future.cancel.return_value = True
 
         future = GroundhogFuture(original_future)
         result = future.cancel()
 
         assert result is True
-        original_future.cancel.assert_called_once()
+        assert future.cancelled() is True
+        # Should NOT cancel the original future (can't cancel remote tasks)
+        original_future.cancel.assert_not_called()
 
-    def test_future_cancel_returns_false_when_cannot_cancel(self):
-        """Test that cancel() returns False when underlying future cannot cancel."""
+    def test_future_cancel_returns_false_when_already_done(self):
+        """Test that cancel() returns False when future is already done."""
         from unittest.mock import Mock
 
         original_future = Mock()
-        original_future.cancel.return_value = False
 
         future = GroundhogFuture(original_future)
+        # Manually set result to mark future as done
+        future.set_result("test result")
+
         result = future.cancel()
 
         assert result is False
-        original_future.cancel.assert_called_once()
 
-    def test_future_cancelled_forwards_to_original(self):
-        """Test that GroundhogFuture.cancelled() forwards to wrapped future."""
+    def test_future_cancelled_checks_wrapper_state(self):
+        """Test that GroundhogFuture.cancelled() checks wrapper state."""
         from unittest.mock import Mock
 
         original_future = Mock()
-        original_future.cancelled.return_value = True
 
         future = GroundhogFuture(original_future)
-        result = future.cancelled()
+        future.cancel()
 
-        assert result is True
-        original_future.cancelled.assert_called_once()
+        assert future.cancelled() is True
+        # Should NOT check the original future's state
+        original_future.cancelled.assert_not_called()
 
     def test_future_cancelled_returns_false_when_not_cancelled(self):
-        """Test that cancelled() returns False when underlying future is not cancelled."""
+        """Test that cancelled() returns False when not cancelled."""
         from unittest.mock import Mock
 
         original_future = Mock()
-        original_future.cancelled.return_value = False
 
         future = GroundhogFuture(original_future)
-        result = future.cancelled()
 
-        assert result is False
-        original_future.cancelled.assert_called_once()
+        assert future.cancelled() is False
 
 
 class TestProcessShellResult:

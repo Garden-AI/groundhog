@@ -49,6 +49,7 @@ class GroundhogFuture(Future):
         self._shell_result: ShellResult | None = None
         self._task_id: str | None = None
         self._user_stdout: str | None = None
+        self._cancel_requested: bool = False
 
         # set after created in Function.submit, useful for invocation logs etc
         self._endpoint: str | None = None
@@ -56,6 +57,12 @@ class GroundhogFuture(Future):
         self._function_name: str | None = None
 
         def callback(fut: Future) -> None:
+            # If cancellation was requested, don't process result
+            if self._cancel_requested:
+                if not self.cancelled():
+                    super(GroundhogFuture, self).cancel()
+                return
+
             try:
                 # Get and cache the ShellResult
                 shell_result = fut.result()
@@ -64,13 +71,18 @@ class GroundhogFuture(Future):
                 # Process and deserialize
                 user_stdout, deserialized_result = _process_shell_result(shell_result)
                 self._user_stdout = user_stdout
-                self.set_result(deserialized_result)
+
+                # Check if future was cancelled while processing
+                if not self.done():
+                    self.set_result(deserialized_result)
             except CancelledError:
-                # Task was cancelled - don't set as exception, let the future
-                # remain in cancelled state naturally
-                pass
+                # Original future was cancelled - ensure GroundhogFuture is also cancelled
+                if not self.cancelled():
+                    super(GroundhogFuture, self).cancel()
             except Exception as e:
-                self.set_exception(e)
+                # Only set exception if future isn't already done/cancelled
+                if not self.done():
+                    self.set_exception(e)
 
         original_future.add_done_callback(callback)
 
@@ -143,34 +155,38 @@ class GroundhogFuture(Future):
     def cancel(self) -> bool:
         """Attempt to cancel the underlying Globus Compute task.
 
-        Forwards the cancellation request to the wrapped Globus Compute future.
-        Note that cancellation may fail if the task has already started executing.
+        Note: Remote tasks cannot actually be cancelled once submitted. This method
+        marks the future as cancelled locally and prevents processing of results when
+        they arrive, but the remote task will continue executing.
 
         Returns:
-            True if the task was successfully canceled, False otherwise
-            (False typically means the task is already running or completed)
+            True if the future was successfully marked as cancelled
         """
         task_id = self.task_id or "unknown"
-        logger.debug(f"Attempting to cancel task {task_id}")
+        logger.debug(f"Canceling future for task {task_id}")
 
-        result = self._original_future.cancel()
+        # Set flag to prevent callback from processing result when it arrives
+        self._cancel_requested = True
+
+        # Don't try to cancel the underlying ComputeFuture - it can't actually
+        # cancel remote tasks, and trying causes InvalidStateError when results
+        # arrive. Just cancel this wrapper future.
+        result = super().cancel()
 
         if result:
-            logger.debug(f"Successfully canceled task {task_id}")
+            logger.debug(f"Successfully canceled future for task {task_id}")
         else:
-            logger.debug(
-                f"Failed to cancel task {task_id} (likely already running or completed)"
-            )
+            logger.debug(f"Future for task {task_id} already done")
 
         return result
 
     def cancelled(self) -> bool:
-        """Check if the underlying Globus Compute task was cancelled.
+        """Check if this future was cancelled.
 
         Returns:
-            True if the task was cancelled, False otherwise
+            True if the future was cancelled, False otherwise
         """
-        return self._original_future.cancelled()
+        return super().cancelled()
 
 
 def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:

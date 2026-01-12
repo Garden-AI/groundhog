@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+from concurrent.futures import CancelledError
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from rich.console import Console
@@ -64,6 +65,9 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
             except FuturesTimeoutError:
                 # expected - continue polling
                 continue
+            except CancelledError:
+                # Task was cancelled - exit polling loop
+                break
             except DeserializationError as e:
                 # set status_text to indicate failure
                 status_text = _get_status_display(
