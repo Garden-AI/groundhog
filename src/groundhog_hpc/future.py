@@ -7,7 +7,7 @@ shell execution metadata (stdout, stderr, returncode).
 
 import logging
 import re
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from groundhog_hpc.errors import RemoteExecutionError
@@ -65,6 +65,10 @@ class GroundhogFuture(Future):
                 user_stdout, deserialized_result = _process_shell_result(shell_result)
                 self._user_stdout = user_stdout
                 self.set_result(deserialized_result)
+            except CancelledError:
+                # Task was cancelled - don't set as exception, let the future
+                # remain in cancelled state naturally
+                pass
             except Exception as e:
                 self.set_exception(e)
 

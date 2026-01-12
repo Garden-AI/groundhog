@@ -227,6 +227,12 @@ class Function:
             **kwargs,
         )
         display_task_status(future)
+
+        # If task was cancelled, return None instead of calling result()
+        if future.cancelled():
+            logger.debug(f"Remote execution of '{self.name}' was cancelled")
+            return None
+
         result = future.result()
         logger.debug(f"Remote execution of '{self.name}' completed successfully")
         return result

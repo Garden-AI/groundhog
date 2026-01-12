@@ -227,6 +227,7 @@ class TestSubmitMethod:
 
         mock_future = mock_submission_stack["future"]
         mock_future.result.return_value = "final_result"
+        mock_future.cancelled.return_value = False  # Future is not cancelled
 
         result = func.remote()
 
