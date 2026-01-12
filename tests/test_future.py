@@ -190,6 +190,32 @@ class TestGroundhogFuture:
         assert shell_result.stderr == "Detailed error output"
         assert shell_result.stdout == "Partial output"
 
+    def test_future_cancel_forwards_to_original(self):
+        """Test that GroundhogFuture.cancel() forwards to wrapped future."""
+        from unittest.mock import Mock
+
+        original_future = Mock()
+        original_future.cancel.return_value = True
+
+        future = GroundhogFuture(original_future)
+        result = future.cancel()
+
+        assert result is True
+        original_future.cancel.assert_called_once()
+
+    def test_future_cancel_returns_false_when_cannot_cancel(self):
+        """Test that cancel() returns False when underlying future cannot cancel."""
+        from unittest.mock import Mock
+
+        original_future = Mock()
+        original_future.cancel.return_value = False
+
+        future = GroundhogFuture(original_future)
+        result = future.cancel()
+
+        assert result is False
+        original_future.cancel.assert_called_once()
+
 
 class TestProcessShellResult:
     """Test the _process_shell_result function."""

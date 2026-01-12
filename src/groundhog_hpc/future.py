@@ -5,12 +5,15 @@ deserializes results from remote execution while preserving access to raw
 shell execution metadata (stdout, stderr, returncode).
 """
 
+import logging
 import re
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.serialization import deserialize_stdout
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import globus_compute_sdk
@@ -132,6 +135,30 @@ class GroundhogFuture(Future):
     @function_name.setter
     def function_name(self, value: str | None) -> None:
         self._function_name = value
+
+    def cancel(self) -> bool:
+        """Attempt to cancel the underlying Globus Compute task.
+
+        Forwards the cancellation request to the wrapped Globus Compute future.
+        Note that cancellation may fail if the task has already started executing.
+
+        Returns:
+            True if the task was successfully canceled, False otherwise
+            (False typically means the task is already running or completed)
+        """
+        task_id = self.task_id or "unknown"
+        logger.debug(f"Attempting to cancel task {task_id}")
+
+        result = self._original_future.cancel()
+
+        if result:
+            logger.debug(f"Successfully canceled task {task_id}")
+        else:
+            logger.debug(
+                f"Failed to cancel task {task_id} (likely already running or completed)"
+            )
+
+        return result
 
 
 def _truncate_payload_in_cmd(cmd: str, max_length: int = 100) -> str:
