@@ -40,8 +40,8 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
     start_time = time.time()
     spinner = Spinner("groundhog") if _fun_allowed() else Spinner("dots")
 
-    with Live("", console=console, refresh_per_second=20) as live:
-        # Poll with a short timeout until done
+    def _poll_loop(canceling: bool = False) -> None:
+        """Inner polling loop, reused for normal and canceling states."""
         while not future.done():
             elapsed = time.time() - start_time
             task_status = get_task_status(future.task_id)
@@ -53,6 +53,7 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
                 spinner,
                 time.time(),
                 function_name=future.function_name,
+                canceling=canceling,
             )
 
             live.update(display)
@@ -106,6 +107,28 @@ def display_task_status(future: GroundhogFuture, poll_interval: float = 0.3) -> 
 
                 raise
 
+    with Live("", console=console, refresh_per_second=20) as live:
+        try:
+            # Normal polling loop
+            _poll_loop(canceling=False)
+        except KeyboardInterrupt:
+            # First Ctrl-C: attempt graceful cancellation
+            console.print("\nCanceling task... press Ctrl-C again to force quit")
+
+            canceled = future.cancel()
+            if not canceled:
+                console.print(
+                    "[yellow]Task already running, cannot cancel. Waiting for completion...[/yellow]"
+                )
+
+            try:
+                # Continue polling with canceling status
+                _poll_loop(canceling=True)
+            except KeyboardInterrupt:
+                # Second Ctrl-C: force quit
+                console.print("\n[red]Force quitting...[/red]")
+                raise SystemExit(130)
+
     # print for success case
     with prefix_output(prefix="[remote]", prefix_color="green"):
         if stderr := future.shell_result.stderr:
@@ -122,6 +145,7 @@ def _get_status_display(
     current_time: float,
     has_exception: bool = False,
     function_name: str | None = None,
+    canceling: bool = False,
 ) -> Text:
     """Generate the current status display by checking task status from API.
 
@@ -133,6 +157,7 @@ def _get_status_display(
         current_time: Current time for spinner animation
         has_exception: Whether the task has failed with an exception
         function_name: Name of the function being executed
+        canceling: Whether the task is being canceled
 
     Returns:
         Rich Text object with formatted status display
@@ -142,6 +167,8 @@ def _get_status_display(
 
     if has_exception:
         status = "failed"
+    elif canceling:
+        status = "canceling"
     else:
         status = status_str
 
@@ -158,6 +185,8 @@ def _get_status_display(
 
     if status == "failed":
         status_style = "red"
+    elif status == "canceling":
+        status_style = "yellow"
     elif "pending" in status:
         status_style = "dim"
     else:
