@@ -23,13 +23,13 @@ def hello_world(name: str = "World") -> str:
 
 
 @hog.harness()
-def main():
+def main(name: str = "World"):
     """Main harness that orchestrates remote function calls.
 
-    Run the 'main' harness with: hog run hello_world.py
-    Run another harness with: hog run hello_world.py [harness]
+    Run the default 'main' harness with: hog run hello_world.py
+    Run the 'main' harness with CLI args: hog run hello_world.py main -- --name="Punxsutawney Phil"
     """
     # .remote() blocks until the function completes
     # use .submit() to return a future instead
-    result = hello_world.remote("World")
+    result = hello_world.remote(name)
     print(f"Result: {result}")
