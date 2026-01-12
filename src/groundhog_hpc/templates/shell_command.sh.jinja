@@ -37,10 +37,12 @@ mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 {% if log_level %}
 # Local override - use value from dispatching environment
 export GROUNDHOG_LOG_LEVEL="{{ log_level }}"
+export RUST_LOG=uv="${{GROUNDHOG_LOG_LEVEL}}"
 {% else %}
 {% raw %}
 # Respect remote environment if set, otherwise default to WARNING
 export GROUNDHOG_LOG_LEVEL="${{GROUNDHOG_LOG_LEVEL:-WARNING}}"
+export RUST_LOG=uv="${{GROUNDHOG_LOG_LEVEL:-WARNING}}"
 {% endraw %}
 {% endif %}
 
@@ -57,6 +59,7 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 PAYLOAD_EOF
 
 "$UV_BIN" run --with {{ version_spec }} \
+  --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
   {{ runner_name }}.py
 
 echo "__GROUNDHOG_RESULT__"

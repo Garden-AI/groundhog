@@ -10,6 +10,7 @@ user functions remotely. It creates shell commands that:
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from hashlib import sha1
 from pathlib import Path
 
@@ -74,6 +75,10 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     version_spec = get_groundhog_version_spec()
     logger.debug(f"Using groundhog version spec: {version_spec}")
 
+    # Generate timestamp for groundhog-hpc exclude-newer override
+    # This allows groundhog to bypass user's exclude-newer restrictions
+    groundhog_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     # Load runner template
     templates_dir = Path(__file__).parent / "templates"
     jinja_env = Environment(loader=FileSystemLoader(templates_dir))
@@ -106,6 +111,7 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         version_spec=version_spec,
         payload=payload,
         log_level=local_log_level,
+        groundhog_timestamp=groundhog_timestamp,
     )
 
     logger.debug(f"Generated shell command ({len(shell_command_string)} chars)")
