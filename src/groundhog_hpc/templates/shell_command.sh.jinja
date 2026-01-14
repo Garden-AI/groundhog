@@ -37,7 +37,7 @@ mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 {% if log_level %}
 # Local override - use value from dispatching environment
 export GROUNDHOG_LOG_LEVEL="{{ log_level }}"
-export RUST_LOG=uv="${{GROUNDHOG_LOG_LEVEL}}"
+export RUST_LOG=uv="${{GROUNDHOG_LOG_LEVEL:-WARNING}}"
 {% else %}
 {% raw %}
 # Respect remote environment if set, otherwise default to WARNING
