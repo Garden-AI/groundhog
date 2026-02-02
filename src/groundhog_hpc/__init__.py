@@ -27,6 +27,23 @@ Example:
 Run with: `hog run script.py main`
 """
 
+import sys
+
+# Check Python version before any other imports that might fail
+if sys.version_info >= (3, 14):
+    raise RuntimeError(
+        "Groundhog temporarily does not support Python 3.14 or later due to an "
+        "upstream incompatibility in the Globus Compute SDK. This will be resolved "
+        "in a future release.\n\n"
+        "If you installed with uv tool install:\n"
+        "  uv tool uninstall groundhog-hpc\n"
+        "  uv tool install --python 3.13 groundhog-hpc\n\n"
+        "If you installed with pipx:\n"
+        "  pipx uninstall groundhog-hpc\n"
+        "  pipx install --python python3.13 groundhog-hpc\n\n"
+        "Or use a virtual environment with Python 3.13 or earlier."
+    )
+
 import importlib.metadata
 import os
 
