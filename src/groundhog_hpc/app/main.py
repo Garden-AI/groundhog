@@ -3,6 +3,22 @@
 This module implements the `hog` CLI tool entry point and command registration.
 """
 
+import sys
+
+# Check Python version before any other imports that might fail
+if sys.version_info >= (3, 14):
+    print(
+        "Error: Groundhog temporarily does not support Python 3.14 or later due to an\n"
+        "upstream incompatibility in the Globus Compute SDK. This will be resolved in a\n"
+        "future release.\n\n"
+        "Please reinstall with Python 3.13 or earlier:\n"
+        "  uv tool install --python 3.13 groundhog-hpc\n\n"
+        "Or if using pipx:\n"
+        "  pipx install --python python3.13 groundhog-hpc",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 import os
 from typing import Optional
 

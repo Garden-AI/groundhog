@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.10+**
+- **Python 3.10 through 3.13** - Groundhog temporarily does not support Python 3.14+ due to an upstream incompatibility in the Globus Compute SDK. This will be resolved in a future release.
 - **Access to a Globus Compute endpoint** - You'll need access to an HPC cluster or remote compute resource running a Globus Compute endpoint. If you don't have one configured, see the [Globus Compute documentation](https://funcx.readthedocs.io/) for setup instructions.
 
 ## Installing with uv (recommended)
@@ -10,10 +10,13 @@
 The recommended way to install Groundhog is using [uv's tool management](https://docs.astral.sh/uv/concepts/tools/#the-uv-tool-interface):
 
 ```bash
-uv tool install groundhog-hpc@latest
+uv tool install --python 3.13 groundhog-hpc@latest
 ```
 
-This installs the `hog` CLI in an isolated environment, keeping your system Python clean.
+This installs the `hog` CLI in an isolated environment with Python 3.13, keeping your system Python clean.
+
+!!! note "Python version requirement"
+    The `--python 3.13` flag is important: `uv tool install` defaults to the latest Python version available, which may be 3.14+. Groundhog temporarily requires Python 3.13 or earlier due to an upstream dependency issue that will be resolved in a future release.
 
 ### Verifying installation
 
