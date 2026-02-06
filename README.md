@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="./docs/groundhog_logo.png" alt="Groundhog Logo" width="300">
+</p>
+
+<p align="right" style="font-size: 0.7em; color: #666;"><i>Logo by Nathan Houston</i></p>
+
 Home of `hog` ☀️🦫🕳️
 
 ## Quickstart
