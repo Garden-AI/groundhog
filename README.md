@@ -1,5 +1,9 @@
 Home of `hog` ☀️🦫🕳️
 
+<p align="center">
+  <img src="./docs/groundhog_logo.png" alt="Groundhog Logo" width="300">
+</p>
+
 ## Quickstart
 
 Groundhog makes it easy to run, tweak, and re-run python functions on HPC clusters via [Globus Compute](https://www.globus.org/compute) using simple decorators.
