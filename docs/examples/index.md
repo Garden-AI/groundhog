@@ -21,6 +21,12 @@ Examples showing how to handle typical workflows:
 - **[PyTorch from Custom Sources](pytorch_custom_index.md)** - Configuring uv to install packages from cluster-specific indexes, local paths, or internal mirrors
 - **[Importing Groundhog Functions](imported_function.md)** - Calling Groundhog functions from regular Python scripts, REPLs, and notebooks (includes import safety and `mark_import_safe()`)
 
+## Integration Examples
+
+Examples showing how to use Groundhog with other frameworks:
+
+- **[Academy Integration](academy.md)** - Using Groundhog functions within Academy agents for isolated compute with dependency management
+
 ## Running the Examples
 
 All examples in this section are available in the [examples directory](https://github.com/Garden-AI/groundhog/tree/main/examples) of the Groundhog repository, and should be runnable with minimal modification (e.g. configuring your own endpoint/account etc)

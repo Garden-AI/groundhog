@@ -105,6 +105,7 @@ nav:
     - Endpoint Configuration: examples/configuration.md
     - Customizing Package Sources: examples/pytorch_custom_index.md
     - Importing Groundhog Functions: examples/imported_function.md
+    - Academy Integration: examples/academy.md
   - Concepts:
     - Functions and Harnesses: concepts/functions-and-harnesses.md
     - PEP 723 Metadata: concepts/pep723.md
