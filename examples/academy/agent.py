@@ -11,6 +11,8 @@ Key benefits:
 Run: uv run --with academy-py --with groundhog-hpc agent.py
 """
 
+# ruff: noqa: I001, F401
+#
 import asyncio
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -19,8 +21,8 @@ from academy.agent import Agent, action
 from academy.exchange import LocalExchangeFactory
 from academy.manager import Manager
 
-import groundhog_hpc  # noqa
-from compute import predict_season  # noqa
+import groundhog_hpc
+from compute import predict_season
 
 
 class GroundhogAgent(Agent):
