@@ -13,15 +13,14 @@ Run: uv run --with academy-py --with groundhog-hpc agent.py
 
 import asyncio
 import random
+from concurrent.futures import ThreadPoolExecutor
 
 from academy.agent import Agent, action
 from academy.exchange import LocalExchangeFactory
 from academy.manager import Manager
-from concurrent.futures import ThreadPoolExecutor
 
-import groundhog_hpc  # noqa: F401
-
-from compute import predict_season
+import groundhog_hpc  # noqa
+from compute import predict_season  # noqa
 
 
 class GroundhogAgent(Agent):
@@ -46,7 +45,7 @@ class GroundhogAgent(Agent):
         # Now use Groundhog's .local() for isolated execution with dependencies
         print("\nUsing Groundhog .local() (succeeds - isolated subprocess)...")
         result = predict_season.local(shadow_measurements)
-        print(f".local() call succeeded!")
+        print(".local() call succeeded!")
 
         # Or, dispatch to a Globus Compute endpoint
         # result = predict_season.remote(
