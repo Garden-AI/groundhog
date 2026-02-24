@@ -1,6 +1,6 @@
 set -euo pipefail
 
-# Cleanup temporary files on exit
+# Cleanup temporary files on exit (env is preserved for reuse)
 trap 'rm -f {{ user_script_name }}.py {{ runner_name }}.py {{ script_name }}.in {{ script_name }}.out' EXIT
 
 if command -v uv &> /dev/null; then
@@ -33,6 +33,13 @@ fi
 mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 {% endraw %}
 
+# Environment reuse: compute path from hash + version
+ENV_HASH="{{ env_hash }}"
+GROUNDHOG_VERSION="{{ groundhog_version }}"
+{% raw %}
+ENV_DIR="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/groundhog-envs/${{ENV_HASH}}-${{GROUNDHOG_VERSION}}"
+{% endraw %}
+
 # Propagate log level to remote environment
 {% if log_level %}
 # Local override - use value from dispatching environment
@@ -56,9 +63,43 @@ cat > {{ script_name }}.in << 'PAYLOAD_EOF'
 {{ payload }}
 PAYLOAD_EOF
 
-"$UV_BIN" run --with {{ version_spec }} \
-  --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
-  {{ runner_name }}.py
+# Check if environment exists; create if not
+if [ -d "$ENV_DIR" ]; then
+    # Environment exists - reuse it
+    {% raw %}
+    if [ "${{GROUNDHOG_LOG_LEVEL}}" = "INFO" ] || [ "${{GROUNDHOG_LOG_LEVEL}}" = "DEBUG" ]; then
+        echo "INFO: Using environment $ENV_DIR" >&2
+    fi
+    {% endraw %}
+else
+    # Create new environment
+    {% raw %}
+    if [ "${{GROUNDHOG_LOG_LEVEL}}" = "INFO" ] || [ "${{GROUNDHOG_LOG_LEVEL}}" = "DEBUG" ]; then
+        echo "INFO: Creating environment $ENV_DIR" >&2
+    fi
+    {% endraw %}
+
+    "$UV_BIN" venv "$ENV_DIR"{% if requires_python %} --python "{{ requires_python }}"{% endif %}
+
+    # Install dependencies
+    "$UV_BIN" pip install --python "$ENV_DIR/bin/python" \
+        {% if exclude_newer %}--exclude-newer "{{ exclude_newer }}" {% endif %}\
+        --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
+        {% for dep in dependencies %}"{{ dep }}" {% endfor %}{{ version_spec }}
+
+    # Write metadata for debugging
+    cat > "$ENV_DIR/groundhog-meta.json" << 'META_EOF'
+{{ '{{' }}
+    "created_at": "{{ groundhog_timestamp }}",
+    "requires_python": "{{ requires_python }}",
+    "dependencies": {{ dependencies | tojson }},
+    "groundhog_version": "{{ groundhog_version }}"
+{{ '}}' }}
+META_EOF
+fi
+
+# Run using the cached environment's Python directly (bypasses uv resolution)
+"$ENV_DIR/bin/python" {{ runner_name }}.py
 
 echo "__GROUNDHOG_RESULT__"
 cat {{ script_name }}.out
