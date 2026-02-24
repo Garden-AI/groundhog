@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from hashlib import sha1
 from pathlib import Path
 
+import tomlkit
 from jinja2 import Environment, FileSystemLoader
 
 from groundhog_hpc.configuration.models import Pep723Metadata
@@ -149,6 +150,8 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         local_log_level = local_log_level.upper()
         logger.debug(f"Propagating log level to remote: {local_log_level}")
 
+    uv_config_toml = _serialize_uv_toml(metadata)
+
     # Render shell command
     shell_template = jinja_env.get_template("shell_command.sh.jinja")
     shell_command_string = shell_template.render(
@@ -165,14 +168,28 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         groundhog_version=groundhog_version,
         requires_python=metadata.requires_python if metadata else "",
         dependencies=metadata.dependencies if metadata else [],
-        exclude_newer=metadata.tool.uv.exclude_newer
-        if metadata and metadata.tool and metadata.tool.uv
-        else None,
+        uv_config_toml=uv_config_toml,
     )
 
     logger.debug(f"Generated shell command ({len(shell_command_string)} chars)")
 
     return shell_command_string
+
+
+def _serialize_uv_toml(metadata: Pep723Metadata | None) -> str:
+    """Serialize [tool.uv] settings to uv.toml format for uv pip install.
+
+    Returns a TOML string containing all non-None settings from the user's
+    [tool.uv] block, or an empty string if there are no settings.
+    """
+    if not metadata or not metadata.tool or not metadata.tool.uv:
+        return ""
+
+    uv_dict = metadata.tool.uv.model_dump(by_alias=True, exclude_none=True)
+    if not uv_dict:
+        return ""
+
+    return tomlkit.dumps(uv_dict).strip()
 
 
 def _script_hash_prefix(contents: str, length: int = 8) -> str:
