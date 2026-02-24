@@ -87,7 +87,9 @@ class UvMetadata(BaseModel, extra="allow", serialize_by_alias=True):
     exclude_newer: str | None = Field(
         default_factory=_default_exclude_newer, alias="exclude-newer"
     )
-    python_preference: str | None = Field(default="managed", alias="python-preference")
+    python_preference: str | None = Field(
+        default="only-managed", alias="python-preference"
+    )
     index_url: str | None = Field(default=None, alias="index-url")
     extra_index_url: list[str] | None = Field(default=None, alias="extra-index-url")
     python_downloads: str | None = Field(default=None, alias="python-downloads")
