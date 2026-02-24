@@ -3,7 +3,7 @@
 # dependencies = []
 #
 # [tool.uv]
-# exclude-newer = "2025-12-02T19:48:40Z"
+# exclude-newer = "2026-02-02T19:48:40Z"
 #
 # [tool.hog.anvil]  # Anvil Multi-User Globus Compute Endpoint
 # endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
