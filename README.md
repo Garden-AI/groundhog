@@ -12,8 +12,8 @@ Groundhog automatically manages remote environments (powered by [uv](https://doc
 
 **Key concepts:**
 - `@hog.function()` - Configures a function to run on a Globus Compute endpoint. Decorator kwargs (like `endpoint`, `account`) become the default `user_endpoint_config`.
-- `@hog.harness()` - Marks a local entry point that orchestrates remote calls via `.remote()` or `.submit()`.
-- The desired remote Python environment (version and dependencies) is specified alongside your code via [PEP 723](https://peps.python.org/pep-0723/) metadata.
+- `@hog.harness()` - Marks a local entry point that orchestrates remote calls via `.remote()` or `.submit()`. Can also parse CLI arguments ([example](https://groundhog-hpc.readthedocs.io/en/latest/examples/parameterized-harness/)).
+- The desired remote Python environment (version and dependencies) is specified alongside your code via [PEP 723](https://peps.python.org/pep-0723/) metadata. **You don't manage any remote state.**
 
 ```python
 # /// script
