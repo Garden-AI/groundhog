@@ -134,8 +134,9 @@ def foo():
 
         # Should NOT contain --managed-python (it's now in [tool.uv])
         assert "--managed-python" not in shell_command
-        # Should still have --with for version matching
-        assert "--with" in shell_command
+        # version_spec is passed to uv pip install (not via --with since we no longer use uv run)
+        assert "--with" not in shell_command
+        assert '"$UV_BIN" pip install' in shell_command
 
     def test_generates_valid_shell_command(self, tmp_path):
         """Test that a valid shell command string is generated."""
@@ -223,8 +224,8 @@ def func():
         # Payload should be rendered directly in the command (via Jinja2)
         assert test_payload in shell_command
 
-    def test_includes_uv_run_command(self, tmp_path):
-        """Test that the shell command uses uv run."""
+    def test_includes_uv_commands(self, tmp_path):
+        """Test that the shell command uses uv for env creation."""
         script_path = tmp_path / "script.py"
         script_content = """# /// script
 # requires-python = ">=3.12"
@@ -240,9 +241,11 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func", "test_payload")
 
-        # Check for uv installation and run command
+        # Check for uv installation
         assert "uv.find_uv_bin()" in shell_command
-        assert '"$UV_BIN" run' in shell_command
+        # Check for uv venv and pip install (for env creation)
+        assert '"$UV_BIN" venv' in shell_command
+        assert '"$UV_BIN" pip install' in shell_command
 
     def test_escapes_user_code_curly_braces(self, tmp_path):
         """Test that curly braces in user code are escaped in final shell command."""
@@ -376,6 +379,300 @@ def func():
             shell_command,
         )
         assert match, "exclude-newer-package timestamp should be in ISO 8601 format"
+
+
+class TestComputeEnvHash:
+    """Test environment hash computation."""
+
+    def test_hash_is_deterministic(self, tmp_path):
+        """Same metadata produces same hash."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import compute_env_hash
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11,<3.12",
+            dependencies=["numpy", "pandas"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+
+        hash1 = compute_env_hash(metadata)
+        hash2 = compute_env_hash(metadata)
+
+        assert hash1 == hash2
+        assert len(hash1) == 8
+
+    def test_hash_changes_with_different_dependencies(self, tmp_path):
+        """Different dependencies produce different hashes."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import compute_env_hash
+
+        metadata1 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+        metadata2 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy", "pandas"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+
+        hash1 = compute_env_hash(metadata1)
+        hash2 = compute_env_hash(metadata2)
+
+        assert hash1 != hash2
+
+    def test_hash_independent_of_dependency_order(self, tmp_path):
+        """Dependencies in different order produce same hash (sorted internally)."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import compute_env_hash
+
+        metadata1 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["pandas", "numpy", "scipy"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+        metadata2 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy", "scipy", "pandas"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+
+        hash1 = compute_env_hash(metadata1)
+        hash2 = compute_env_hash(metadata2)
+
+        assert hash1 == hash2
+
+    def test_hash_changes_with_different_uv_settings(self, tmp_path):
+        """Different [tool.uv] settings produce different hashes."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import compute_env_hash
+
+        metadata1 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-01-01T00:00:00Z")),
+        )
+        metadata2 = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=ToolMetadata(uv=UvMetadata(exclude_newer="2025-06-01T00:00:00Z")),
+        )
+
+        hash1 = compute_env_hash(metadata1)
+        hash2 = compute_env_hash(metadata2)
+
+        assert hash1 != hash2
+
+    def test_hash_works_without_tool_uv(self, tmp_path):
+        """Hash works when tool is None."""
+        from groundhog_hpc.configuration.models import Pep723Metadata
+        from groundhog_hpc.templating import compute_env_hash
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=None,
+        )
+
+        env_hash = compute_env_hash(metadata)
+
+        assert len(env_hash) == 8
+        assert env_hash.isalnum()
+
+    def test_hash_unchanged_by_tool_hog_config(self, tmp_path):
+        """tool.hog.* endpoint configs do not affect the environment hash.
+
+        The hash is based only on Python version, dependencies, and [tool.uv]
+        settings. Endpoint-specific config (worker_init, endpoint UUIDs, etc.)
+        is excluded because a single script can have many endpoints, and
+        worker_init content (e.g., 'module load cuda') is not always
+        env-affecting.
+        """
+        from groundhog_hpc.configuration.models import (
+            EndpointConfig,
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import compute_env_hash
+
+        shared_uv = UvMetadata(exclude_newer="2025-01-01T00:00:00Z")
+
+        metadata_no_hog = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=ToolMetadata(uv=shared_uv),
+        )
+        metadata_with_hog = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=["numpy"],
+            tool=ToolMetadata(
+                uv=shared_uv,
+                hog={
+                    "my_cluster": EndpointConfig(
+                        endpoint="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        worker_init="export UV_EXTRA_INDEX_URL=https://private.pypi/simple",
+                    )
+                },
+            ),
+        )
+
+        hash1 = compute_env_hash(metadata_no_hog)
+        hash2 = compute_env_hash(metadata_with_hog)
+
+        assert hash1 == hash2
+
+
+class TestEnvReuseTemplating:
+    """Test environment reuse in shell command templating."""
+
+    def test_shell_command_includes_env_hash(self, tmp_path):
+        """Shell command includes the environment hash for caching."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert "ENV_HASH=" in shell_command
+
+    def test_shell_command_includes_env_dir_construction(self, tmp_path):
+        """Shell command constructs ENV_DIR from hash and version."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert "groundhog-envs" in shell_command
+        assert "ENV_DIR=" in shell_command
+
+    def test_shell_command_checks_env_existence(self, tmp_path):
+        """Shell command checks if environment directory exists."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert 'if [ -d "$ENV_DIR" ]' in shell_command
+        assert '"$UV_BIN" venv' in shell_command
+        assert '"$UV_BIN" pip install' in shell_command
+
+    def test_shell_command_runs_python_directly(self, tmp_path):
+        """Shell command runs Python directly instead of uv run."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert '"$ENV_DIR/bin/python"' in shell_command
+        assert '"$UV_BIN" run' not in shell_command
+
+    def test_shell_command_writes_metadata_file(self, tmp_path):
+        """Shell command writes groundhog-meta.json when creating env."""
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy", "pandas"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert "groundhog-meta.json" in shell_command
+        assert '"requires_python":' in shell_command
+        assert '"dependencies":' in shell_command
+        assert '"groundhog_version":' in shell_command
+
+    def test_no_pep723_metadata_uses_script_hash_with_warning(self, tmp_path, caplog):
+        """Scripts without PEP 723 metadata fall back to script hash with warning."""
+        import logging
+
+        script_path = tmp_path / "no_metadata.py"
+        script_content = """
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        with caplog.at_level(logging.WARNING):
+            shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert "ENV_HASH=" in shell_command
+        assert any(
+            "no pep 723 metadata" in record.message.lower()
+            or "environment may change" in record.message.lower()
+            for record in caplog.records
+        )
 
 
 class TestDottedQualnames:

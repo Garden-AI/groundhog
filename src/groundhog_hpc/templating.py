@@ -7,8 +7,10 @@ user functions remotely. It creates shell commands that:
 3. Execute the runner with uv, which imports the user script, calls the function, and serializes results
 """
 
+import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from hashlib import sha1
@@ -16,6 +18,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+from groundhog_hpc.configuration.models import Pep723Metadata
 from groundhog_hpc.configuration.pep723 import read_pep723, write_pep723
 from groundhog_hpc.utils import get_groundhog_version_spec, path_to_module_name
 
@@ -29,6 +32,34 @@ def escape_braces(text: str) -> str:
     braces in user code must be doubled to avoid KeyError.
     """
     return text.replace("{", "{{").replace("}", "}}")
+
+
+def compute_env_hash(metadata: Pep723Metadata) -> str:
+    """Compute a deterministic 8-character hash for environment caching.
+
+    The hash covers requires-python, sorted dependencies, and [tool.uv]
+    settings. Endpoint configs (tool.hog.*) are intentionally excluded —
+    a script can have many endpoints and worker_init content is not
+    always environment-affecting.
+
+    Args:
+        metadata: PEP 723 metadata from the user script
+
+    Returns:
+        8-character hex hash string
+    """
+    hash_data: dict = {
+        "requires_python": metadata.requires_python,
+        "dependencies": sorted(metadata.dependencies),
+    }
+
+    if metadata.tool and metadata.tool.uv:
+        uv_dict = metadata.tool.uv.model_dump(by_alias=True, exclude_none=True)
+        if uv_dict:
+            hash_data["tool_uv"] = uv_dict
+
+    canonical = json.dumps(hash_data, sort_keys=True, separators=(",", ":"))
+    return sha1(canonical.encode("utf-8")).hexdigest()[:8]
 
 
 def template_shell_command(script_path: str, function_name: str, payload: str) -> str:
@@ -60,6 +91,15 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     metadata = read_pep723(user_script)
     pep723_metadata = write_pep723(metadata) if metadata else ""
 
+    if metadata:
+        env_hash = compute_env_hash(metadata)
+    else:
+        logger.warning(
+            "Script has no PEP 723 metadata. Environment hash based on script content; "
+            "environment may change unexpectedly between runs."
+        )
+        env_hash = _script_hash_prefix(user_script)
+
     script_hash = _script_hash_prefix(user_script)
     script_basename = _extract_script_basename(script_path)
     random_suffix = uuid.uuid4().hex[:8]
@@ -74,6 +114,14 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
 
     version_spec = get_groundhog_version_spec()
     logger.debug(f"Using groundhog version spec: {version_spec}")
+    semver_match = re.search(r"==([0-9][^\s]*)", version_spec)
+    git_hash_match = re.search(r"@([a-f0-9]+)$", version_spec)
+    if semver_match:
+        groundhog_version = semver_match.group(1)
+    elif git_hash_match:
+        groundhog_version = git_hash_match.group(1)
+    else:
+        groundhog_version = _script_hash_prefix(version_spec)
 
     # Generate timestamp for groundhog-hpc exclude-newer override
     # This allows groundhog to bypass user's exclude-newer restrictions
@@ -98,6 +146,7 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     # Read local log level (None if not set)
     local_log_level = os.getenv("GROUNDHOG_LOG_LEVEL")
     if local_log_level:
+        local_log_level = local_log_level.upper()
         logger.debug(f"Propagating log level to remote: {local_log_level}")
 
     # Render shell command
@@ -112,6 +161,13 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         payload=payload,
         log_level=local_log_level,
         groundhog_timestamp=groundhog_timestamp,
+        env_hash=env_hash,
+        groundhog_version=groundhog_version,
+        requires_python=metadata.requires_python if metadata else "",
+        dependencies=metadata.dependencies if metadata else [],
+        exclude_newer=metadata.tool.uv.exclude_newer
+        if metadata and metadata.tool and metadata.tool.uv
+        else None,
     )
 
     logger.debug(f"Generated shell command ({len(shell_command_string)} chars)")
