@@ -675,6 +675,251 @@ def func():
         )
 
 
+class TestSerializeUvToml:
+    """Test TOML serialization of [tool.uv] settings.
+
+    Note: UvMetadata fields use hyphenated aliases (e.g. "exclude-newer").
+    With Pydantic's default populate_by_name=False, the aliases must be used
+    when constructing via **{...} unpacking to set the intended fields.
+    """
+
+    def test_returns_empty_string_for_none_metadata(self):
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        result = _serialize_uv_toml(None)
+
+        assert result == ""
+
+    def test_returns_empty_string_when_tool_is_none(self):
+        from groundhog_hpc.configuration.models import Pep723Metadata
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=None,
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert result == ""
+
+    def test_serializes_string_values(self):
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=ToolMetadata(
+                uv=UvMetadata(
+                    **{
+                        "exclude-newer": "2025-01-01T00:00:00Z",
+                        "python-preference": "only-managed",
+                        "index-url": "https://private.example.com/simple",
+                    }
+                )
+            ),
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert 'exclude-newer = "2025-01-01T00:00:00Z"' in result
+        assert 'python-preference = "only-managed"' in result
+        assert 'index-url = "https://private.example.com/simple"' in result
+
+    def test_serializes_list_values(self):
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=ToolMetadata(
+                uv=UvMetadata(
+                    **{
+                        "extra-index-url": [
+                            "https://download.pytorch.org/whl/cpu",
+                            "https://private.example.com/simple",
+                        ],
+                    }
+                )
+            ),
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert "extra-index-url" in result
+        assert '"https://download.pytorch.org/whl/cpu"' in result
+        assert '"https://private.example.com/simple"' in result
+
+    def test_serializes_bool_values(self):
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=ToolMetadata(uv=UvMetadata(**{"offline": True})),
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert "offline = true" in result
+
+    def test_fields_defaulting_to_none_are_excluded(self):
+        """Fields whose default is None (index-url, extra-index-url, offline) don't appear."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        # Only set exclude-newer; leave index-url, extra-index-url, offline at None default
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=ToolMetadata(
+                uv=UvMetadata(**{"exclude-newer": "2025-01-01T00:00:00Z"})
+            ),
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert "index-url" not in result
+        assert "extra-index-url" not in result
+        assert "offline" not in result
+
+    def test_extra_fields_are_included(self):
+        """Extra uv settings (via extra='allow') round-trip through the TOML."""
+        from groundhog_hpc.configuration.models import (
+            Pep723Metadata,
+            ToolMetadata,
+            UvMetadata,
+        )
+        from groundhog_hpc.templating import _serialize_uv_toml
+
+        # Simulate a uv setting not explicitly modelled, parsed from TOML
+        metadata = Pep723Metadata(
+            requires_python=">=3.11",
+            dependencies=[],
+            tool=ToolMetadata(
+                uv=UvMetadata(**{"find-links": "https://example.com/wheels"})
+            ),
+        )
+
+        result = _serialize_uv_toml(metadata)
+
+        assert 'find-links = "https://example.com/wheels"' in result
+
+
+class TestUvTomlInShellCommand:
+    """Test that uv.toml config file is written and used in shell commands."""
+
+    def test_shell_command_writes_uv_toml_when_tool_uv_present(self, tmp_path):
+        """When [tool.uv] is configured, the shell command writes a uv.toml."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+#
+# [tool.uv]
+# exclude-newer = "2025-01-01T00:00:00Z"
+# extra-index-url = ["https://download.pytorch.org/whl/cpu"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert '"$ENV_DIR/uv.toml"' in shell_command
+        assert 'exclude-newer = "2025-01-01T00:00:00Z"' in shell_command
+        assert '"https://download.pytorch.org/whl/cpu"' in shell_command
+
+    def test_shell_command_uses_config_file_flag_for_pip_install(self, tmp_path):
+        """uv pip install receives --config-file pointing at the written uv.toml."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-06-01T00:00:00Z"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert '--config-file "$ENV_DIR/uv.toml"' in shell_command
+
+    def test_exclude_newer_not_passed_as_cli_flag(self, tmp_path):
+        """--exclude-newer is no longer a CLI flag; it lives in uv.toml."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-01-01T00:00:00Z"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        # --exclude-newer as a standalone CLI flag should be gone
+        import re
+
+        assert not re.search(r'--exclude-newer\s+"', shell_command), (
+            "--exclude-newer should not appear as a standalone CLI flag; "
+            "it should be in uv.toml instead"
+        )
+
+    def test_no_uv_toml_written_for_script_without_pep723_metadata(self, tmp_path):
+        """Scripts without PEP 723 metadata don't write a uv.toml."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        assert "UV_CONFIG_EOF" not in shell_command
+        assert "--config-file" not in shell_command
+
+
 class TestDottedQualnames:
     """Test that templating handles dotted qualnames (class methods)."""
 

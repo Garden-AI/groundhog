@@ -81,9 +81,16 @@ else
 
     "$UV_BIN" venv "$ENV_DIR"{% if requires_python %} --python "{{ requires_python }}"{% endif %}
 
+    {% if uv_config_toml %}
+    # Write uv config so pip install honours all [tool.uv] settings
+    cat > "$ENV_DIR/uv.toml" << 'UV_CONFIG_EOF'
+{{ uv_config_toml | escape_braces }}
+UV_CONFIG_EOF
+    {% endif %}
+
     # Install dependencies
     "$UV_BIN" pip install --python "$ENV_DIR/bin/python" \
-        {% if exclude_newer %}--exclude-newer "{{ exclude_newer }}" {% endif %}\
+        {% if uv_config_toml %}--config-file "$ENV_DIR/uv.toml" {% endif %}\
         --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
         {% for dep in dependencies %}"{{ dep }}" {% endfor %}{{ version_spec }}
 
