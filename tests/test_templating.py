@@ -904,6 +904,63 @@ def func():
             "it should be in uv.toml instead"
         )
 
+    def test_uv_venv_receives_config_file_flag(self, tmp_path):
+        """uv venv also receives --config-file so python-preference etc. take effect."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-06-01T00:00:00Z"
+# python-preference = "managed"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        # uv venv line should carry --config-file
+        venv_line = next(
+            (line for line in shell_command.splitlines() if '"$UV_BIN" venv' in line),
+            None,
+        )
+        assert venv_line is not None, "No uv venv line found"
+        assert "--config-file" in venv_line
+
+    def test_uv_toml_written_before_venv_creation(self, tmp_path):
+        """uv.toml must be written before uv venv so the flag can reference it."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-06-01T00:00:00Z"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func", "payload")
+
+        toml_write_pos = shell_command.find("UV_CONFIG_EOF")
+        venv_pos = shell_command.find('"$UV_BIN" venv')
+        assert toml_write_pos != -1, "UV_CONFIG_EOF not found"
+        assert venv_pos != -1, '"$UV_BIN" venv not found'
+        assert toml_write_pos < venv_pos, (
+            "uv.toml must be written before uv venv creates the directory"
+        )
+
     def test_no_uv_toml_written_for_script_without_pep723_metadata(self, tmp_path):
         """Scripts without PEP 723 metadata don't write a uv.toml."""
         script_path = tmp_path / "script.py"

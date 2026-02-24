@@ -79,13 +79,21 @@ else
     fi
     {% endraw %}
 
-    "$UV_BIN" venv "$ENV_DIR"{% if requires_python %} --python "{{ requires_python }}"{% endif %}
-
     {% if uv_config_toml %}
-    # Write uv config so pip install honours all [tool.uv] settings
-    cat > "$ENV_DIR/uv.toml" << 'UV_CONFIG_EOF'
+
+    # Both `uv venv` and `uv pip install` will receive --config-file, then
+    # the file is moved into $ENV_DIR as a human-readable audit trail.
+    {% raw %}UV_TOML="${{ENV_DIR}}.uv.toml"{% endraw %}
+
+    cat > "$UV_TOML" << 'UV_CONFIG_EOF'
 {{ uv_config_toml | escape_braces }}
 UV_CONFIG_EOF
+    {% endif %}
+
+    "$UV_BIN" venv "$ENV_DIR"{% if requires_python %} --python "{{ requires_python }}"{% endif %}{% if uv_config_toml %} --config-file "$UV_TOML"{% endif %}
+
+    {% if uv_config_toml %}
+    mv "$UV_TOML" "$ENV_DIR/uv.toml"
     {% endif %}
 
     # Install dependencies
@@ -94,7 +102,7 @@ UV_CONFIG_EOF
         --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
         {% for dep in dependencies %}"{{ dep }}" {% endfor %}{{ version_spec }}
 
-    # Write metadata for debugging
+    # Write metadata for posterity
     cat > "$ENV_DIR/groundhog-meta.json" << 'META_EOF'
 {{ '{{' }}
     "created_at": "{{ groundhog_timestamp }}",
