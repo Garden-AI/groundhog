@@ -352,16 +352,9 @@ class TestLocalMethod:
     def test_local_executes_function_and_returns_result(
         self, tmp_path, mock_local_result
     ):
-        """Test that local() executes the function via ShellFunction and returns result."""
-        # Create a test script
+        """Test that local() executes the function and returns deserialized result."""
         script_path = tmp_path / "test_local.py"
-        script_content = """import groundhog_hpc as hog
-
-@hog.function()
-def add(a, b):
-    return a + b
-"""
-        script_path.write_text(script_content)
+        script_path.write_text("# test")
 
         def add(a, b):
             return a + b
@@ -369,8 +362,7 @@ def add(a, b):
         func = Function(add)
         func._script_path = str(script_path)
 
-        # Create mock result
-        shell_func, result = mock_local_result(stdout='{"result": 5}')
+        shell_func, run_result = mock_local_result(stdout='{"result": 5}')
 
         with patch.object(
             Function,
@@ -379,9 +371,12 @@ def add(a, b):
             return_value=shell_func,
         ):
             with patch(
-                "groundhog_hpc.function.deserialize_stdout", return_value=(None, 5)
-            ) as mock_deserialize:
-                result_value = func.local(2, 3)
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout", return_value=(None, 5)
+                ) as mock_deserialize:
+                    result_value = func.local(2, 3)
 
         assert result_value == 5
         mock_deserialize.assert_called_once_with('{"result": 5}')
@@ -394,7 +389,7 @@ def add(a, b):
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        shell_func, result = mock_local_result(stdout='{"result": "success"}')
+        shell_func, run_result = mock_local_result(stdout='{"result": "success"}')
 
         with patch(
             "groundhog_hpc.function.serialize", return_value="serialized"
@@ -406,66 +401,169 @@ def add(a, b):
                 return_value=shell_func,
             ):
                 with patch(
-                    "groundhog_hpc.function.deserialize_stdout",
-                    return_value=(None, "success"),
+                    "groundhog_hpc.function._run_shell_locally", return_value=run_result
                 ):
-                    func.local(1, 2, key="value")
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value=(None, "success"),
+                    ):
+                        func.local(1, 2, key="value")
 
-        # Verify serialize was called with args, kwargs, and proxy_threshold_mb=1.0
         mock_serialize.assert_called_once()
         call_args = mock_serialize.call_args[0][0]
         call_kwargs = mock_serialize.call_args[1]
         assert call_args == ((1, 2), {"key": "value"})
         assert call_kwargs.get("proxy_threshold_mb") == 1.0
 
-    def test_local_runs_in_temporary_directory(self, tmp_path):
-        """Test that local() sets GC_TASK_SANDBOX_DIR to a temporary directory."""
+    def test_gc_task_sandbox_dir_not_set_on_parent_process(
+        self, tmp_path, mock_local_result
+    ):
+        """local() must not mutate os.environ with GC_TASK_SANDBOX_DIR."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "result"
-        mock_result.stderr = ""
-        mock_result.exception_name = None
+        shell_func, run_result = mock_local_result()
 
-        mock_shell_function = MagicMock(return_value=mock_result)
-
-        # Store original env var if it exists
-        original_sandbox_dir = os.environ.get("GC_TASK_SANDBOX_DIR")
-
+        original = os.environ.pop("GC_TASK_SANDBOX_DIR", None)
         try:
-            # Clear it for this test
-            if "GC_TASK_SANDBOX_DIR" in os.environ:
-                del os.environ["GC_TASK_SANDBOX_DIR"]
-
             with patch.object(
                 Function,
                 "shell_function",
                 new_callable=PropertyMock,
-                return_value=mock_shell_function,
+                return_value=shell_func,
+            ):
+                with patch(
+                    "groundhog_hpc.function._run_shell_locally", return_value=run_result
+                ):
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value=(None, "result"),
+                    ):
+                        func.local()
+
+            assert "GC_TASK_SANDBOX_DIR" not in os.environ
+        finally:
+            if original is not None:
+                os.environ["GC_TASK_SANDBOX_DIR"] = original
+
+    def test_gc_task_sandbox_dir_not_overwritten_if_already_set(
+        self, tmp_path, mock_local_result
+    ):
+        """local() must not overwrite an externally set GC_TASK_SANDBOX_DIR."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        shell_func, run_result = mock_local_result()
+
+        os.environ["GC_TASK_SANDBOX_DIR"] = "/my/custom/dir"
+        try:
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
+                return_value=shell_func,
+            ):
+                with patch(
+                    "groundhog_hpc.function._run_shell_locally", return_value=run_result
+                ):
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value=(None, "result"),
+                    ):
+                        func.local()
+
+            assert os.environ["GC_TASK_SANDBOX_DIR"] == "/my/custom/dir"
+        finally:
+            del os.environ["GC_TASK_SANDBOX_DIR"]
+
+    def test_two_concurrent_local_calls_dont_interfere(
+        self, tmp_path, mock_local_result
+    ):
+        """Concurrent local() calls must not share GC_TASK_SANDBOX_DIR via os.environ."""
+        import threading
+
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        seen_dirs: list[str] = []
+
+        def capture_env(cmd_template, payload, tmpdir):
+            seen_dirs.append(os.environ.get("GC_TASK_SANDBOX_DIR", "NOT_SET"))
+            mock = MagicMock()
+            mock.returncode = 0
+            mock.stdout = '"ok"'
+            mock.stderr = ""
+            mock.exception_name = None
+            return mock
+
+        shell_func, _ = mock_local_result()
+
+        os.environ.pop("GC_TASK_SANDBOX_DIR", None)
+
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=shell_func,
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", side_effect=capture_env
             ):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout",
-                    return_value=(None, "result"),
+                    return_value=(None, "ok"),
                 ):
-                    func.local()
+                    threads = [threading.Thread(target=func.local) for _ in range(2)]
+                    for t in threads:
+                        t.start()
+                    for t in threads:
+                        t.join()
 
-            # Verify GC_TASK_SANDBOX_DIR was set
-            assert "GC_TASK_SANDBOX_DIR" in os.environ
-            sandbox_dir = os.environ["GC_TASK_SANDBOX_DIR"]
-            assert isinstance(sandbox_dir, str)
-            assert len(sandbox_dir) > 0
+        # Neither thread should have seen GC_TASK_SANDBOX_DIR in os.environ
+        assert all(d == "NOT_SET" for d in seen_dirs)
+        assert "GC_TASK_SANDBOX_DIR" not in os.environ
 
-        finally:
-            # Restore original state
-            if original_sandbox_dir is not None:
-                os.environ["GC_TASK_SANDBOX_DIR"] = original_sandbox_dir
-            elif "GC_TASK_SANDBOX_DIR" in os.environ:
-                del os.environ["GC_TASK_SANDBOX_DIR"]
+    def test_local_passes_tmpdir_to_run_shell_locally(
+        self, tmp_path, mock_local_result
+    ):
+        """local() passes a real tmpdir path to _run_shell_locally."""
+        script_path = tmp_path / "test_local.py"
+        script_path.write_text("# test")
+
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+
+        shell_func, run_result = mock_local_result()
+
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=shell_func,
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ) as mock_run:
+                with patch("groundhog_hpc.function.serialize", return_value="PAYLOAD"):
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value=(None, "result"),
+                    ):
+                        func.local()
+
+        # Third argument is tmpdir; second is the serialized payload
+        _, call_payload, call_tmpdir = mock_run.call_args[0]
+        assert call_payload == "PAYLOAD"
+        assert isinstance(call_tmpdir, str) and len(call_tmpdir) > 0
 
     def test_local_raises_if_script_path_unavailable(self):
         """Test that local() raises ValueError if script path cannot be determined."""
@@ -476,7 +574,6 @@ def add(a, b):
         func = Function(local_func)
         func._script_path = None
 
-        # Mock inspect.getfile to raise TypeError (e.g., for built-in functions)
         with patch(
             "groundhog_hpc.function.inspect.getfile",
             side_effect=TypeError("not a file"),
@@ -485,14 +582,14 @@ def add(a, b):
                 func.local()
 
     def test_local_uses_shell_function_property(self, tmp_path, mock_local_result):
-        """Test that local() uses the cached shell_function property."""
+        """local() accesses the cached shell_function property for .cmd."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        shell_func, result = mock_local_result(stdout="result")
+        shell_func, run_result = mock_local_result(stdout="result")
 
         with patch.object(
             Function,
@@ -501,67 +598,30 @@ def add(a, b):
             return_value=shell_func,
         ) as mock_sf_prop:
             with patch(
-                "groundhog_hpc.function.deserialize_stdout",
-                return_value=(None, "result"),
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
             ):
-                func.local()
-
-        # Verify shell_function property was accessed (not script_to_submittable)
-        mock_sf_prop.assert_called()
-
-    def test_local_calls_shell_function_with_payload_kwarg(
-        self, tmp_path, mock_local_result
-    ):
-        """Test that local() calls shell_function(payload=...) not shell_function()."""
-        script_path = tmp_path / "test_local.py"
-        script_path.write_text("# test")
-
-        func = Function(dummy_function)
-        func._script_path = str(script_path)
-
-        shell_func, result = mock_local_result(stdout="result")
-
-        with patch.object(
-            Function,
-            "shell_function",
-            new_callable=PropertyMock,
-            return_value=shell_func,
-        ):
-            with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
                 with patch(
                     "groundhog_hpc.function.deserialize_stdout",
                     return_value=(None, "result"),
                 ):
                     func.local()
 
-        # Verify ShellFunction was called with payload as keyword argument
-        shell_func.assert_called_once()
-        assert shell_func.call_args[1]["payload"] == "ABC123"
+        mock_sf_prop.assert_called()
 
-    def test_local_infers_script_path_from_function(self, tmp_path):
+    def test_local_infers_script_path_from_function(self, tmp_path, mock_local_result):
         """Test that local() can infer script path from function's source file."""
-        # Create a test script
         script_path = tmp_path / "inferred_script.py"
-        script_content = """def my_function():
-    return 42
-"""
-        script_path.write_text(script_content)
+        script_path.write_text("def my_function():\n    return 42\n")
 
         def my_function():
             return 42
 
         func = Function(my_function)
-        func._script_path = None  # Force it to infer
+        func._script_path = None
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "42"
-        mock_result.stderr = ""
-        mock_result.exception_name = None
+        shell_func, run_result = mock_local_result(stdout="42")
+        run_result.returncode = 0
 
-        mock_shell_function = MagicMock(return_value=mock_result)
-
-        # Mock inspect.getfile to return our test script
         with patch(
             "groundhog_hpc.function.inspect.getfile", return_value=str(script_path)
         ):
@@ -569,12 +629,16 @@ def add(a, b):
                 Function,
                 "shell_function",
                 new_callable=PropertyMock,
-                return_value=mock_shell_function,
+                return_value=shell_func,
             ):
                 with patch(
-                    "groundhog_hpc.function.deserialize_stdout", return_value=(None, 42)
+                    "groundhog_hpc.function._run_shell_locally", return_value=run_result
                 ):
-                    result = func.local()
+                    with patch(
+                        "groundhog_hpc.function.deserialize_stdout",
+                        return_value=(None, 42),
+                    ):
+                        result = func.local()
 
         assert result == 42
 
@@ -723,9 +787,8 @@ def test_func(x):
         test_module = sys.modules[func._wrapped_function.__module__]
         test_module.__groundhog_imported__ = True
 
-        shell_func, result = mock_local_result(stdout="84")
+        shell_func, run_result = mock_local_result(stdout="84")
 
-        # Patch shell_function property to verify subprocess is used
         with patch.object(
             Function,
             "shell_function",
@@ -733,10 +796,13 @@ def test_func(x):
             return_value=shell_func,
         ):
             with patch(
-                "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
-            ):
-                result_value = func.local(42)
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ) as mock_run:
+                with patch(
+                    "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
+                ):
+                    result_value = func.local(42)
 
-        # Should always use subprocess (ShellFunction)
+        # Always uses _run_shell_locally (never calls the function directly)
         assert result_value == 84
-        shell_func.assert_called_once()
+        mock_run.assert_called_once()

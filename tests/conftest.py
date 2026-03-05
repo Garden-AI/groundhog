@@ -307,17 +307,18 @@ def mock_executor():
 
 @pytest.fixture
 def mock_local_result():
-    """Create a mock result for local subprocess execution.
+    """Create mock objects for local subprocess execution tests.
 
     Returns a factory function that creates:
-    - A mock ShellFunction that returns the result
-    - The mock result object itself
+    - A mock ShellFunction with a .cmd attribute (for patching Function.shell_function)
+    - A mock result object (for patching _run_shell_locally return value)
 
     Usage:
         def test_something(mock_local_result):
             shell_func, result = mock_local_result(stdout='{"result": 42}')
-            # Use shell_func in patches
-            # Use result for specific assertions
+            with patch.object(Function, "shell_function", new_callable=PropertyMock, return_value=shell_func):
+                with patch("groundhog_hpc.function._run_shell_locally", return_value=result):
+                    ...
     """
 
     def _create(
@@ -332,7 +333,8 @@ def mock_local_result():
         result.stderr = stderr
         result.exception_name = exception_name
 
-        shell_func = MagicMock(return_value=result)
+        shell_func = MagicMock()
+        shell_func.cmd = "test_cmd {payload}"
         return shell_func, result
 
     return _create

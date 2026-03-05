@@ -174,13 +174,14 @@ def my_func():
         # Verify flag is set
         assert module.__groundhog_imported__ is True
 
-        # Mock shell_function property to avoid actual subprocess execution
+        # Mock _run_shell_locally to avoid actual subprocess execution
         mock_shell_func = Mock()
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = 'hello\n__GROUNDHOG_RESULT__\n"hello"'
-        mock_result.stderr = ""
-        mock_shell_func.return_value = mock_result
+        mock_shell_func.cmd = "test {payload}"
+        mock_run_result = Mock()
+        mock_run_result.returncode = 0
+        mock_run_result.stdout = 'hello\n__GROUNDHOG_RESULT__\n"hello"'
+        mock_run_result.stderr = ""
+        mock_run_result.exception_name = None
 
         from groundhog_hpc.function import Function
 
@@ -190,9 +191,13 @@ def my_func():
             new_callable=PropertyMock,
             return_value=mock_shell_func,
         ):
-            # Now .local() should work (won't raise ModuleImportError)
-            result = module.my_func.local()
-            assert result == "hello"
+            with patch(
+                "groundhog_hpc.function._run_shell_locally",
+                return_value=mock_run_result,
+            ):
+                # Now .local() should work (won't raise ModuleImportError)
+                result = module.my_func.local()
+                assert result == "hello"
 
         # Cleanup
         del sys.modules["test_module5"]

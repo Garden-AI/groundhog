@@ -7,7 +7,9 @@ endpoints.
 
 import logging
 import os
+import threading
 import warnings
+from concurrent.futures import Future as ConcurrentFuture
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
@@ -109,6 +111,104 @@ def submit_to_executor(
             logger.info(f"Task submitted with ID: {task_id}")
         deserializing_future = GroundhogFuture(future)
         return deserializing_future
+
+
+def submit_batch(
+    endpoint: UUID,
+    user_endpoint_config: dict[str, Any],
+    shell_function: ShellFunction,
+    payloads: list[str],
+) -> list[GroundhogFuture]:
+    """Submit a parameterized ShellFunction as a batch of tasks to a Globus Compute endpoint.
+
+    Registers the ShellFunction once, then submits all payloads as a single batch
+    request, avoiding per-task API calls that can hit rate limits.
+
+    Args:
+        endpoint: UUID of the Globus Compute endpoint
+        user_endpoint_config: Configuration dict for the endpoint
+        shell_function: The parameterized ShellFunction (registered once for all tasks)
+        payloads: List of serialized argument strings, one per task
+
+    Returns:
+        A list of GroundhogFutures in the same order as payloads
+    """
+    client = _get_compute_client()
+
+    config = user_endpoint_config.copy()
+    if schema := get_endpoint_schema(endpoint):
+        expected_keys = set(schema.get("properties", {}).keys())
+        unexpected_keys = set(config.keys()) - expected_keys
+        if unexpected_keys:
+            logger.debug(
+                f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
+            )
+            config = {k: v for k, v in config.items() if k not in unexpected_keys}
+
+    func_name = getattr(shell_function, "__name__", "unknown")
+    function_id = client.register_function(shell_function)
+    logger.info(
+        f"Registered '{func_name}' for batch submission, function_id={function_id}"
+    )
+
+    batch = client.create_batch(user_endpoint_config=config)
+    for payload in payloads:
+        batch.add(function_id, kwargs={"payload": payload})
+
+    response = client.batch_run(endpoint, batch)
+    task_ids: list[str] = response["tasks"][function_id]
+    logger.info(f"Batch submitted: {len(task_ids)} tasks to endpoint '{endpoint}'")
+
+    task_id_to_future: dict[str, ConcurrentFuture] = {
+        tid: ConcurrentFuture() for tid in task_ids
+    }
+
+    thread = threading.Thread(
+        target=_poll_batch_results,
+        args=(dict(task_id_to_future), client),
+        daemon=True,
+    )
+    thread.start()
+
+    futures = []
+    for task_id in task_ids:
+        gf = GroundhogFuture(task_id_to_future[task_id])
+        gf._task_id = task_id
+        futures.append(gf)
+
+    return futures
+
+
+def _poll_batch_results(
+    task_id_to_future: dict[str, ConcurrentFuture],
+    client: Client,
+    poll_interval: float = 1.0,
+) -> None:
+    """Background thread: poll Globus Compute until all batch tasks are resolved."""
+    import time
+
+    pending = dict(task_id_to_future)
+
+    while pending:
+        results = client.get_batch_result(list(pending.keys()))
+        for task_id, status in results.items():
+            if status.get("pending", True):
+                continue
+            fut = pending.pop(task_id)
+            try:
+                if "result" in status:
+                    fut.set_result(status["result"])
+                else:
+                    try:
+                        status["exception"].reraise()
+                    except Exception as e:
+                        fut.set_exception(e)
+            except Exception as e:
+                if not fut.done():
+                    fut.set_exception(e)
+
+        if pending:
+            time.sleep(poll_interval)
 
 
 def get_task_status(task_id: str | UUID | None) -> dict[str, Any]:

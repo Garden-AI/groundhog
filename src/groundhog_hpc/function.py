@@ -12,6 +12,7 @@ as defaults but overridden when calling .remote() or .submit().
 import inspect
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -42,6 +43,35 @@ if TYPE_CHECKING:
 else:
     ShellFunction = TypeVar("ShellFunction")
     ShellResult = TypeVar("ShellResult")
+
+
+def _run_shell_locally(cmd_template: str, payload: str, tmpdir: str) -> Any:
+    """Execute a parameterized shell command locally.
+
+    Injects GC_TASK_SANDBOX_DIR into the subprocess environment without
+    mutating os.environ, making concurrent calls thread-safe.
+    """
+    import globus_compute_sdk as gc
+
+    env = {**os.environ, "GC_TASK_SANDBOX_DIR": tmpdir}
+    cmd = cmd_template.format(payload=payload)
+    proc = subprocess.run(
+        cmd,
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return gc.ShellResult(
+        cmd=cmd,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        returncode=proc.returncode,
+        exception_name="subprocess.CalledProcessError"
+        if proc.returncode != 0
+        else None,
+    )
 
 
 class Function:
@@ -268,13 +298,7 @@ class Function:
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                # set sandbox dir for ShellFunction to use
-                if "GC_TASK_SANDBOX_DIR" not in os.environ:
-                    os.environ["GC_TASK_SANDBOX_DIR"] = tmpdir
-
-                # call ShellFunction with payload as a parameter
-                result = self.shell_function(payload=payload)
-                assert not isinstance(result, dict)
+                result = _run_shell_locally(self.shell_function.cmd, payload, tmpdir)
 
                 if result.returncode != 0:
                     logger.error(

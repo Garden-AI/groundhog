@@ -98,7 +98,7 @@ class GroundhogFuture(Future):
         Returns the task ID from the underlying Globus Compute future, which may
         not be populated immediately.
         """
-        return self._original_future.task_id  # type: ignore[attr-defined]
+        return self._task_id or getattr(self._original_future, "task_id", None)
 
     @property
     def endpoint(self) -> str | None:
