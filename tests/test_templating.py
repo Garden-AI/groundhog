@@ -2,7 +2,10 @@
 
 import pytest
 
-from groundhog_hpc.templating import template_shell_command
+from groundhog_hpc.templating import (
+    template_shell_command,
+    template_shell_command_parameterized,
+)
 
 
 class TestTemplateShellCommand:
@@ -1003,3 +1006,133 @@ class MyClass:
         # The runner should use attrgetter for dotted paths
         assert "attrgetter" in result
         assert "MyClass.compute" in result
+
+
+MINIMAL_SCRIPT = """\
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 42
+"""
+
+
+class TestTemplateShellCommandParameterized:
+    """Tests for the parameterized shell command template."""
+
+    def _write_script(self, tmp_path, content=MINIMAL_SCRIPT):
+        p = tmp_path / "script.py"
+        p.write_text(content)
+        return str(p)
+
+    def test_returns_a_string(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        result = template_shell_command_parameterized(script_path, "func")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_contains_payload_placeholder_exactly_once(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert cmd.count("{payload}") == 1
+
+    def test_format_with_payload_kwarg_substitutes_correctly(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        result = cmd.format(payload="__PICKLE__:AAAA==")
+        assert "__PICKLE__:AAAA==" in result
+        assert "{payload}" not in result
+
+    def test_format_without_payload_kwarg_raises_key_error(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        with pytest.raises(KeyError):
+            cmd.format()
+
+    def test_base64_payload_is_format_safe(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        base64_payload = "__PICKLE__:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=="
+        result = cmd.format(payload=base64_payload)
+        assert base64_payload in result
+
+    def test_user_code_braces_are_escaped_before_format_call(self, tmp_path):
+        """Dict literals in user code survive .format(payload=...) without KeyError."""
+        script_content = """\
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return {"key": "value"}
+"""
+        script_path = self._write_script(tmp_path, script_content)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        # Dict braces must be doubled in cmd so .format() doesn't raise KeyError
+        assert '{{"key": "value"}}' in cmd
+        # After .format(), doubled braces collapse to single braces (dict literal preserved)
+        result = cmd.format(payload="test")
+        assert '{"key": "value"}' in result
+
+    def test_contains_mktemp_for_file_isolation(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert "mktemp -d" in cmd
+
+    def test_cleanup_uses_rm_rf_task_dir(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert 'rm -rf "$TASK_DIR"' in cmd
+        # Individual file cleanup should not appear
+        assert "rm -f " not in cmd
+
+    def test_file_paths_use_fixed_names_inside_task_dir(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert "$TASK_DIR/user_script.py" in cmd
+        assert "$TASK_DIR/runner.py" in cmd
+        assert "$TASK_DIR/payload.in" in cmd
+        # No random UUID suffixes in paths
+        import re
+
+        assert not re.search(r"\w+-[0-9a-f]{8}-[0-9a-f]{8}\.py", cmd)
+
+    def test_runner_references_fixed_payload_path(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert "open('payload.in'" in cmd
+
+    def test_includes_standard_uv_and_env_reuse_infrastructure(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command_parameterized(script_path, "func")
+        assert "ENV_HASH=" in cmd
+        assert "ENV_DIR=" in cmd
+        assert '"$UV_BIN" venv' in cmd
+        assert '"$UV_BIN" pip install' in cmd
+        assert '"$ENV_DIR/bin/python"' in cmd
+
+    def test_different_scripts_produce_different_commands(self, tmp_path):
+        script1 = tmp_path / "script1.py"
+        script2 = tmp_path / "script2.py"
+        script1.write_text(MINIMAL_SCRIPT)
+        script2.write_text(MINIMAL_SCRIPT.replace("return 42", "return 99"))
+        cmd1 = template_shell_command_parameterized(str(script1), "func")
+        cmd2 = template_shell_command_parameterized(str(script2), "func")
+        assert cmd1 != cmd2
+
+    def test_non_parameterized_template_is_unchanged(self, tmp_path):
+        """Existing template_shell_command is unaffected by the template changes."""
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func", "test_payload")
+        assert "test_payload" in cmd
+        assert "mktemp -d" not in cmd
+        assert "{payload}" not in cmd
