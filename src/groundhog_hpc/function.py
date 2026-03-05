@@ -29,7 +29,7 @@ from groundhog_hpc.errors import (
 )
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
-from groundhog_hpc.templating import template_shell_command_parameterized
+from groundhog_hpc.templating import template_shell_command
 from groundhog_hpc.utils import prefix_output
 
 logger = logging.getLogger(__name__)
@@ -316,9 +316,7 @@ class Function:
         is reused for all invocations of this function.
         """
         if self._shell_command is None:
-            self._shell_command = template_shell_command_parameterized(
-                self.script_path, self.name
-            )
+            self._shell_command = template_shell_command(self.script_path, self.name)
         return self._shell_command
 
     @property

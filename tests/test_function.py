@@ -583,12 +583,12 @@ class TestShellCommandProperty:
     """Test the shell_command lazy-cached property."""
 
     def test_calls_template_with_script_path_and_name(self, tmp_path):
-        """shell_command calls template_shell_command_parameterized with correct args."""
+        """shell_command calls template_shell_command with correct args."""
         func = Function(dummy_function)
         func._script_path = str(tmp_path / "fake.py")
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="parameterized_cmd",
         ) as mock_template:
             result = func.shell_command
@@ -602,7 +602,7 @@ class TestShellCommandProperty:
         func._script_path = str(tmp_path / "fake.py")
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="cmd1",
         ) as mock_template:
             first = func.shell_command
@@ -624,7 +624,7 @@ class TestShellFunctionProperty:
         mock_sf = MagicMock()
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="paramcmd",
         ):
             with patch(
@@ -644,7 +644,7 @@ class TestShellFunctionProperty:
         mock_sf = MagicMock()
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="cmd",
         ):
             with patch(
@@ -663,7 +663,7 @@ class TestShellFunctionProperty:
         func._script_path = str(tmp_path / "fake.py")
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="cmd",
         ):
             with patch(
@@ -681,7 +681,7 @@ class TestShellFunctionProperty:
         func.walltime = 300
 
         with patch(
-            "groundhog_hpc.function.template_shell_command_parameterized",
+            "groundhog_hpc.function.template_shell_command",
             return_value="cmd",
         ):
             with patch(
