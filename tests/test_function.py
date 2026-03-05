@@ -1,7 +1,7 @@
 """Tests for the Function class."""
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -105,12 +105,11 @@ class TestRemoteExecution:
             ):
                 _ = func.script_path
 
-    def test_submit_creates_shell_function(self, tmp_path, mock_endpoint_uuid):
-        """Test that submit creates a shell function using script_to_submittable."""
+    def test_submit_uses_shell_function_property(self, tmp_path, mock_endpoint_uuid):
+        """Test that submit uses the cached shell_function property."""
 
         script_path = tmp_path / "test_script.py"
-        script_content = "# test script content"
-        script_path.write_text(script_content)
+        script_path.write_text("# test script content")
 
         func = Function(dummy_function, endpoint=mock_endpoint_uuid)
         func._script_path = str(script_path)
@@ -118,26 +117,24 @@ class TestRemoteExecution:
         mock_shell_func = MagicMock()
         mock_future = MagicMock()
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=mock_shell_func,
-        ) as mock_script_to_submittable:
+        ):
             with patch(
                 "groundhog_hpc.function.submit_to_executor",
                 return_value=mock_future,
-            ):
+            ) as mock_submit:
                 with patch(
                     "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                 ):
                     func.submit()
 
-        # Verify script_to_submittable was called with correct arguments
-        mock_script_to_submittable.assert_called_once()
-        call_args = mock_script_to_submittable.call_args[0]
-        assert call_args[0] == str(script_path)
-        assert (
-            call_args[1] == "simple_function"
-        )  # dummy_function is an alias to simple_function
+        # Verify submit_to_executor was called with the cached shell_function
+        mock_submit.assert_called_once()
+        assert mock_submit.call_args[1]["shell_function"] is mock_shell_func
 
 
 class TestSubmitMethod:
@@ -188,9 +185,9 @@ class TestSubmitMethod:
         call_args = mock_serialize.call_args[0][0]
         assert call_args == ((1, 2), {"kwarg1": "value1"})
 
-        # Verify script_to_submittable received the serialized payload
+        # Verify submit_to_executor received the serialized payload
         assert (
-            mock_submission_stack["script_to_submittable"].call_args[0][2]
+            mock_submission_stack["submit_to_executor"].call_args[1]["payload"]
             == "serialized_payload"
         )
 
@@ -264,21 +261,6 @@ class TestSubmitMethod:
         mock_submit = mock_submission_stack["submit_to_executor"]
         config = mock_submit.call_args[1]["user_endpoint_config"]
         assert config["walltime"] == 120
-
-    def test_function_walltime_sets_shellfunction_walltime(
-        self, function_with_script, mock_submission_stack
-    ):
-        """Test that Function.walltime attribute sets ShellFunction walltime (escape hatch)."""
-        # Create function and manually set walltime (escape hatch)
-        func = function_with_script()
-        func.walltime = 120
-
-        func.submit()
-
-        # Verify script_to_submittable was called with walltime parameter
-        mock_script_to_submittable = mock_submission_stack["script_to_submittable"]
-        call_args = mock_script_to_submittable.call_args
-        assert call_args[1]["walltime"] == 120
 
     def test_callsite_user_config_overrides_default(
         self, function_with_script, mock_submission_stack
@@ -390,8 +372,10 @@ def add(a, b):
         # Create mock result
         shell_func, result = mock_local_result(stdout='{"result": 5}')
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=shell_func,
         ):
             with patch(
@@ -415,8 +399,10 @@ def add(a, b):
         with patch(
             "groundhog_hpc.function.serialize", return_value="serialized"
         ) as mock_serialize:
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=shell_func,
             ):
                 with patch(
@@ -456,8 +442,10 @@ def add(a, b):
             if "GC_TASK_SANDBOX_DIR" in os.environ:
                 del os.environ["GC_TASK_SANDBOX_DIR"]
 
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_function,
             ):
                 with patch(
@@ -496,41 +484,35 @@ def add(a, b):
             with pytest.raises(ValueError, match="Could not determine script path"):
                 func.local()
 
-    def test_local_uses_script_to_submittable(self, tmp_path, mock_local_result):
-        """Test that local() uses script_to_submittable to create ShellFunction."""
+    def test_local_uses_shell_function_property(self, tmp_path, mock_local_result):
+        """Test that local() uses the cached shell_function property."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
         func = Function(dummy_function)
         func._script_path = str(script_path)
 
-        # Set the import flag to allow .local() call
-        import sys
-
-        test_module = sys.modules.get("tests.test_fixtures")
-        test_module.__groundhog_imported__ = True
-
         shell_func, result = mock_local_result(stdout="result")
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=shell_func,
-        ) as mock_script_to_submittable:
+        ) as mock_sf_prop:
             with patch(
                 "groundhog_hpc.function.deserialize_stdout",
                 return_value=(None, "result"),
             ):
                 func.local()
 
-        # Verify script_to_submittable was called with script path, function name, and payload
-        assert mock_script_to_submittable.call_count == 1
-        call_args = mock_script_to_submittable.call_args[0]
-        assert call_args[0] == str(script_path)
-        assert call_args[1] == "simple_function"
-        assert len(call_args) == 3  # script_path, function_name, payload
+        # Verify shell_function property was accessed (not script_to_submittable)
+        mock_sf_prop.assert_called()
 
-    def test_local_calls_shell_function(self, tmp_path, mock_local_result):
-        """Test that local() calls the ShellFunction returned by script_to_submittable."""
+    def test_local_calls_shell_function_with_payload_kwarg(
+        self, tmp_path, mock_local_result
+    ):
+        """Test that local() calls shell_function(payload=...) not shell_function()."""
         script_path = tmp_path / "test_local.py"
         script_path.write_text("# test")
 
@@ -539,8 +521,10 @@ def add(a, b):
 
         shell_func, result = mock_local_result(stdout="result")
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=shell_func,
         ):
             with patch("groundhog_hpc.function.serialize", return_value="ABC123"):
@@ -550,10 +534,9 @@ def add(a, b):
                 ):
                     func.local()
 
-        # Verify ShellFunction was called (invoked via __call__)
+        # Verify ShellFunction was called with payload as keyword argument
         shell_func.assert_called_once()
-        # Verify it was called with no arguments (ShellFunction handles its own execution)
-        assert shell_func.call_args[0] == ()
+        assert shell_func.call_args[1]["payload"] == "ABC123"
 
     def test_local_infers_script_path_from_function(self, tmp_path):
         """Test that local() can infer script path from function's source file."""
@@ -582,8 +565,10 @@ def add(a, b):
         with patch(
             "groundhog_hpc.function.inspect.getfile", return_value=str(script_path)
         ):
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_function,
             ):
                 with patch(
@@ -592,6 +577,120 @@ def add(a, b):
                     result = func.local()
 
         assert result == 42
+
+
+class TestShellCommandProperty:
+    """Test the shell_command lazy-cached property."""
+
+    def test_calls_template_with_script_path_and_name(self, tmp_path):
+        """shell_command calls template_shell_command_parameterized with correct args."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="parameterized_cmd",
+        ) as mock_template:
+            result = func.shell_command
+
+        mock_template.assert_called_once_with(func._script_path, func.name)
+        assert result == "parameterized_cmd"
+
+    def test_caches_result_on_second_access(self, tmp_path):
+        """shell_command returns cached value without re-calling the template."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="cmd1",
+        ) as mock_template:
+            first = func.shell_command
+            second = func.shell_command
+
+        mock_template.assert_called_once()
+        assert first == second == "cmd1"
+
+
+class TestShellFunctionProperty:
+    """Test the shell_function lazy-cached property."""
+
+    def test_calls_build_shell_function_with_correct_args(self, tmp_path):
+        """shell_function calls build_shell_function with shell_command, name, walltime."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+        func.walltime = 120
+
+        mock_sf = MagicMock()
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="paramcmd",
+        ):
+            with patch(
+                "groundhog_hpc.function.build_shell_function",
+                return_value=mock_sf,
+            ) as mock_build:
+                result = func.shell_function
+
+        mock_build.assert_called_once_with("paramcmd", func.name, walltime=120)
+        assert result is mock_sf
+
+    def test_caches_result_on_second_access(self, tmp_path):
+        """shell_function returns cached value without re-calling build_shell_function."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+
+        mock_sf = MagicMock()
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="cmd",
+        ):
+            with patch(
+                "groundhog_hpc.function.build_shell_function",
+                return_value=mock_sf,
+            ) as mock_build:
+                first = func.shell_function
+                second = func.shell_function
+
+        mock_build.assert_called_once()
+        assert first is second is mock_sf
+
+    def test_default_walltime_is_none(self, tmp_path):
+        """shell_function passes walltime=None when not set."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="cmd",
+        ):
+            with patch(
+                "groundhog_hpc.function.build_shell_function",
+                return_value=MagicMock(),
+            ) as mock_build:
+                func.shell_function
+
+        assert mock_build.call_args[1]["walltime"] is None
+
+    def test_walltime_flows_into_shell_function(self, tmp_path):
+        """walltime set before first access is used by build_shell_function."""
+        func = Function(dummy_function)
+        func._script_path = str(tmp_path / "fake.py")
+        func.walltime = 300
+
+        with patch(
+            "groundhog_hpc.function.template_shell_command_parameterized",
+            return_value="cmd",
+        ):
+            with patch(
+                "groundhog_hpc.function.build_shell_function",
+                return_value=MagicMock(),
+            ) as mock_build:
+                func.shell_function
+
+        assert mock_build.call_args[1]["walltime"] == 300
 
 
 class TestLocalAlwaysUsesSubprocess:
@@ -626,11 +725,13 @@ def test_func(x):
 
         shell_func, result = mock_local_result(stdout="84")
 
-        # Mock script_to_submittable to verify subprocess is used
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        # Patch shell_function property to verify subprocess is used
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=shell_func,
-        ) as mock_script_to_submittable:
+        ):
             with patch(
                 "groundhog_hpc.function.deserialize_stdout", return_value=(None, 84)
             ):
@@ -638,5 +739,4 @@ def test_func(x):
 
         # Should always use subprocess (ShellFunction)
         assert result_value == 84
-        mock_script_to_submittable.assert_called_once()
         shell_func.assert_called_once()

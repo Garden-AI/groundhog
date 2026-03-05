@@ -2,7 +2,7 @@
 
 import sys
 import types
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 
@@ -174,7 +174,7 @@ def my_func():
         # Verify flag is set
         assert module.__groundhog_imported__ is True
 
-        # Mock script_to_submittable to avoid actual subprocess execution
+        # Mock shell_function property to avoid actual subprocess execution
         mock_shell_func = Mock()
         mock_result = Mock()
         mock_result.returncode = 0
@@ -182,8 +182,13 @@ def my_func():
         mock_result.stderr = ""
         mock_shell_func.return_value = mock_result
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable", return_value=mock_shell_func
+        from groundhog_hpc.function import Function
+
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=mock_shell_func,
         ):
             # Now .local() should work (won't raise ModuleImportError)
             result = module.my_func.local()

@@ -1,7 +1,7 @@
 """Globus Compute execution interface.
 
-This module provides functions for converting user scripts into Globus Compute
-ShellFunctions, registering them, and submitting them for execution on remote
+This module provides functions for building Globus Compute ShellFunctions from
+pre-rendered shell command strings and submitting them for execution on remote
 endpoints.
 """
 
@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
 from groundhog_hpc.future import GroundhogFuture
-from groundhog_hpc.templating import template_shell_command
 
 logger = logging.getLogger(__name__)
 
@@ -46,43 +45,41 @@ def _get_compute_client() -> Client:
     return gc.Client()
 
 
-def script_to_submittable(
-    script_path: str,
-    function_name: str,
-    payload: str,
+def build_shell_function(
+    shell_command: str,
+    name: str,
     walltime: int | float | None = None,
 ) -> ShellFunction:
-    """Convert a user script and function name into a Globus Compute ShellFunction.
+    """Create a Globus Compute ShellFunction from a pre-rendered shell command string.
 
     Args:
-        script_path: Path to the Python script containing the function
-        function_name: Name of the function to execute remotely
-        payload: Serialized arguments string
-        walltime: Optional maximum execution time in seconds for ShellFunction timeout
+        shell_command: The shell command string (may contain {payload} placeholder)
+        name: Function name used as the ShellFunction name (dots replaced with underscores)
+        walltime: Optional maximum execution time in seconds
 
     Returns:
         A ShellFunction ready to be submitted to a Globus Compute executor
     """
     import globus_compute_sdk as gc
 
-    shell_command = template_shell_command(script_path, function_name, payload)
-    shell_function = gc.ShellFunction(
-        shell_command, name=function_name.replace(".", "_"), walltime=walltime
+    return gc.ShellFunction(
+        shell_command, name=name.replace(".", "_"), walltime=walltime
     )
-    return shell_function
 
 
 def submit_to_executor(
     endpoint: UUID,
     user_endpoint_config: dict[str, Any],
     shell_function: ShellFunction,
+    payload: str,
 ) -> GroundhogFuture:
     """Submit a ShellFunction to a Globus Compute endpoint for execution.
 
     Args:
         endpoint: UUID of the Globus Compute endpoint
         user_endpoint_config: Configuration dict for the endpoint (e.g., worker_init, walltime)
-        shell_function: The ShellFunction to execute (with payload already templated in)
+        shell_function: The parameterized ShellFunction to execute
+        payload: Serialized arguments string, substituted into the {payload} placeholder
 
     Returns:
         A GroundhogFuture that will contain the deserialized result
@@ -106,7 +103,7 @@ def submit_to_executor(
             shell_function, "__name__", getattr(shell_function, "name", "unknown")
         )
         logger.info(f"Submitting function '{func_name}' to endpoint '{endpoint}'")
-        future = executor.submit(shell_function)
+        future = executor.submit(shell_function, payload=payload)
         task_id = getattr(future, "task_id", None)
         if task_id:
             logger.info(f"Task submitted with ID: {task_id}")

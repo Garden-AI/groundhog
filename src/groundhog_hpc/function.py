@@ -19,7 +19,7 @@ from types import FunctionType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import script_to_submittable, submit_to_executor
+from groundhog_hpc.compute import build_shell_function, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import (
@@ -29,6 +29,7 @@ from groundhog_hpc.errors import (
 )
 from groundhog_hpc.future import GroundhogFuture
 from groundhog_hpc.serialization import deserialize_stdout, serialize
+from groundhog_hpc.templating import template_shell_command_parameterized
 from groundhog_hpc.utils import prefix_output
 
 logger = logging.getLogger(__name__)
@@ -79,11 +80,17 @@ class Function:
 
         # ShellFunction walltime - always None here to prevent conflicts with a
         # 'walltime' endpoint config, but the attribute exists as an escape
-        # hatch if users need to set it after the function's been created
+        # hatch if users need to set it after the function's been created.
+        # NOTE: walltime must be set before the first .submit() or .local() call;
+        # changing it afterwards has no effect because shell_function is cached.
         self.walltime: int | float | None = None
 
         self._wrapped_function: FunctionType = func
         self._config_resolver: ConfigResolver | None = None
+
+        # Cached parameterized shell command and ShellFunction (built once, reused per instance)
+        self._shell_command: str | None = None
+        self._shell_function: ShellFunction | None = None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the function locally (not remotely).
@@ -177,14 +184,12 @@ class Function:
             f"Serializing {len(args)} args and {len(kwargs)} kwargs for '{self.name}'"
         )
         payload = serialize((args, kwargs), use_proxy=False, proxy_threshold_mb=None)
-        shell_function = script_to_submittable(
-            self.script_path, self.name, payload, walltime=self.walltime
-        )
 
         future: GroundhogFuture = submit_to_executor(
             UUID(endpoint),
             user_endpoint_config=config,
-            shell_function=shell_function,
+            shell_function=self.shell_function,
+            payload=payload,
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
@@ -260,17 +265,15 @@ class Function:
 
         logger.debug(f"Executing function '{self.name}' in local subprocess")
         with prefix_output(prefix="[local]", prefix_color="blue"):
-            # Create ShellFunction just like we do for remote execution
             payload = serialize((args, kwargs), proxy_threshold_mb=1.0)
-            shell_function = script_to_submittable(self.script_path, self.name, payload)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 # set sandbox dir for ShellFunction to use
                 if "GC_TASK_SANDBOX_DIR" not in os.environ:
                     os.environ["GC_TASK_SANDBOX_DIR"] = tmpdir
 
-                # just __call__ ShellFunction to execute the command
-                result = shell_function()
+                # call ShellFunction with payload as a parameter
+                result = self.shell_function(payload=payload)
                 assert not isinstance(result, dict)
 
                 if result.returncode != 0:
@@ -304,6 +307,32 @@ class Function:
                     if user_stdout:
                         print(user_stdout, file=sys.stdout)
                     return deserialized_result
+
+    @property
+    def shell_command(self) -> str:
+        """Parameterized shell command string with a {payload} placeholder.
+
+        Generated once from the script file and cached. The same command string
+        is reused for all invocations of this function.
+        """
+        if self._shell_command is None:
+            self._shell_command = template_shell_command_parameterized(
+                self.script_path, self.name
+            )
+        return self._shell_command
+
+    @property
+    def shell_function(self) -> ShellFunction:
+        """Cached Globus Compute ShellFunction built from the parameterized shell command.
+
+        Created once and reused for all .submit() and .local() calls, so the
+        same ShellFunction object handles concurrent invocations.
+        """
+        if self._shell_function is None:
+            self._shell_function = build_shell_function(
+                self.shell_command, self.name, walltime=self.walltime
+            )
+        return self._shell_function
 
     @property
     def script_path(self) -> str:

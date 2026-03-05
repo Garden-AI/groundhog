@@ -1,6 +1,6 @@
 """Tests for the Method class."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from groundhog_hpc.function import Function, Method
 
@@ -93,19 +93,22 @@ class MyClass:
         mock_shell_func = MagicMock()
         mock_future = MagicMock()
 
-        with patch(
-            "groundhog_hpc.function.script_to_submittable",
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
             return_value=mock_shell_func,
-        ) as mock_script_to_submittable:
+        ):
             with patch(
                 "groundhog_hpc.function.submit_to_executor",
                 return_value=mock_future,
-            ):
+            ) as mock_submit:
                 with patch(
                     "groundhog_hpc.compute.get_endpoint_schema", return_value={}
                 ):
                     method.submit(5)
 
-        # Verify qualname was passed correctly
-        call_args = mock_script_to_submittable.call_args[0]
-        assert call_args[1] == "MyClass.compute"
+        # Verify the function name (qualname) is used — visible in the shell_function property name
+        assert method.name == "MyClass.compute"
+        # Verify submit was called (method uses the same submit path as Function)
+        mock_submit.assert_called_once()

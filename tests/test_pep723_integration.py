@@ -7,7 +7,7 @@ PEP 723 script metadata through the Function class to the executor.
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 from uuid import UUID
 
 import pytest
@@ -69,8 +69,10 @@ def test_func():
                     "qos": {"type": "string"},
                 }
             }
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -152,8 +154,10 @@ def test_func():
                     "partition": {"type": "string"},
                 }
             }
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -232,8 +236,10 @@ import groundhog_hpc as hog
                     "cores": {"type": "integer"},
                 }
             }
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -304,8 +310,10 @@ import groundhog_hpc as hog
                     "qos": {"type": "string"},
                 }
             }
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -372,8 +380,10 @@ import groundhog_hpc as hog
 
             # Mock schema that includes worker_init
             mock_schema = {"properties": {"worker_init": {"type": "string"}}}
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -455,8 +465,10 @@ import groundhog_hpc as hog
                 }
             }
 
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -482,8 +494,10 @@ import groundhog_hpc as hog
             # Reset mock
             mock_submit.reset_mock()
 
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
@@ -561,8 +575,10 @@ import groundhog_hpc as hog
                     "qos": {"type": "string"},
                 }
             }
-            with patch(
-                "groundhog_hpc.function.script_to_submittable",
+            with patch.object(
+                Function,
+                "shell_function",
+                new_callable=PropertyMock,
                 return_value=mock_shell_func,
             ):
                 with patch(
