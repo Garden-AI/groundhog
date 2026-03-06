@@ -10,6 +10,7 @@ as defaults but overridden when calling .remote() or .submit().
 """
 
 import inspect
+import itertools
 import logging
 import os
 import subprocess
@@ -20,7 +21,7 @@ from types import FunctionType
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from groundhog_hpc.compute import build_shell_function, submit_to_executor
+from groundhog_hpc.compute import build_shell_function, submit_batch, submit_to_executor
 from groundhog_hpc.configuration.resolver import ConfigResolver
 from groundhog_hpc.console import display_task_status
 from groundhog_hpc.errors import (
@@ -331,6 +332,77 @@ class Function:
                     if user_stdout:
                         print(user_stdout, file=sys.stdout)
                     return deserialized_result
+
+    def batch_submit(
+        self,
+        args: list[tuple] = [],
+        kwargs: list[dict] = [],
+        endpoint: str | None = None,
+        user_endpoint_config: dict[str, Any] | None = None,
+    ) -> list[GroundhogFuture]:
+        """Submit the function for asynchronous remote execution as a batch.
+
+        Submits all tasks as a single Globus Compute batch request, avoiding
+        per-task API calls that can hit rate limits.
+
+        Args:
+            args: List of positional-argument tuples, one per task
+            kwargs: List of keyword-argument dicts, one per task
+            endpoint: Globus Compute endpoint UUID or named endpoint
+            user_endpoint_config: Endpoint configuration dict
+
+        Returns:
+            A list of GroundhogFutures in the same order as the input tasks
+
+        Raises:
+            ModuleImportError: If called during module import
+            ValueError: If both args and kwargs are empty
+        """
+        module = sys.modules.get(self._wrapped_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise ModuleImportError(
+                self._wrapped_function.__name__,
+                "batch_submit",
+                self._wrapped_function.__module__,
+            )
+
+        if max(len(args), len(kwargs)) == 0:
+            raise ValueError(
+                "batch_submit requires at least one task: args and kwargs are both empty"
+            )
+
+        endpoint = endpoint or self.endpoint
+        decorator_config = self.default_user_endpoint_config.copy()
+        call_time_config = user_endpoint_config.copy() if user_endpoint_config else {}
+        config = self.config_resolver.resolve(
+            endpoint_name=endpoint or "",
+            decorator_config=decorator_config,
+            call_time_config=call_time_config,
+        )
+        if "endpoint" in config:
+            endpoint = config.pop("endpoint")
+        if not endpoint:
+            available_endpoints = self._get_available_endpoints_from_pep723()
+            if available_endpoints:
+                endpoints_str = ", ".join(f"'{e}'" for e in available_endpoints)
+                raise ValueError(
+                    f"No endpoint specified. Available endpoints found in config: {endpoints_str}."
+                )
+            raise ValueError("No endpoint specified")
+
+        payloads = []
+        for a, kw in itertools.zip_longest(args, kwargs, fillvalue=None):
+            a = a if a is not None else ()
+            kw = kw if kw is not None else {}
+            payloads.append(
+                serialize((a, kw), use_proxy=False, proxy_threshold_mb=None)
+            )
+
+        futures = submit_batch(UUID(endpoint), config, self.shell_function, payloads)
+        for future in futures:
+            future.function_name = self.name
+            future.user_endpoint_config = config
+        return futures
 
     @property
     def shell_command(self) -> str:
