@@ -1,12 +1,14 @@
 """Tests for the Function class."""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
 from groundhog_hpc.errors import ModuleImportError
 from groundhog_hpc.function import Function
+from groundhog_hpc.future import GroundhogFuture
 from tests.test_fixtures import simple_function
 
 # Alias for backward compatibility with existing tests
@@ -344,6 +346,46 @@ class TestSubmitMethod:
         config = mock_submit.call_args[1]["user_endpoint_config"]
         assert "worker_init" in config
         assert default_worker_init in config["worker_init"]
+
+    def test_executor_kwargs_forwarded_to_submit_to_executor(
+        self, function_with_script, mock_submission_stack
+    ):
+        """Test that executor_kwargs are forwarded to submit_to_executor."""
+        func = function_with_script()
+
+        func.submit(executor_kwargs={"amqp_port": 5671})
+
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        assert mock_submit.call_args[1]["executor_kwargs"] == {"amqp_port": 5671}
+
+    def test_executor_kwargs_defaults_to_none(
+        self, function_with_script, mock_submission_stack
+    ):
+        """Test that executor_kwargs defaults to None when not provided."""
+        func = function_with_script()
+
+        func.submit()
+
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        assert mock_submit.call_args[1]["executor_kwargs"] is None
+
+    def test_executor_kwargs_does_not_bleed_into_user_endpoint_config(
+        self, function_with_script, mock_submission_stack
+    ):
+        """Test that executor_kwargs keys are not added to user_endpoint_config."""
+        func = function_with_script()
+
+        mock_schema = {"properties": {"account": {"type": "string"}}}
+        mock_submission_stack["get_endpoint_schema"].return_value = mock_schema
+
+        func.submit(
+            executor_kwargs={"amqp_port": 5671},
+            user_endpoint_config={"account": "x"},
+        )
+
+        mock_submit = mock_submission_stack["submit_to_executor"]
+        config = mock_submit.call_args[1]["user_endpoint_config"]
+        assert "amqp_port" not in config
 
 
 class TestLocalMethod:
@@ -933,3 +975,199 @@ class TestBatchSubmit:
         for f in result:
             assert f.function_name == func.name
             assert f.user_endpoint_config is not None
+
+
+class TestBatchLocal:
+    """Tests for Function.batch_local()."""
+
+    def _make_func(self, tmp_path):
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+        func = Function(dummy_function)
+        func._script_path = str(script_path)
+        return func
+
+    def _mock_shell_func(self):
+        sf = MagicMock()
+        sf.cmd = "test_cmd {payload}"
+        return sf
+
+    def _make_run_result(self, stdout='"ok"'):
+        r = MagicMock()
+        r.returncode = 0
+        r.stdout = stdout
+        r.stderr = ""
+        r.exception_name = None
+        return r
+
+    def test_raises_without_import_flag(self, tmp_path):
+        import sys
+
+        func = self._make_func(tmp_path)
+        test_module = sys.modules.get("tests.test_fixtures")
+        had_flag = hasattr(test_module, "__groundhog_imported__")
+        if had_flag:
+            del test_module.__groundhog_imported__
+        try:
+            with pytest.raises(ModuleImportError):
+                func.batch_local(args=[(1,)])
+        finally:
+            if had_flag:
+                test_module.__groundhog_imported__ = True
+
+    def test_raises_when_args_and_kwargs_both_empty(self, tmp_path):
+        func = self._make_func(tmp_path)
+        with pytest.raises(ValueError, match="both empty"):
+            func.batch_local()
+
+    def test_returns_one_future_per_task(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch("groundhog_hpc.function.serialize", return_value="p"):
+                    futures = func.batch_local(args=[(1,), (2,)])
+        assert len(futures) == 2
+        assert all(isinstance(f, GroundhogFuture) for f in futures)
+
+    def test_returns_immediately_without_blocking(self, tmp_path):
+        import threading
+
+        func = self._make_func(tmp_path)
+        started = threading.Event()
+        finished = threading.Event()
+
+        def slow_run(cmd_template, payload, tmpdir):
+            started.set()
+            finished.wait(timeout=2)
+            return self._make_run_result()
+
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", side_effect=slow_run
+            ):
+                with patch("groundhog_hpc.function.serialize", return_value="p"):
+                    futures = func.batch_local(args=[(1,)])
+
+        # batch_local returned before the worker finished
+        assert len(futures) == 1
+        assert not futures[0].done()
+        finished.set()
+
+    def test_args_and_kwargs_zipped_with_fill(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        captured = []
+
+        def fake_serialize(data, **kw):
+            captured.append(data)
+            return "p"
+
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.serialize", side_effect=fake_serialize
+                ):
+                    func.batch_local(args=[(1,), (2,)], kwargs=[{"k": "v"}])
+
+        assert captured[0] == ((1,), {"k": "v"})
+        assert captured[1] == ((2,), {})
+
+    def test_executor_kwargs_passed_to_thread_pool(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch("groundhog_hpc.function.serialize", return_value="p"):
+                    with patch(
+                        "groundhog_hpc.function.ThreadPoolExecutor",
+                        wraps=ThreadPoolExecutor,
+                    ) as mock_tpe:
+                        func.batch_local(
+                            args=[(1,)], executor_kwargs={"max_workers": 2}
+                        )
+        mock_tpe.assert_called_once_with(max_workers=2)
+
+    def test_gc_task_sandbox_dir_not_set_on_parent_process(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        os.environ.pop("GC_TASK_SANDBOX_DIR", None)
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch("groundhog_hpc.function.serialize", return_value="p"):
+                    futures = func.batch_local(args=[(1,)])
+        # Wait for workers to finish
+        for f in futures:
+            try:
+                f.result(timeout=2)
+            except Exception:
+                pass
+        assert "GC_TASK_SANDBOX_DIR" not in os.environ
+
+    def test_task_id_is_none_for_all_local_futures(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch("groundhog_hpc.function.serialize", return_value="p"):
+                    futures = func.batch_local(args=[(1,), (2,)])
+        for f in futures:
+            assert f.task_id is None
+
+    def test_serialize_called_once_per_task(self, tmp_path):
+        func = self._make_func(tmp_path)
+        run_result = self._make_run_result()
+        with patch.object(
+            Function,
+            "shell_function",
+            new_callable=PropertyMock,
+            return_value=self._mock_shell_func(),
+        ):
+            with patch(
+                "groundhog_hpc.function._run_shell_locally", return_value=run_result
+            ):
+                with patch(
+                    "groundhog_hpc.function.serialize", return_value="p"
+                ) as mock_ser:
+                    func.batch_local(args=[(1,), (2,), (3,)])
+        assert mock_ser.call_count == 3

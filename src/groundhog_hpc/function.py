@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import FunctionType
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -46,7 +47,7 @@ else:
     ShellResult = TypeVar("ShellResult")
 
 
-def _run_shell_locally(cmd_template: str, payload: str, tmpdir: str) -> Any:
+def _run_shell_locally(cmd_template: str, payload: str, tmpdir: str) -> ShellResult:
     """Execute a parameterized shell command locally.
 
     Injects GC_TASK_SANDBOX_DIR into the subprocess environment without
@@ -148,6 +149,7 @@ class Function:
         *args: Any,
         endpoint: str | None = None,
         user_endpoint_config: dict[str, Any] | None = None,
+        executor_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> GroundhogFuture:
         """Submit the function for asynchronous remote execution.
@@ -157,6 +159,7 @@ class Function:
             endpoint: Globus Compute endpoint UUID (or named endpoint from
                 `[tool.hog.<name>]` PEP 723 metadata). Replaces decorator default.
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
+            executor_kwargs: Keyword arguments forwarded to Globus Compute Executor
             **kwargs: Keyword arguments to pass to the function
 
         Returns:
@@ -221,6 +224,7 @@ class Function:
             user_endpoint_config=config,
             shell_function=self.shell_function,
             payload=payload,
+            executor_kwargs=executor_kwargs,
         )
         future.endpoint = endpoint
         future.user_endpoint_config = config
@@ -232,6 +236,7 @@ class Function:
         *args: Any,
         endpoint: str | None = None,
         user_endpoint_config: dict[str, Any] | None = None,
+        executor_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Execute the function remotely and block until completion.
@@ -244,6 +249,7 @@ class Function:
             endpoint: Globus Compute endpoint UUID (or named endpoint from
                 `[tool.hog.<name>]` PEP 723 metadata). Replaces decorator default.
             user_endpoint_config: Endpoint configuration dict (merged with decorator default)
+            executor_kwargs: Keyword arguments forwarded to Globus Compute Executor
             **kwargs: Keyword arguments to pass to the function
 
         Returns:
@@ -260,6 +266,7 @@ class Function:
             *args,
             endpoint=endpoint,
             user_endpoint_config=user_endpoint_config,
+            executor_kwargs=executor_kwargs,
             **kwargs,
         )
         display_task_status(future)
@@ -405,6 +412,58 @@ class Function:
             future.function_name = self.name
             future.user_endpoint_config = config
         return futures
+
+    def batch_local(
+        self,
+        args: list[tuple] = [],
+        kwargs: list[dict] = [],
+        executor_kwargs: dict[str, Any] | None = None,
+    ) -> list[GroundhogFuture]:
+        """Execute the function locally in parallel subprocesses for each task.
+
+        Submits all tasks to a ThreadPoolExecutor immediately and returns futures
+        without waiting for completion. Each task runs in its own subprocess with
+        an isolated temporary directory.
+
+        Args:
+            args: List of positional-argument tuples, one per task
+            kwargs: List of keyword-argument dicts, one per task
+            executor_kwargs: Keyword arguments forwarded to ThreadPoolExecutor
+
+        Returns:
+            A list of GroundhogFutures in the same order as the input tasks
+
+        Raises:
+            ModuleImportError: If called during module import
+            ValueError: If both args and kwargs are empty
+        """
+        module = sys.modules.get(self._wrapped_function.__module__)
+        if not getattr(module, "__groundhog_imported__", False):
+            raise ModuleImportError(
+                self._wrapped_function.__name__,
+                "batch_local",
+                self._wrapped_function.__module__,
+            )
+
+        if max(len(args), len(kwargs)) == 0:
+            raise ValueError(
+                "batch_local requires at least one task: args and kwargs are both empty"
+            )
+
+        payloads = []
+        for a, kw in itertools.zip_longest(args, kwargs, fillvalue=None):
+            a = a if a is not None else ()
+            kw = kw if kw is not None else {}
+            payloads.append(serialize((a, kw), proxy_threshold_mb=1.0))
+
+        cmd_template = self.shell_function.cmd
+
+        def _worker(payload: str) -> ShellResult:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                return _run_shell_locally(cmd_template, payload, tmpdir)
+
+        executor = ThreadPoolExecutor(**(executor_kwargs or {}))
+        return [GroundhogFuture(executor.submit(_worker, p)) for p in payloads]
 
     @property
     def shell_command(self) -> str:

@@ -74,6 +74,7 @@ def submit_to_executor(
     user_endpoint_config: dict[str, Any],
     shell_function: ShellFunction,
     payload: str,
+    executor_kwargs: dict[str, Any] | None = None,
 ) -> GroundhogFuture:
     """Submit a ShellFunction to a Globus Compute endpoint for execution.
 
@@ -82,6 +83,7 @@ def submit_to_executor(
         user_endpoint_config: Configuration dict for the endpoint (e.g., worker_init, walltime)
         shell_function: The parameterized ShellFunction to execute
         payload: Serialized arguments string, substituted into the {payload} placeholder
+        executor_kwargs: Extra keyword arguments forwarded directly to gc.Executor constructor
 
     Returns:
         A GroundhogFuture that will contain the deserialized result
@@ -100,7 +102,9 @@ def submit_to_executor(
             config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
     logger.debug(f"Creating Globus Compute executor for endpoint {endpoint}")
-    with gc.Executor(endpoint, user_endpoint_config=config) as executor:
+    with gc.Executor(
+        endpoint, user_endpoint_config=config, **(executor_kwargs or {})
+    ) as executor:
         func_name = getattr(
             shell_function, "__name__", getattr(shell_function, "name", "unknown")
         )
