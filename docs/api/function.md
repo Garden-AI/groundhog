@@ -14,6 +14,8 @@ The `Function` class wraps user functions decorated with `@hog.function()` to en
         - remote
         - submit
         - local
+        - batch_submit
+        - batch_local
 
 ## Method Class
 

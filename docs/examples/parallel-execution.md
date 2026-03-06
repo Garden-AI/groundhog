@@ -1,6 +1,6 @@
 # Parallel Execution
 
-This example demonstrates the difference between sequential execution with `.remote()` and parallel execution with `.submit()`.
+This example demonstrates sequential execution with `.remote()`, parallel execution with `.submit()`, and batch execution with `.batch_submit()` and `.batch_local()`.
 
 ## When to Use Each Method
 
@@ -20,7 +20,18 @@ This example demonstrates the difference between sequential execution with `.rem
 - You don't care for the console display
 - You need access to the `GroundhogFuture` object
 
-## Full Example
+**Use `.batch_submit()` when:**
+
+- You're submitting many tasks to the same remote endpoint
+- You want to avoid Globus Compute rate limits (batching is one API call instead of N)
+- All tasks use the same function with different arguments
+
+**Use `.batch_local()` when:**
+
+- You want to run many tasks in parallel locally
+- You want immediate `GroundhogFuture`s instead of `.local()`'s blocking behavior
+
+## Example: Remote vs Submit
 
 ```python title="parallel_execution.py"
 # /// script
@@ -28,7 +39,7 @@ This example demonstrates the difference between sequential execution with `.rem
 # dependencies = []
 #
 # [tool.uv]
-# exclude-newer = "2025-12-02T19:48:40Z"
+# exclude-newer = "2026-03-06T00:00:00Z"
 #
 # [tool.hog.anvil]
 # endpoint = "5aafb4c1-27b2-40d8-a038-a0277611868f"
@@ -66,6 +77,28 @@ def main():
     results = [f.result() for f in futures]  # (3)!
     print(f"  Results: {results}")
     print(f"  Time: {time.time() - start:.1f}s (approximately 2s)")
+
+
+@hog.harness()
+def batch():
+    """Run with: hog run parallel_execution.py batch"""
+    # .batch_submit() registers the function once and sends all tasks in a
+    # single API request, avoiding the per-task rate limits of a .submit() loop.
+    print("Batch remote submission:")
+    futures = slow_square.batch_submit(
+        args=[(0,), (1,), (2,), (3,), (4,)],
+    )
+    results = [f.result() for f in futures]
+    print(f"  Results: {results}")  # [0, 1, 4, 9, 16]
+
+    # .batch_local() runs each task in its own subprocess in parallel.
+    print("Batch local execution:")
+    futures = slow_square.batch_local(
+        args=[(0,), (1,), (2,), (3,), (4,)],
+        executor_kwargs={"max_workers": 4},
+    )
+    results = [f.result() for f in futures]
+    print(f"  Results: {results}")  # [0, 1, 4, 9, 16]
 ```
 
 1. `.remote()` blocks until the function completes. Each call waits for the previous one to finish. Total time: 3 tasks x 2 seconds = ~6 seconds.
@@ -74,36 +107,81 @@ def main():
 
 3. Calling `.result()` on each future blocks until that task completes. Since all tasks run in parallel, total time is ~2 seconds.
 
+
+## Example: Batching Locally / Remotely
+
+A loop of `.submit()` calls makes one API request per task and can hit Globus Compute rate limits at large N. `.batch_submit()` registers the function once and sends all tasks in a single request.
+
+```python
+# Instead of this (N separate API calls):
+futures = [slow_square.submit(i) for i in range(5)]
+
+# Use batch_submit (one API call):
+futures = slow_square.batch_submit(
+    args=[(0,), (1,), (2,), (3,), (4,)],  # (1)!
+)
+results = [f.result() for f in futures]
+# [0, 1, 4, 9, 16]
+```
+
+1. Each tuple is unpacked as positional arguments for one task. Pass `kwargs=[...]` alongside `args` to mix positional and keyword arguments — when the two lists have different lengths, the shorter one fills with `()` or `{}`.
+
+`.batch_local()` runs each task in its own subprocess with an isolated temporary directory:
+
+```python
+futures = slow_square.batch_local(
+    args=[(0,), (1,), (2,), (3,), (4,)],
+    executor_kwargs={"max_workers": 4},  # (1)!
+)
+results = [f.result() for f in futures]
+# [0, 1, 4, 9, 16]
+```
+
+1. `executor_kwargs` is forwarded directly to `ThreadPoolExecutor`. Omit it to use the default worker count.
+
 ## Working with GroundhogFutures
+
+`.submit()` and both batch methods return `GroundhogFuture` objects. They behave like standard `concurrent.futures.Future` objects, with additional Groundhog-specific properties.
 
 ```python
 future = slow_square.submit(5)
+
+# Get the deserialized return value (blocks until ready)
+result = future.result()
+result = future.result(timeout=10)  # Raises TimeoutError if not ready
 
 # Check if done (non-blocking)
 if future.done():
     print("Task completed!")
 
-# Get the result (blocks until ready)
-result = future.result()
-
-# Get result with timeout
-result = future.result(timeout=10)  # Raises TimeoutError if not ready
-
 # Cancel a pending task
 future.cancel()
 
-# Inspect the underlying ShellResult
+# Inspect raw shell execution metadata
 print(future.shell_result.returncode)
 print(future.shell_result.stderr)
+
+# Capture stdout from print() calls inside the remote function
+if future.user_stdout:
+    print(future.user_stdout)
+
+# Inspect the resolved configuration that was actually passed to the endpoint
+print(future.user_endpoint_config)  # {"account": "...", "partition": "..."}
+print(future.task_id)               # Globus Compute task ID
+print(future.function_name)         # "slow_square"
 ```
 
 ## Running the Example
 
 ```bash
+# Remote vs submit timing comparison
 hog run examples/parallel_execution.py
+
+# Batch submission and local parallel execution
+hog run examples/parallel_execution.py batch
 ```
 
-Expected output:
+Expected output from `main`:
 
 ```
 Sequential execution with .remote():
