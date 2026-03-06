@@ -335,8 +335,8 @@ class Function:
 
     def batch_submit(
         self,
-        args: list[tuple] = [],
-        kwargs: list[dict] = [],
+        args: list[tuple] | None = None,
+        kwargs: list[dict] | None = None,
         endpoint: str | None = None,
         user_endpoint_config: dict[str, Any] | None = None,
     ) -> list[GroundhogFuture]:
@@ -349,7 +349,7 @@ class Function:
             args: List of positional-argument tuples, one per task
             kwargs: List of keyword-argument dicts, one per task
             endpoint: Globus Compute endpoint UUID or named endpoint
-            user_endpoint_config: Endpoint configuration dict
+            user_endpoint_config: Endpoint configuration dict (merged with decorator default)
 
         Returns:
             A list of GroundhogFutures in the same order as the input tasks
@@ -358,6 +358,8 @@ class Function:
             ModuleImportError: If called during module import
             ValueError: If both args and kwargs are empty
         """
+        args = args or []
+        kwargs = kwargs or []
         module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
             raise ModuleImportError(

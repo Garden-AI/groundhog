@@ -806,3 +806,130 @@ def test_func(x):
         # Always uses _run_shell_locally (never calls the function directly)
         assert result_value == 84
         mock_run.assert_called_once()
+
+
+class TestBatchSubmit:
+    """Tests for Function.batch_submit()."""
+
+    def _make_func(self, tmp_path, mock_endpoint_uuid):
+        script_path = tmp_path / "test_script.py"
+        script_path.write_text("# test")
+        func = Function(dummy_function, endpoint=mock_endpoint_uuid)
+        func._script_path = str(script_path)
+        return func
+
+    def _mock_submit_batch(self, n=3):
+        """Return a mock submit_batch that produces n GroundhogFutures."""
+        from concurrent.futures import Future as CF
+
+        futures = []
+        for i in range(n):
+            cf = CF()
+            cf.set_result(MagicMock(returncode=0, stdout=f'"{i}"', stderr=""))
+            gf = MagicMock()
+            gf._task_id = f"tid-{i}"
+            futures.append(gf)
+        return MagicMock(return_value=futures), futures
+
+    def test_raises_without_import_flag(self, tmp_path, mock_endpoint_uuid):
+        import sys
+
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        test_module = sys.modules.get("tests.test_fixtures")
+        had_flag = hasattr(test_module, "__groundhog_imported__")
+        if had_flag:
+            del test_module.__groundhog_imported__
+        try:
+            with pytest.raises(ModuleImportError):
+                func.batch_submit(args=[(1,)])
+        finally:
+            if had_flag:
+                test_module.__groundhog_imported__ = True
+
+    def test_raises_when_args_and_kwargs_both_empty(self, tmp_path, mock_endpoint_uuid):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        with pytest.raises(ValueError, match="both empty"):
+            func.batch_submit()
+
+    def test_returns_one_future_per_task(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, futures = self._mock_submit_batch(n=3)
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            result = func.batch_submit(args=[(1,), (2,), (3,)])
+        assert len(result) == 3
+
+    def test_args_and_kwargs_zipped_with_fill(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, futures = self._mock_submit_batch(n=2)
+        captured = []
+
+        def fake_serialize(data, **kw):
+            captured.append(data)
+            return f"payload_{len(captured)}"
+
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            with patch("groundhog_hpc.function.serialize", side_effect=fake_serialize):
+                func.batch_submit(args=[(1,), (2,)], kwargs=[{"k": "v"}])
+
+        assert captured[0] == ((1,), {"k": "v"})
+        assert captured[1] == ((2,), {})
+
+    def test_kwargs_only_batch_uses_empty_args_tuple(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, futures = self._mock_submit_batch(n=2)
+        captured = []
+
+        def fake_serialize(data, **kw):
+            captured.append(data)
+            return "p"
+
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            with patch("groundhog_hpc.function.serialize", side_effect=fake_serialize):
+                func.batch_submit(kwargs=[{"x": 1}, {"x": 2}])
+
+        assert captured[0] == ((), {"x": 1})
+        assert captured[1] == ((), {"x": 2})
+
+    def test_uses_resolved_endpoint(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, futures = self._mock_submit_batch(n=1)
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            with patch("groundhog_hpc.function.serialize", return_value="p"):
+                func.batch_submit(args=[(1,)])
+        endpoint_arg = mock_batch.call_args[0][0]
+        from uuid import UUID
+
+        assert endpoint_arg == UUID(mock_endpoint_uuid)
+
+    def test_callsite_endpoint_overrides_decorator(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        other_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, futures = self._mock_submit_batch(n=1)
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            with patch("groundhog_hpc.function.serialize", return_value="p"):
+                func.batch_submit(args=[(1,)], endpoint=other_uuid)
+        from uuid import UUID
+
+        assert mock_batch.call_args[0][0] == UUID(other_uuid)
+
+    def test_function_name_and_config_set_on_each_future(
+        self, tmp_path, mock_endpoint_uuid, mock_submission_stack
+    ):
+        func = self._make_func(tmp_path, mock_endpoint_uuid)
+        mock_batch, mock_futures = self._mock_submit_batch(n=3)
+        with patch("groundhog_hpc.function.submit_batch", mock_batch):
+            with patch("groundhog_hpc.function.serialize", return_value="p"):
+                result = func.batch_submit(args=[(1,), (2,), (3,)])
+        for f in result:
+            assert f.function_name == func.name
+            assert f.user_endpoint_config is not None
