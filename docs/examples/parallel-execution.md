@@ -16,7 +16,6 @@ This example demonstrates sequential execution with `.remote()`, parallel execut
 
 **Use `.submit()` when:**
 
-- You have multiple independent tasks that can run concurrently
 - You don't care for the console display
 - You need access to the `GroundhogFuture` object
 
@@ -174,23 +173,23 @@ print(future.function_name)         # "slow_square"
 ## Running the Example
 
 ```bash
-# Remote vs submit timing comparison
+# sequential vs batch timing comparison (local methods)
 hog run examples/parallel_execution.py
 
-# Batch submission and local parallel execution
-hog run examples/parallel_execution.py batch
+# .remote vs .submit vs .batch_submit
+hog run examples/parallel_execution.py remote
 ```
 
 Expected output from `main`:
 
 ```
-Sequential execution with .remote():
-  Results: [0, 1, 4]
-  Time: 6.2s (approximately 6s)
+Sequential execution with .local():
+  Results: [0, 1, 4, 9, 16]
+  Time: 11.1s
 
-Parallel execution with .submit():
-  Results: [0, 1, 4]
-  Time: 2.1s (approximately 2s)
+Parallel execution with .batch_local():
+  Results: [0, 1, 4, 9, 16]
+  Time: 2.2s
 ```
 
 ## Next Steps
