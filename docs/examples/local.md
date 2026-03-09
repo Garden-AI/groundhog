@@ -128,5 +128,5 @@ Using .local() - runs in subprocess with numpy installed:
 
 ## Next Steps
 
-- **[Parallel Execution](parallel-execution.md)** - Run multiple functions concurrently with `.submit()`
+- **[Parallel Execution](parallel-execution.md)** - Run multiple functions concurrently with `.batch_submit()` or `.batch_local()`
 - **[Configuration](configuration.md)** - Configure multiple endpoints

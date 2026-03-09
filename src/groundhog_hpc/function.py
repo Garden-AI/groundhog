@@ -415,8 +415,8 @@ class Function:
 
     def batch_local(
         self,
-        args: list[tuple] = [],
-        kwargs: list[dict] = [],
+        args: list[tuple] | None = None,
+        kwargs: list[dict] | None = None,
         executor_kwargs: dict[str, Any] | None = None,
     ) -> list[GroundhogFuture]:
         """Execute the function locally in parallel subprocesses for each task.
@@ -437,6 +437,7 @@ class Function:
             ModuleImportError: If called during module import
             ValueError: If both args and kwargs are empty
         """
+        args, kwargs = args or [], kwargs or []
         module = sys.modules.get(self._wrapped_function.__module__)
         if not getattr(module, "__groundhog_imported__", False):
             raise ModuleImportError(

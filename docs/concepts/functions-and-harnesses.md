@@ -17,7 +17,7 @@ def train_model(dataset: str, epochs: int) -> dict:
     return {"accuracy": 0.95}
 ```
 
-Functions provide four execution modes:
+Functions provide several execution modes:
 
 | Method | Where it runs | Behavior |
 |--------|---------------|----------|
@@ -111,6 +111,6 @@ hog run script.py -- --epochs=20  # Runs main with epochs=20
 
 ## Next steps
 
-- **[Parallel Execution](../examples/parallel-execution.md)** - Use `.submit()` to run functions concurrently
+- **[Parallel Execution](../examples/parallel-execution.md)** - Using `.batch_*` methods to run functions concurrently
 - **[Parameterized Harness Example](../examples/parameterized-harness.md)** - Complete example with CLI arguments
 - **[Remote Execution Flow](remote-execution.md)** - Understand what happens when you call `.remote()`

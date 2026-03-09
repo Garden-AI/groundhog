@@ -191,7 +191,7 @@ hog run analysis.py
 ## What Makes Groundhog Different?
 
 **Environment and code stay coupled**
-:   Change your Python version or dependencies by editing the PEP 723 block in your script. The remote environment rebuilds automatically on the next run.
+:   Change your Python version or dependencies by editing the PEP 723 block in your script. The remote environment rebuilds automatically (if necessary) on the next run.
 
 **Globus Compute under the hood**
 :   Built on [Globus Compute](https://www.globus.org/compute) for robust, secure HPC job submission.
