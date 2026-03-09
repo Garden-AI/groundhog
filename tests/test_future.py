@@ -88,27 +88,29 @@ class TestGroundhogFuture:
         assert exc_info.value.returncode == 1
         assert "something went wrong" in exc_info.value.stderr
 
-    def test_preserves_task_id(self):
-        """Test that task_id attribute is preserved on the deserializing future."""
+    def test_task_id_falls_through_to_original_future(self):
+        """task_id reads from original future when _task_id is None."""
         original = Future()
-        original.task_id = "test-task-123"
+        original.task_id = "abc-123"
         deserializing = GroundhogFuture(original)
 
-        # Create a successful result
-        mock_shell_result = MagicMock()
-        mock_shell_result.returncode = 0
-        mock_shell_result.stdout = '"test"'
+        assert deserializing.task_id == "abc-123"
 
-        original.set_result(mock_shell_result)
+    def test_explicit_task_id_takes_precedence(self):
+        """_task_id takes precedence over the original future's task_id attribute."""
+        original = Future()
+        original.task_id = "from-future"
+        deserializing = GroundhogFuture(original)
+        deserializing._task_id = "explicit"
 
-        # Wait for callback
-        import time
+        assert deserializing.task_id == "explicit"
 
-        time.sleep(0.01)
+    def test_task_id_returns_none_when_neither_source_has_it(self):
+        """task_id returns None without raising when the underlying future has no task_id."""
+        original = Future()  # plain Future, no task_id attribute
+        deserializing = GroundhogFuture(original)
 
-        # Task ID should be preserved
-        assert hasattr(deserializing, "task_id")
-        assert deserializing.task_id == "test-task-123"
+        assert deserializing.task_id is None
 
     def test_shell_result_property_returns_raw_result(self):
         """Test that shell_result property provides access to raw ShellResult."""

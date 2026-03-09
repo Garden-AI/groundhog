@@ -2,9 +2,11 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import pytest
+
+from groundhog_hpc.function import Function
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -162,7 +164,7 @@ def mock_submission_stack():
     Provides access to all mocks and their return values for assertions.
 
     Returns dict with:
-        - script_to_submittable: Mock for script_to_submittable function
+        - shell_function_prop: PropertyMock for Function.shell_function property
         - submit_to_executor: Mock for submit_to_executor function
         - get_endpoint_schema: Mock for get_endpoint_schema function
         - shell_function: The mock ShellFunction instance
@@ -177,9 +179,12 @@ def mock_submission_stack():
     mock_shell_func = MagicMock()
     mock_future = MagicMock()
 
-    with patch(
-        "groundhog_hpc.function.script_to_submittable", return_value=mock_shell_func
-    ) as mock_script:
+    with patch.object(
+        Function,
+        "shell_function",
+        new_callable=PropertyMock,
+        return_value=mock_shell_func,
+    ) as mock_sf_prop:
         with patch(
             "groundhog_hpc.function.submit_to_executor", return_value=mock_future
         ) as mock_submit:
@@ -187,7 +192,7 @@ def mock_submission_stack():
                 "groundhog_hpc.compute.get_endpoint_schema", return_value={}
             ) as mock_schema:
                 yield {
-                    "script_to_submittable": mock_script,
+                    "shell_function_prop": mock_sf_prop,
                     "submit_to_executor": mock_submit,
                     "get_endpoint_schema": mock_schema,
                     "shell_function": mock_shell_func,
@@ -302,17 +307,18 @@ def mock_executor():
 
 @pytest.fixture
 def mock_local_result():
-    """Create a mock result for local subprocess execution.
+    """Create mock objects for local subprocess execution tests.
 
     Returns a factory function that creates:
-    - A mock ShellFunction that returns the result
-    - The mock result object itself
+    - A mock ShellFunction with a .cmd attribute (for patching Function.shell_function)
+    - A mock result object (for patching _run_shell_locally return value)
 
     Usage:
         def test_something(mock_local_result):
             shell_func, result = mock_local_result(stdout='{"result": 42}')
-            # Use shell_func in patches
-            # Use result for specific assertions
+            with patch.object(Function, "shell_function", new_callable=PropertyMock, return_value=shell_func):
+                with patch("groundhog_hpc.function._run_shell_locally", return_value=result):
+                    ...
     """
 
     def _create(
@@ -327,7 +333,8 @@ def mock_local_result():
         result.stderr = stderr
         result.exception_name = exception_name
 
-        shell_func = MagicMock(return_value=result)
+        shell_func = MagicMock()
+        shell_func.cmd = "test_cmd {payload}"
         return shell_func, result
 
     return _create

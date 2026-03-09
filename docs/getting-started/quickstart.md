@@ -54,14 +54,15 @@ The comment block at the top uses [PEP 723](https://peps.python.org/pep-0723/) i
 
 - **`requires-python`**: Python version requirement for remote execution
 - **`dependencies`**: Python packages needed by your function (managed by uv)
-- **`[tool.uv]`**: Optional configuration read by `uv run` when creating the ephemeral remote environment (see also: [full uv settings reference](https://docs.astral.sh/uv/reference/settings/))
-- **`[tool.hog.my-endpoint]`**: Endpoint configuration with HPC-specific settings like account, partition, walltime, etc.
+- **`[tool.uv]`**: Optional configuration read by `uv venv` and `uv pip install` when creating the remote environment (see also: [full uv settings reference](https://docs.astral.sh/uv/reference/settings/))
+- **`[tool.hog.my-endpoint]`**: Endpoint configuration with HPC-specific settings like account, partition, walltime, etc. Recognized configuration options depend on the particular endpoint.
+
 
 ### Functions and harnesses
 
 - **`@hog.function()`**: Decorates a Python function to make it executable remotely
 - **`@hog.harness()`**: Decorates an orchestrator function that coordinates remote calls. Harnesses can accept parameters passed as CLI arguments (see [Functions and Harnesses](../concepts/functions-and-harnesses.md))
-- **`.remote()`**: Executes the function remotely and blocks until complete (alternatively, use **`.submit()`** for async execution)
+- **`.remote()`**: Executes the function remotely and blocks until complete (alternatively, use **`.submit()`** for async execution or **`batch_submit`** for many submissions)
 
 ## Add dependencies
 
@@ -100,7 +101,7 @@ def compute_mean(data: list[float]) -> float:
 ```
 
 !!! tip "Updating Python version"
-    You can also use `hog add` to update the Python version requirement:
+    You can also use `hog add` to update the Python version requirement, not just add dependencies:
 
     ```bash
     hog add hello.py --python 3.11

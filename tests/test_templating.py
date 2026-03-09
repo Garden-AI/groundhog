@@ -28,7 +28,7 @@ if __name__ == "__main__":
         script_path.write_text(script_content)
 
         # Should not raise any errors
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
         assert isinstance(shell_command, str)
         # User script should be included as-is (with __main__ block)
         assert 'if __name__ == "__main__":' in shell_command
@@ -49,13 +49,14 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
 
-        # Should create both user script and runner
-        assert "_runner.py" in shell_command
+        # Should create runner in TASK_DIR
+        assert "$TASK_DIR/runner.py" in shell_command
         # Runner should import the user script
         assert (
-            'module = import_user_script("test_script", "test_script-' in shell_command
+            'module = import_user_script("test_script", "user_script.py")'
+            in shell_command
         )
         # Runner should invoke the target function using attrgetter
         assert 'func = attrgetter("foo")(module)' in shell_command
@@ -76,7 +77,7 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
 
         # Runner should contain the metadata
         assert 'requires-python = ">=3.12"' in shell_command
@@ -105,7 +106,7 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
 
         # Runner should contain the [tool.uv] section
         assert "[tool.uv]" in shell_command
@@ -130,7 +131,7 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
 
         # Should NOT contain --managed-python (it's now in [tool.uv])
         assert "--managed-python" not in shell_command
@@ -154,7 +155,7 @@ def foo():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "foo", "test_payload")
+        shell_command = template_shell_command(str(script_path), "foo")
 
         # Check that it's a non-empty string
         assert isinstance(shell_command, str)
@@ -175,9 +176,7 @@ def test_func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(
-            str(script_path), "test_func", "test_payload"
-        )
+        shell_command = template_shell_command(str(script_path), "test_func")
 
         # Should include the basename
         assert "my_script" in shell_command
@@ -197,9 +196,7 @@ def my_function():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(
-            str(script_path), "my_function", "test_payload"
-        )
+        shell_command = template_shell_command(str(script_path), "my_function")
 
         assert "my_function" in shell_command
 
@@ -218,11 +215,10 @@ def func():
 """
         script_path.write_text(script_content)
 
-        test_payload = "MY_TEST_PAYLOAD_12345"
-        shell_command = template_shell_command(str(script_path), "func", test_payload)
+        shell_command = template_shell_command(str(script_path), "func")
 
-        # Payload should be rendered directly in the command (via Jinja2)
-        assert test_payload in shell_command
+        # Command should contain the {payload} placeholder (filled in at call time)
+        assert "{payload}" in shell_command
 
     def test_includes_uv_commands(self, tmp_path):
         """Test that the shell command uses uv for env creation."""
@@ -239,7 +235,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "test_payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         # Check for uv installation
         assert "uv.find_uv_bin()" in shell_command
@@ -262,9 +258,7 @@ def dict_func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(
-            str(script_path), "dict_func", "test_payload"
-        )
+        shell_command = template_shell_command(str(script_path), "dict_func")
 
         # Curly braces in user code should be doubled (escaped via Jinja2 filter)
         # This is needed because Globus Compute's ShellFunction calls .format()
@@ -293,20 +287,18 @@ def use_torch():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(
-            str(script_path), "use_torch", "test_payload"
-        )
+        shell_command = template_shell_command(str(script_path), "use_torch")
 
         # Simulate what Globus Compute's ShellFunction does:
-        # It calls .format() on the command (without any kwargs)
+        # It calls .format(payload=...) on the command
         try:
             # This should not raise KeyError if curly braces are properly escaped
-            formatted = shell_command.format()
+            formatted = shell_command.format(payload="test_payload")
             # After .format(), the doubled braces should become single braces
             assert '{"torch"' in formatted
         except KeyError as e:
             pytest.fail(
-                f"shell_command.format() raised KeyError: {e}. "
+                f"shell_command.format(payload=...) raised KeyError: {e}. "
                 "This means curly braces in user code are not properly escaped!"
             )
 
@@ -338,8 +330,8 @@ def func2():
         script1_path.write_text(script1_content)
         script2_path.write_text(script2_content)
 
-        command1 = template_shell_command(str(script1_path), "func1", "test_payload")
-        command2 = template_shell_command(str(script2_path), "func2", "test_payload")
+        command1 = template_shell_command(str(script1_path), "func1")
+        command2 = template_shell_command(str(script2_path), "func2")
 
         # Extract the script names (format: basename-hash)
         # They should have different hashes since content differs
@@ -367,7 +359,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "test_payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         # Should include the package-specific exclude-newer override
         assert "--exclude-newer-package groundhog-hpc=" in shell_command
@@ -559,7 +551,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert "ENV_HASH=" in shell_command
 
@@ -579,7 +571,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert "groundhog-envs" in shell_command
         assert "ENV_DIR=" in shell_command
@@ -600,7 +592,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert 'if [ -d "$ENV_DIR" ]' in shell_command
         assert '"$UV_BIN" venv' in shell_command
@@ -622,7 +614,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert '"$ENV_DIR/bin/python"' in shell_command
         assert '"$UV_BIN" run' not in shell_command
@@ -643,7 +635,7 @@ def func():
 """
         script_path.write_text(script_content)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert "groundhog-meta.json" in shell_command
         assert '"requires_python":' in shell_command
@@ -665,7 +657,7 @@ def func():
         script_path.write_text(script_content)
 
         with caplog.at_level(logging.WARNING):
-            shell_command = template_shell_command(str(script_path), "func", "payload")
+            shell_command = template_shell_command(str(script_path), "func")
 
         assert "ENV_HASH=" in shell_command
         assert any(
@@ -848,7 +840,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert '"$ENV_DIR/uv.toml"' in shell_command
         assert 'exclude-newer = "2025-01-01T00:00:00Z"' in shell_command
@@ -872,7 +864,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert '--config-file "$ENV_DIR/uv.toml"' in shell_command
 
@@ -894,7 +886,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         # --exclude-newer as a standalone CLI flag should be gone
         import re
@@ -923,7 +915,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         # uv venv line should carry --config-file
         venv_line = next(
@@ -951,7 +943,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         toml_write_pos = shell_command.find("UV_CONFIG_EOF")
         venv_pos = shell_command.find('"$UV_BIN" venv')
@@ -971,7 +963,7 @@ def func():
     return 1
 """)
 
-        shell_command = template_shell_command(str(script_path), "func", "payload")
+        shell_command = template_shell_command(str(script_path), "func")
 
         assert "UV_CONFIG_EOF" not in shell_command
         assert "--config-file" not in shell_command
@@ -997,9 +989,130 @@ class MyClass:
         result = template_shell_command(
             str(script_path),
             "MyClass.compute",  # Dotted qualname
-            "[[1], {}]",
         )
 
         # The runner should use attrgetter for dotted paths
         assert "attrgetter" in result
         assert "MyClass.compute" in result
+
+
+MINIMAL_SCRIPT = """\
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 42
+"""
+
+
+class TestTemplateShellCommandParameterized:
+    """Tests for the parameterized shell command template."""
+
+    def _write_script(self, tmp_path, content=MINIMAL_SCRIPT):
+        p = tmp_path / "script.py"
+        p.write_text(content)
+        return str(p)
+
+    def test_returns_a_string(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        result = template_shell_command(script_path, "func")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_contains_payload_placeholder_exactly_once(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert cmd.count("{payload}") == 1
+
+    def test_format_with_payload_kwarg_substitutes_correctly(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        result = cmd.format(payload="__PICKLE__:AAAA==")
+        assert "__PICKLE__:AAAA==" in result
+        assert "{payload}" not in result
+
+    def test_format_without_payload_kwarg_raises_key_error(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        with pytest.raises(KeyError):
+            cmd.format()
+
+    def test_base64_payload_is_format_safe(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        base64_payload = "__PICKLE__:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=="
+        result = cmd.format(payload=base64_payload)
+        assert base64_payload in result
+
+    def test_user_code_braces_are_escaped_before_format_call(self, tmp_path):
+        """Dict literals in user code survive .format(payload=...) without KeyError."""
+        script_content = """\
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return {"key": "value"}
+"""
+        script_path = self._write_script(tmp_path, script_content)
+        cmd = template_shell_command(script_path, "func")
+        # Dict braces must be doubled in cmd so .format() doesn't raise KeyError
+        assert '{{"key": "value"}}' in cmd
+        # After .format(), doubled braces collapse to single braces (dict literal preserved)
+        result = cmd.format(payload="test")
+        assert '{"key": "value"}' in result
+
+    def test_contains_mktemp_for_file_isolation(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert "mktemp -d" in cmd
+
+    def test_cleanup_uses_rm_rf_task_dir(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert 'rm -rf "$TASK_DIR"' in cmd
+        # Individual file cleanup should not appear
+        assert "rm -f " not in cmd
+
+    def test_file_paths_use_fixed_names_inside_task_dir(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert "$TASK_DIR/user_script.py" in cmd
+        assert "$TASK_DIR/runner.py" in cmd
+        assert "$TASK_DIR/payload.in" in cmd
+        # No random UUID suffixes in paths
+        import re
+
+        assert not re.search(r"\w+-[0-9a-f]{8}-[0-9a-f]{8}\.py", cmd)
+
+    def test_runner_references_fixed_payload_path(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert "open('payload.in'" in cmd
+
+    def test_includes_standard_uv_and_env_reuse_infrastructure(self, tmp_path):
+        script_path = self._write_script(tmp_path)
+        cmd = template_shell_command(script_path, "func")
+        assert "ENV_HASH=" in cmd
+        assert "ENV_DIR=" in cmd
+        assert '"$UV_BIN" venv' in cmd
+        assert '"$UV_BIN" pip install' in cmd
+        assert '"$ENV_DIR/bin/python"' in cmd
+
+    def test_different_scripts_produce_different_commands(self, tmp_path):
+        script1 = tmp_path / "script1.py"
+        script2 = tmp_path / "script2.py"
+        script1.write_text(MINIMAL_SCRIPT)
+        script2.write_text(MINIMAL_SCRIPT.replace("return 42", "return 99"))
+        cmd1 = template_shell_command(str(script1), "func")
+        cmd2 = template_shell_command(str(script2), "func")
+        assert cmd1 != cmd2

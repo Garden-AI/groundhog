@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 from hashlib import sha1
 from pathlib import Path
@@ -63,32 +62,34 @@ def compute_env_hash(metadata: Pep723Metadata) -> str:
     return sha1(canonical.encode("utf-8")).hexdigest()[:8]
 
 
-def template_shell_command(script_path: str, function_name: str, payload: str) -> str:
-    """Generate a shell command to execute a user function on a remote endpoint.
+def template_shell_command(script_path: str, function_name: str) -> str:
+    """Generate a parameterized shell command for remote execution.
 
-    The generated shell command:
-    - Creates a runner script that imports the user script as a module
-    - Writes the user script to a file (unmodified)
-    - Sets up input/output files for serialized data
-    - Executes the runner with uv for dependency management
+    The payload is NOT baked into the command. Instead, a {payload} format
+    placeholder is left so a single ShellFunction can be reused for all
+    invocations of the same function:
+
+        shell_function(payload=serialized_payload)
+
+    which calls cmd.format(payload=serialized_payload) before execution.
+
+    File isolation is provided by mktemp -d per invocation so concurrent tasks
+    on the same node don't collide.
 
     Args:
         script_path: Path to the user's Python script
         function_name: Name of the function to execute
-        payload: Serialized arguments string
 
     Returns:
-        A fully-formed shell command string ready to be executed via Globus
-        Compute or local subprocess
+        A shell command string containing a {payload} format placeholder
     """
     logger.debug(
-        f"Templating shell command for function '{function_name}' in script '{script_path}'"
+        f"Templating shell command for function '{function_name}' in '{script_path}'"
     )
 
     with open(script_path, "r") as f_in:
         user_script = f_in.read()
 
-    # Extract PEP 723 metadata for the runner
     metadata = read_pep723(user_script)
     pep723_metadata = write_pep723(metadata) if metadata else ""
 
@@ -101,18 +102,6 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
         )
         env_hash = _script_hash_prefix(user_script)
 
-    script_hash = _script_hash_prefix(user_script)
-    script_basename = _extract_script_basename(script_path)
-    random_suffix = uuid.uuid4().hex[:8]
-    script_name = f"{script_basename}-{script_hash}-{random_suffix}"
-
-    # Generate names for the user script and runner
-    user_script_name = script_name
-    runner_name = f"{script_name}_runner"
-    user_script_path_remote = f"{user_script_name}.py"
-    payload_path = f"{script_name}.in"
-    outfile_path = f"{script_name}.out"
-
     version_spec = get_groundhog_version_spec()
     logger.debug(f"Using groundhog version spec: {version_spec}")
     semver_match = re.search(r"==([0-9][^\s]*)", version_spec)
@@ -124,27 +113,22 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
     else:
         groundhog_version = _script_hash_prefix(version_spec)
 
-    # Generate timestamp for groundhog-hpc exclude-newer override
-    # This allows groundhog to bypass user's exclude-newer restrictions
     groundhog_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Load runner template
     templates_dir = Path(__file__).parent / "templates"
     jinja_env = Environment(loader=FileSystemLoader(templates_dir))
     jinja_env.filters["escape_braces"] = escape_braces
     runner_template = jinja_env.get_template("groundhog_run.py.jinja")
 
-    # Render runner script
     runner_contents = runner_template.render(
         pep723_metadata=pep723_metadata,
-        script_path=user_script_path_remote,
+        script_path="user_script.py",
         function_name=function_name,
-        payload_path=payload_path,
-        outfile_path=outfile_path,
+        payload_path="payload.in",
+        outfile_path="payload.out",
         module_name=path_to_module_name(script_path),
     )
 
-    # Read local log level (None if not set)
     local_log_level = os.getenv("GROUNDHOG_LOG_LEVEL")
     if local_log_level:
         local_log_level = local_log_level.upper()
@@ -152,16 +136,11 @@ def template_shell_command(script_path: str, function_name: str, payload: str) -
 
     uv_config_toml = _serialize_uv_toml(metadata)
 
-    # Render shell command
     shell_template = jinja_env.get_template("shell_command.sh.jinja")
     shell_command_string = shell_template.render(
-        user_script_name=user_script_name,
         user_script_contents=user_script,
-        runner_name=runner_name,
         runner_contents=runner_contents,
-        script_name=script_name,
         version_spec=version_spec,
-        payload=payload,
         log_level=local_log_level,
         groundhog_timestamp=groundhog_timestamp,
         env_hash=env_hash,
@@ -194,7 +173,3 @@ def _serialize_uv_toml(metadata: Pep723Metadata | None) -> str:
 
 def _script_hash_prefix(contents: str, length: int = 8) -> str:
     return str(sha1(bytes(contents, "utf-8")).hexdigest()[:length])
-
-
-def _extract_script_basename(script_path: str) -> str:
-    return Path(script_path).stem

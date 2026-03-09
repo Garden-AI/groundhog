@@ -15,7 +15,7 @@ These examples cover the basics of using Groundhog:
 
 Examples showing how to handle typical workflows:
 
-- **[Parallel Execution](parallel-execution.md)** - Using `.submit()` for concurrent remote execution
+- **[Parallel Execution](parallel-execution.md)** - Using `.batch_submit()` or `.batch_local()` for concurrent execution
 - **[Parameterized Harnesses](parameterized-harness.md)** - Harnesses that accept CLI arguments for runtime configuration
 - **[Endpoint Configuration](configuration.md)** - How the configuration system merges settings from multiple sources (PEP 723, decorators, call-time overrides)
 - **[PyTorch from Custom Sources](pytorch_custom_index.md)** - Configuring uv to install packages from cluster-specific indexes, local paths, or internal mirrors

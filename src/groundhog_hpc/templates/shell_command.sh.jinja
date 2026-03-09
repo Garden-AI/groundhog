@@ -1,7 +1,7 @@
 set -euo pipefail
 
-# Cleanup temporary files on exit (env is preserved for reuse)
-trap 'rm -f {{ user_script_name }}.py {{ runner_name }}.py {{ script_name }}.in {{ script_name }}.out' EXIT
+TASK_DIR=$(mktemp -d)
+trap 'rm -rf "$TASK_DIR"' EXIT
 
 if command -v uv &> /dev/null; then
     UV_BIN=$(command -v uv)
@@ -51,16 +51,16 @@ export GROUNDHOG_LOG_LEVEL="${{GROUNDHOG_LOG_LEVEL:-WARNING}}"
 {% endraw %}
 {% endif %}
 
-cat > {{ user_script_name }}.py << 'USER_SCRIPT_EOF'
+cat > "$TASK_DIR/user_script.py" << 'USER_SCRIPT_EOF'
 {{ user_script_contents | escape_braces }}
 USER_SCRIPT_EOF
 
-cat > {{ runner_name }}.py << 'RUNNER_EOF'
+cat > "$TASK_DIR/runner.py" << 'RUNNER_EOF'
 {{ runner_contents | escape_braces }}
 RUNNER_EOF
 
-cat > {{ script_name }}.in << 'PAYLOAD_EOF'
-{{ payload }}
+cat > "$TASK_DIR/payload.in" << 'PAYLOAD_EOF'
+{payload}
 PAYLOAD_EOF
 
 # Check if environment exists; create if not
@@ -115,7 +115,8 @@ META_EOF
 fi
 
 # Run using the cached environment's Python directly (bypasses uv resolution)
-"$ENV_DIR/bin/python" {{ runner_name }}.py
+cd "$TASK_DIR"
+"$ENV_DIR/bin/python" runner.py
 
 echo "__GROUNDHOG_RESULT__"
-cat {{ script_name }}.out
+cat payload.out
