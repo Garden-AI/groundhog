@@ -19,7 +19,7 @@ Groundhog automatically manages remote environments (powered by [uv](https://doc
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#     numpy,
+#     "numpy",
 # ]
 #
 # [tool.hog.tutorial]  # Globus Compute Tutorial Endpoint
