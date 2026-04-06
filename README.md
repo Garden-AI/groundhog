@@ -44,4 +44,4 @@ Run with: `hog run myscript.py main`
 
 ---
 
-see also: [examples](https://groundhog-hpc.readthedocs.io/en/latest/examples/)
+see also: [docs](https://groundhog-hpc.readthedocs.io/en/latest/) and [examples](https://groundhog-hpc.readthedocs.io/en/latest/examples/)
