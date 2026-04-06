@@ -208,7 +208,10 @@ class TestSubmitBatch:
         client = _make_batch_client(task_ids=["tid-0"])
         mock_globus_client.return_value = client
 
-        schema = {"properties": {"account": {"type": "string"}}}
+        schema = {
+            "properties": {"account": {"type": "string"}},
+            "additionalProperties": False,
+        }
         with patch("groundhog_hpc.compute.get_endpoint_schema", return_value=schema):
             submit_batch(
                 _ENDPOINT,

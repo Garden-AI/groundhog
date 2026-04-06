@@ -90,16 +90,18 @@ def submit_to_executor(
     """
     import globus_compute_sdk as gc
 
-    # Validate config against endpoint schema and filter out unexpected keys
+    # Validate config against endpoint schema and filter out unexpected keys,
+    # but only when the schema explicitly forbids extra keys.
     config = user_endpoint_config.copy()
     if schema := get_endpoint_schema(endpoint):
-        expected_keys = set(schema.get("properties", {}).keys())
-        unexpected_keys = set(config.keys()) - expected_keys
-        if unexpected_keys:
-            logger.debug(
-                f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
-            )
-            config = {k: v for k, v in config.items() if k not in unexpected_keys}
+        if schema.get("additionalProperties") is False:
+            expected_keys = set(schema.get("properties", {}).keys())
+            unexpected_keys = set(config.keys()) - expected_keys
+            if unexpected_keys:
+                logger.debug(
+                    f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
+                )
+                config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
     logger.debug(f"Creating Globus Compute executor for endpoint {endpoint}")
     with gc.Executor(
@@ -141,13 +143,14 @@ def submit_batch(
 
     config = user_endpoint_config.copy()
     if schema := get_endpoint_schema(endpoint):
-        expected_keys = set(schema.get("properties", {}).keys())
-        unexpected_keys = set(config.keys()) - expected_keys
-        if unexpected_keys:
-            logger.debug(
-                f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
-            )
-            config = {k: v for k, v in config.items() if k not in unexpected_keys}
+        if schema.get("additionalProperties") is False:
+            expected_keys = set(schema.get("properties", {}).keys())
+            unexpected_keys = set(config.keys()) - expected_keys
+            if unexpected_keys:
+                logger.debug(
+                    f"Filtering unexpected config keys for endpoint {endpoint}: {unexpected_keys}"
+                )
+                config = {k: v for k, v in config.items() if k not in unexpected_keys}
 
     func_name = getattr(shell_function, "__name__", "unknown")
     function_id = client.register_function(shell_function)
