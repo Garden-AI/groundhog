@@ -198,6 +198,17 @@ class ConfigResolver:
 
         config = _merge_variant_path(variant_path, base_variant, config)
 
+        # Strip nested dicts that are leftover variant configs (e.g., if the
+        # user targets "polaris", the "polaris.gpu" sub-dict shouldn't leak
+        # into the config sent to the API). At this point, any dict values
+        # are untraversed variant sub-configs, not legitimate endpoint settings.
+        variant_keys = [k for k, v in config.items() if isinstance(v, dict)]
+        if variant_keys:
+            logger.debug(
+                f"Stripping variant sub-configs from resolved config: {variant_keys}"
+            )
+            config = {k: v for k, v in config.items() if not isinstance(v, dict)}
+
         # Layer 4: Merge decorator config
         if decorator_config:
             logger.debug(f"Merging decorator config: {decorator_config}")

@@ -165,9 +165,8 @@ class TestConfigResolverPep723Base:
             "OMP_NUM_THREADS": "4",
         }
 
-        # PEP 723 variant is also included (will be filtered at submit time)
-        assert "gpu" in result
-        assert isinstance(result["gpu"], dict)
+        # PEP 723 variant sub-dicts are stripped after resolution
+        assert "gpu" not in result
 
 
 class TestConfigResolverPep723Variants:
