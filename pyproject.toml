@@ -5,7 +5,10 @@ readme = "README.md"
 requires-python = ">=3.10,<3.14" # TEMPORARY: upstream pydantic v1 incompatibility in globus-compute-sdk
 dynamic = ["version"] # read from git tag
 dependencies = [
-  "globus-compute-sdk>=3.12.0",
+  # NOTE: <4.7 to avoid a stray `print("Response string: ...")` in get_task
+  # that spams stdout on every poll. Remove the upper bound once upstream
+  # ships a release without it (see globus_compute_sdk/sdk/client.py).
+  "globus-compute-sdk>=3.12.0,<4.7",
   "jinja2>=3.0.0",
   "packaging>=24.0",
   "proxystore>=0.8.3",

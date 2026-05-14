@@ -488,7 +488,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "globus-compute-sdk", specifier = ">=3.12.0" },
+    { name = "globus-compute-sdk", specifier = ">=3.12.0,<4.7" },
     { name = "jinja2", specifier = ">=3.0.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "proxystore", specifier = ">=0.8.3" },
