@@ -1358,3 +1358,60 @@ def func():
         cmd1 = template_shell_command(str(script1), "func")
         cmd2 = template_shell_command(str(script2), "func")
         assert cmd1 != cmd2
+
+
+class TestUvBootstrapTemplating:
+    """Test the uv bootstrap section of the shell command.
+
+    On hosts without uv on PATH, uv is bootstrapped from PyPI. The install
+    must go into a private temp dir published by atomic rename — a shared
+    `pip install uv` races under concurrent tasks and can hand one task a
+    half-written binary.
+    """
+
+    def _shell_command(self, tmp_path):
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+        return template_shell_command(str(script_path), "func")
+
+    def test_bootstrap_installs_to_private_target_dir(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # installed with --target into a unique per-task temp dir, never
+        # into a site-packages shared with concurrent tasks
+        assert 'pip install --target "$UV_BOOT_TMP" uv' in shell_command
+        assert "pip install uv" not in shell_command
+        # unique per-task dir (hostname + pid)
+        assert 'UV_BOOT_TMP="$UV_BOOT.tmp.$(hostname).$$"' in shell_command
+
+    def test_bootstrap_publishes_by_rename_and_discards_on_lost_race(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # only a working install is published, atomically
+        assert '[ ! -x "$UV_BOOT_TMP/bin/uv" ]' in shell_command
+        assert 'mv "$UV_BOOT_TMP" "$UV_BOOT"' in shell_command
+        # the loser of a publish race discards its install
+        assert 'rm -rf "$UV_BOOT_TMP"' in shell_command
+        # the published binary is used, with the old discovery as fallback
+        assert 'UV_BIN="$UV_BOOT/bin/uv"' in shell_command
+        assert "uv.find_uv_bin()" in shell_command
+
+    def test_cache_base_is_defined_before_bootstrap(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # the bootstrap dir lives under GROUNDHOG_CACHE_BASE, so the cache
+        # base must be computed before uv resolution
+        cache_base_pos = shell_command.find("GROUNDHOG_CACHE_BASE=")
+        bootstrap_pos = shell_command.find("UV_BOOT=")
+        assert cache_base_pos != -1 and bootstrap_pos != -1
+        assert cache_base_pos < bootstrap_pos
