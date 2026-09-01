@@ -531,6 +531,66 @@ class TestComputeEnvHash:
 
         assert hash1 == hash2
 
+    def test_defaulted_exclude_newer_does_not_affect_hash(self, monkeypatch):
+        """Scripts that don't pin exclude-newer hash identically across parses.
+
+        exclude-newer defaults to the parse-time clock; if the defaulted
+        value were hashed, the env hash would change every second and defeat
+        environment caching.
+        """
+        from groundhog_hpc.configuration import models
+        from groundhog_hpc.configuration.pep723 import read_pep723
+        from groundhog_hpc.templating import compute_env_hash
+
+        times = iter(["2025-01-01T00:00:00Z", "2025-06-01T00:00:00Z"])
+
+        class FrozenNow:
+            def __init__(self, stamp):
+                self._stamp = stamp
+
+            def strftime(self, fmt):
+                return self._stamp
+
+        class FakeDatetime:
+            @staticmethod
+            def now(tz=None):
+                return FrozenNow(next(times))
+
+        monkeypatch.setattr(models, "datetime", FakeDatetime)
+
+        script = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+"""
+        metadata1 = read_pep723(script)
+        metadata2 = read_pep723(script)
+        assert metadata1 is not None and metadata2 is not None
+
+        # sanity check: the two parses defaulted to different timestamps
+        assert metadata1.tool.uv.exclude_newer != metadata2.tool.uv.exclude_newer
+
+        assert compute_env_hash(metadata1) == compute_env_hash(metadata2)
+
+    def test_user_pinned_exclude_newer_affects_hash(self):
+        """An exclude-newer pinned in the script header still affects the hash."""
+        from groundhog_hpc.configuration.pep723 import read_pep723
+        from groundhog_hpc.templating import compute_env_hash
+
+        script_template = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+#
+# [tool.uv]
+# exclude-newer = "{}"
+# ///
+"""
+        metadata1 = read_pep723(script_template.format("2025-01-01T00:00:00Z"))
+        metadata2 = read_pep723(script_template.format("2025-06-01T00:00:00Z"))
+        assert metadata1 is not None and metadata2 is not None
+
+        assert compute_env_hash(metadata1) != compute_env_hash(metadata2)
+
 
 class TestEnvReuseTemplating:
     """Test environment reuse in shell command templating."""
@@ -597,6 +657,47 @@ def func():
         assert 'if [ -d "$ENV_DIR" ]' in shell_command
         assert '"$UV_BIN" venv' in shell_command
         assert '"$UV_BIN" pip install' in shell_command
+
+    def test_env_built_in_temp_dir_and_published_by_rename(self, tmp_path):
+        """Environment creation is safe under concurrent same-hash tasks.
+
+        The env is built into a unique temp dir and renamed into place, so a
+        task can never observe (or reuse) a half-built environment; a task
+        that loses the publish race discards its build and uses the winner's.
+        """
+        script_path = tmp_path / "script.py"
+        script_content = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+"""
+        script_path.write_text(script_content)
+
+        shell_command = template_shell_command(str(script_path), "func")
+
+        # unique per-task build dir (hostname + pid)
+        assert 'ENV_TMP="$ENV_DIR.tmp.$(hostname).$$"' in shell_command
+        # venv is created at the temp path, relocatable so entry-point
+        # shebangs survive the rename
+        assert '"$UV_BIN" venv --relocatable "$ENV_TMP"' in shell_command
+        # dependencies are installed into the temp env, not the final path
+        assert '--python "$ENV_TMP/bin/python"' in shell_command
+        assert '--python "$ENV_DIR/bin/python"' not in shell_command
+        # published by rename; the loser of a race discards its build
+        assert 'mv "$ENV_TMP" "$ENV_DIR"' in shell_command
+        assert 'rm -rf "$ENV_TMP"' in shell_command
+        # everything written into the env goes via the temp path; nothing in
+        # the create branch should touch $ENV_DIR/ directly before publish
+        create_branch = shell_command.split('if [ -d "$ENV_DIR" ]')[1].split(
+            'mv "$ENV_TMP" "$ENV_DIR"'
+        )[0]
+        assert '"$ENV_DIR/' not in create_branch
 
     def test_shell_command_runs_python_directly(self, tmp_path):
         """Shell command runs Python directly instead of uv run."""
@@ -842,7 +943,7 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func")
 
-        assert '"$ENV_DIR/uv.toml"' in shell_command
+        assert '"$ENV_TMP/uv.toml"' in shell_command
         assert 'exclude-newer = "2025-01-01T00:00:00Z"' in shell_command
         assert '"https://download.pytorch.org/whl/cpu"' in shell_command
 
@@ -866,7 +967,7 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func")
 
-        assert '--config-file "$ENV_DIR/uv.toml"' in shell_command
+        assert '--config-file "$ENV_TMP/uv.toml"' in shell_command
 
     def test_exclude_newer_not_passed_as_cli_flag(self, tmp_path):
         """--exclude-newer is no longer a CLI flag; it lives in uv.toml."""

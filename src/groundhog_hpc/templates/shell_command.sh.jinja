@@ -79,32 +79,39 @@ else
     fi
     {% endraw %}
 
+    # Build into a unique temp dir next to the final location, then rename
+    # into place at the end, so concurrent tasks that share an env hash
+    # never see (or reuse) a half-built environment.
+    ENV_TMP="$ENV_DIR.tmp.$(hostname).$$"
+    mkdir -p "$(dirname "$ENV_DIR")"
+    rm -rf "$ENV_TMP"
+
     {% if uv_config_toml %}
 
     # Both `uv venv` and `uv pip install` will receive --config-file, then
-    # the file is moved into $ENV_DIR as a human-readable audit trail.
-    {% raw %}UV_TOML="${{ENV_DIR}}.uv.toml"{% endraw %}
-    mkdir -p "$(dirname "$UV_TOML")"
+    # the file is moved into the environment as a human-readable audit trail.
+    UV_TOML="$ENV_TMP.uv.toml"
 
     cat > "$UV_TOML" << 'UV_CONFIG_EOF'
 {{ uv_config_toml | escape_braces }}
 UV_CONFIG_EOF
     {% endif %}
 
-    "$UV_BIN" venv "$ENV_DIR"{% if requires_python %} --python "{{ requires_python }}"{% endif %}{% if uv_config_toml %} --config-file "$UV_TOML"{% endif %}
+    # --relocatable keeps entry-point shebangs valid after the rename below
+    "$UV_BIN" venv --relocatable "$ENV_TMP"{% if requires_python %} --python "{{ requires_python }}"{% endif %}{% if uv_config_toml %} --config-file "$UV_TOML"{% endif %}
 
     {% if uv_config_toml %}
-    mv "$UV_TOML" "$ENV_DIR/uv.toml"
+    mv "$UV_TOML" "$ENV_TMP/uv.toml"
     {% endif %}
 
     # Install dependencies
-    "$UV_BIN" pip install --python "$ENV_DIR/bin/python" \
-        {% if uv_config_toml %}--config-file "$ENV_DIR/uv.toml" {% endif %}\
+    "$UV_BIN" pip install --python "$ENV_TMP/bin/python" \
+        {% if uv_config_toml %}--config-file "$ENV_TMP/uv.toml" {% endif %}\
         --exclude-newer-package groundhog-hpc={{ groundhog_timestamp }} \
         {% for dep in dependencies %}"{{ dep }}" {% endfor %}{{ version_spec }}
 
     # Write metadata for posterity
-    cat > "$ENV_DIR/groundhog-meta.json" << 'META_EOF'
+    cat > "$ENV_TMP/groundhog-meta.json" << 'META_EOF'
 {{ '{{' }}
     "created_at": "{{ groundhog_timestamp }}",
     "requires_python": "{{ requires_python }}",
@@ -112,6 +119,16 @@ UV_CONFIG_EOF
     "groundhog_version": "{{ groundhog_version }}"
 {{ '}}' }}
 META_EOF
+
+    # Publish atomically; if another task published the same env first,
+    # discard our build and use theirs.
+    if [ -d "$ENV_DIR" ] || ! mv "$ENV_TMP" "$ENV_DIR" 2>/dev/null; then
+        rm -rf "$ENV_TMP"
+    elif [ -d "$ENV_DIR/$(basename "$ENV_TMP")" ]; then
+        # mv raced with another publisher and nested our build inside the
+        # winner's env dir; remove the stray copy.
+        rm -rf "$ENV_DIR/$(basename "$ENV_TMP")"
+    fi
 fi
 
 # Run using the cached environment's Python directly (bypasses uv resolution)
