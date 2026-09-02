@@ -725,15 +725,22 @@ def func():
         # dependencies are installed into the temp env, not the final path
         assert '--python "$ENV_TMP/bin/python"' in shell_command
         assert '--python "$ENV_DIR/bin/python"' not in shell_command
-        # published by rename; the loser of a race discards its build
-        assert 'mv "$ENV_TMP" "$ENV_DIR"' in shell_command
-        assert 'rm -rf "$ENV_TMP"' in shell_command
+        # published via the shared atomic-rename helper, with no validation
+        # command (an existing $ENV_DIR counts as usable and is never
+        # cleared); the helper renames into place and the loser of a race
+        # discards its build
+        assert 'groundhog_publish "$ENV_TMP" "$ENV_DIR"\n' in shell_command
+        assert 'mv "$tmp" "$final"' in shell_command
+        assert 'rm -rf "$tmp"' in shell_command
+        # the helper is defined once and shared by both publish sites
+        assert shell_command.count("groundhog_publish() (") == 1
+        assert shell_command.count('groundhog_publish "') == 2
         # everything written into the env goes via the temp path; nothing
         # between venv creation and publish should touch $ENV_DIR/ directly.
         # Assert each slice marker is unique so future template edits fail
         # loudly here instead of silently shifting the inspected window.
         venv_marker = '"$UV_BIN" venv $UV_VENV_RELOCATABLE "$ENV_TMP"'
-        publish_marker = 'mv "$ENV_TMP" "$ENV_DIR"'
+        publish_marker = 'groundhog_publish "$ENV_TMP" "$ENV_DIR"'
         assert shell_command.count(venv_marker) == 1
         assert shell_command.count(publish_marker) == 1
         create_branch = shell_command.split(venv_marker)[1].split(publish_marker)[0]
@@ -1413,13 +1420,17 @@ def func():
         # a uv on PATH may be half-written by a concurrent pip install; the
         # fast path must run it rather than trust `command -v` alone
         assert '"$UV_BIN" --version &> /dev/null' in shell_command
-        # the reuse gate runs the published binary (mode-bit -x checks pass
-        # for wrong-libc, noexec-mounted, or truncated binaries)
-        assert 'if ! "$UV_BOOT/bin/uv" --version &> /dev/null; then' in shell_command
-        # the publish gate requires the freshly installed binary to run
-        assert (
-            'if ! "$UV_BOOT_TMP/bin/uv" --version &> /dev/null; then' in shell_command
-        )
+        # bootstrap installs are validated by running the binary (mode-bit
+        # -x checks pass for wrong-libc, noexec-mounted, or truncated
+        # binaries), via the uv_works helper
+        assert 'uv_works() ( "$1/bin/uv" --version &> /dev/null )' in shell_command
+        # the reuse gate runs the published binary
+        assert 'if ! uv_works "$UV_BOOT"; then' in shell_command
+        # publish requires the freshly installed binary to run: uv_works is
+        # passed to the shared helper as its validation command
+        assert 'groundhog_publish "$UV_BOOT_TMP" "$UV_BOOT" uv_works' in shell_command
+        # the selection gate re-runs the published binary before using it
+        assert 'if uv_works "$UV_BOOT"; then' in shell_command
         # no bare mode-bit trust anywhere in uv resolution
         assert '[ ! -x "$UV_BOOT_TMP/bin/uv" ]' not in shell_command
         assert '[ ! -x "$UV_BOOT/bin/uv" ]' not in shell_command
@@ -1427,10 +1438,12 @@ def func():
     def test_bootstrap_publishes_by_rename_and_discards_on_lost_race(self, tmp_path):
         shell_command = self._shell_command(tmp_path)
 
-        # only a working install is published, atomically
-        assert 'mv "$UV_BOOT_TMP" "$UV_BOOT"' in shell_command
+        # only a working install is published, atomically, via the shared
+        # helper (uv_works validates the fresh install before the rename)
+        assert 'groundhog_publish "$UV_BOOT_TMP" "$UV_BOOT" uv_works' in shell_command
+        assert 'mv "$tmp" "$final"' in shell_command
         # the loser of a publish race discards its install
-        assert 'rm -rf "$UV_BOOT_TMP"' in shell_command
+        assert 'rm -rf "$tmp"' in shell_command
         # the published binary is used, with the old discovery as fallback
         assert 'UV_BIN="$UV_BOOT/bin/uv"' in shell_command
         assert "uv.find_uv_bin()" in shell_command
@@ -1439,13 +1452,16 @@ def func():
         shell_command = self._shell_command(tmp_path)
 
         # scratch purges can delete bin/uv but leave $UV_BOOT itself; the
-        # publisher must clear the stale dir before the rename or bootstrap
-        # wedges forever
-        assert 'rm -rf "$UV_BOOT"\n' in shell_command
-        stale_clear_pos = shell_command.find('rm -rf "$UV_BOOT"\n')
-        mv_pos = shell_command.find('mv "$UV_BOOT_TMP" "$UV_BOOT"')
+        # shared helper must clear the stale destination before the rename
+        # or bootstrap wedges forever
+        assert 'rm -rf "$final"\n' in shell_command
+        stale_clear_pos = shell_command.find('rm -rf "$final"\n')
+        mv_pos = shell_command.find('mv "$tmp" "$final"')
         assert stale_clear_pos != -1 and mv_pos != -1
         assert stale_clear_pos < mv_pos
+        # ...but only when a validation command can distinguish broken from
+        # usable; the env publish passes none, so $ENV_DIR is never cleared
+        assert 'if [ "$#" -gt 0 ]; then' in shell_command
 
     def test_exit_trap_cleans_up_bootstrap_tmp_dir(self, tmp_path):
         shell_command = self._shell_command(tmp_path)
