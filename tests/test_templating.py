@@ -1358,3 +1358,113 @@ def func():
         cmd1 = template_shell_command(str(script1), "func")
         cmd2 = template_shell_command(str(script2), "func")
         assert cmd1 != cmd2
+
+
+class TestUvBootstrapTemplating:
+    """Test the uv bootstrap section of the shell command.
+
+    On hosts without uv on PATH, uv is bootstrapped from PyPI. The install
+    must go into a private temp dir published by atomic rename — a shared
+    `pip install uv` races under concurrent tasks and can hand one task a
+    half-written binary.
+    """
+
+    def _shell_command(self, tmp_path):
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+        return template_shell_command(str(script_path), "func")
+
+    def test_bootstrap_installs_to_private_target_dir(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # installed with --target into a unique per-task temp dir, never
+        # into a site-packages shared with concurrent tasks
+        assert 'pip install --target "$UV_BOOT_TMP" uv' in shell_command
+        assert "pip install uv" not in shell_command
+        # unique per-task dir (hostname + pid + random, so PID-namespaced
+        # containers sharing scratch can't collide)
+        assert 'UV_BOOT_TMP="$UV_BOOT.tmp.$(hostname).$$.$RANDOM"' in shell_command
+
+    def test_bootstrap_dir_is_salted_with_groundhog_version(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # a groundhog upgrade must re-bootstrap a fresh uv rather than reuse
+        # one that may predate newly required flags
+        assert "uv-bootstrap-$(uname -m)-$GROUNDHOG_VERSION" in shell_command
+        # the version variable must be assigned before the bootstrap dir uses it
+        version_pos = shell_command.find("GROUNDHOG_VERSION=")
+        bootstrap_pos = shell_command.find("UV_BOOT=")
+        assert version_pos != -1 and bootstrap_pos != -1
+        assert version_pos < bootstrap_pos
+
+    def test_uv_is_validated_by_running_it(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # a uv on PATH may be half-written by a concurrent pip install; the
+        # fast path must run it rather than trust `command -v` alone
+        assert '"$UV_BIN" --version &> /dev/null' in shell_command
+        # the reuse gate runs the published binary (mode-bit -x checks pass
+        # for wrong-libc, noexec-mounted, or truncated binaries)
+        assert 'if ! "$UV_BOOT/bin/uv" --version &> /dev/null; then' in shell_command
+        # the publish gate requires the freshly installed binary to run
+        assert (
+            'if ! "$UV_BOOT_TMP/bin/uv" --version &> /dev/null; then' in shell_command
+        )
+        # no bare mode-bit trust anywhere in uv resolution
+        assert '[ ! -x "$UV_BOOT_TMP/bin/uv" ]' not in shell_command
+        assert '[ ! -x "$UV_BOOT/bin/uv" ]' not in shell_command
+
+    def test_bootstrap_publishes_by_rename_and_discards_on_lost_race(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # only a working install is published, atomically
+        assert 'mv "$UV_BOOT_TMP" "$UV_BOOT"' in shell_command
+        # the loser of a publish race discards its install
+        assert 'rm -rf "$UV_BOOT_TMP"' in shell_command
+        # the published binary is used, with the old discovery as fallback
+        assert 'UV_BIN="$UV_BOOT/bin/uv"' in shell_command
+        assert "uv.find_uv_bin()" in shell_command
+
+    def test_bootstrap_repairs_stale_destination_before_publish(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # scratch purges can delete bin/uv but leave $UV_BOOT itself; the
+        # publisher must clear the stale dir before the rename or bootstrap
+        # wedges forever
+        assert 'rm -rf "$UV_BOOT"\n' in shell_command
+        stale_clear_pos = shell_command.find('rm -rf "$UV_BOOT"\n')
+        mv_pos = shell_command.find('mv "$UV_BOOT_TMP" "$UV_BOOT"')
+        assert stale_clear_pos != -1 and mv_pos != -1
+        assert stale_clear_pos < mv_pos
+
+    def test_exit_trap_cleans_up_bootstrap_tmp_dir(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # a hard-killed bootstrap must not leak its temp install dir; the
+        # doubled braces collapse to ${UV_BOOT_TMP:+...} after .format()
+        # (the trap also names ENV_TMP so the line stays identical across
+        # branches that harden env creation the same way)
+        assert (
+            'trap \'rm -rf "$TASK_DIR" ${{ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"}} '
+            '${{UV_BOOT_TMP:+"$UV_BOOT_TMP"}}\' EXIT' in shell_command
+        )
+
+    def test_cache_base_is_defined_before_bootstrap(self, tmp_path):
+        shell_command = self._shell_command(tmp_path)
+
+        # the bootstrap dir lives under GROUNDHOG_CACHE_BASE, so the cache
+        # base must be computed before uv resolution
+        cache_base_pos = shell_command.find("GROUNDHOG_CACHE_BASE=")
+        bootstrap_pos = shell_command.find("UV_BOOT=")
+        assert cache_base_pos != -1 and bootstrap_pos != -1
+        assert cache_base_pos < bootstrap_pos

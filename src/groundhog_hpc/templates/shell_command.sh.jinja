@@ -9,21 +9,6 @@ TASK_DIR=$(mktemp -d)
 trap 'rm -rf "$TASK_DIR" ${{ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"}} ${{UV_BOOT_TMP:+"$UV_BOOT_TMP"}}' EXIT
 {% endraw %}
 
-if command -v uv &> /dev/null; then
-    UV_BIN=$(command -v uv)
-else
-    if command -v python &> /dev/null; then
-        PYTHON=python
-    elif command -v python3 &> /dev/null; then
-        PYTHON=python3
-    else
-        echo "Error: No Python interpreter found" >&2
-        exit 1
-    fi
-    $PYTHON -m pip install uv &> /dev/null || true
-    UV_BIN=$($PYTHON -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || command -v uv 2>/dev/null || echo "uv")
-fi
-
 # try SCRATCH -> TMPDIR -> /tmp for uv cache to avoid filesystem locking issues
 # GROUNDHOG_CACHE_DIR allows users to override if needed, UV_* vars also respected
 {% raw %}
@@ -39,9 +24,71 @@ fi
 mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 {% endraw %}
 
+GROUNDHOG_VERSION="{{ groundhog_version }}"
+
+# Fast path: a uv already on PATH, but only if it actually runs — a
+# concurrently pip-installed uv (e.g. from a default worker_init) can be
+# half-written, and mode bits alone don't prove the binary is usable.
+UV_BIN=$(command -v uv 2>/dev/null) || UV_BIN=""
+if [ -n "$UV_BIN" ] && "$UV_BIN" --version &> /dev/null; then
+    : # working uv already on PATH
+else
+    if command -v python &> /dev/null; then
+        PYTHON=python
+    elif command -v python3 &> /dev/null; then
+        PYTHON=python3
+    else
+        echo "Error: No Python interpreter found" >&2
+        exit 1
+    fi
+
+    # Bootstrap uv from PyPI into a persistent per-user dir. Install into a
+    # unique temp dir and rename into place, so concurrent tasks on a host
+    # without uv can't observe (or execute) a half-installed binary. The dir
+    # is salted with the groundhog version so upgrades re-bootstrap a fresh
+    # uv instead of reusing one that may predate newly required flags.
+    {% raw %}
+    UV_BOOT="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/uv-bootstrap-$(uname -m)-$GROUNDHOG_VERSION"
+    {% endraw %}
+    if ! "$UV_BOOT/bin/uv" --version &> /dev/null; then
+        UV_BOOT_TMP="$UV_BOOT.tmp.$(hostname).$$.$RANDOM"
+        mkdir -p "$(dirname "$UV_BOOT")"
+        $PYTHON -m pip install --target "$UV_BOOT_TMP" uv &> /dev/null || true
+        # Publish only a working install, atomically; if another task
+        # published a working install first, discard ours and use theirs.
+        if ! "$UV_BOOT_TMP/bin/uv" --version &> /dev/null; then
+            # install failed or binary unusable; discard
+            rm -rf "$UV_BOOT_TMP"
+        elif "$UV_BOOT/bin/uv" --version &> /dev/null; then
+            # another task already published a working install; use theirs
+            rm -rf "$UV_BOOT_TMP"
+        else
+            # clear stale/broken leftovers (scratch purges can delete bin/uv
+            # but leave the dir, which would otherwise wedge bootstrap
+            # forever), then publish. A racer's fresh publish could be
+            # cleared in the tiny window below, but the racer that follows
+            # republishes a working copy either way.
+            rm -rf "$UV_BOOT"
+            if ! mv "$UV_BOOT_TMP" "$UV_BOOT" 2>/dev/null; then
+                rm -rf "$UV_BOOT_TMP"
+            elif [ -d "$UV_BOOT/$(basename "$UV_BOOT_TMP")" ]; then
+                # mv raced with another publisher and nested our install
+                # inside the winner's dir; remove the stray copy.
+                rm -rf "$UV_BOOT/$(basename "$UV_BOOT_TMP")"
+            fi
+        fi
+    fi
+
+    if "$UV_BOOT/bin/uv" --version &> /dev/null; then
+        UV_BIN="$UV_BOOT/bin/uv"
+    else
+        # fall back e.g. to a uv PyPI package installed some other way
+        UV_BIN=$($PYTHON -c 'import uv; print(uv.find_uv_bin())' 2>/dev/null || command -v uv 2>/dev/null || echo "uv")
+    fi
+fi
+
 # Environment reuse: compute path from hash + version
 ENV_HASH="{{ env_hash }}"
-GROUNDHOG_VERSION="{{ groundhog_version }}"
 {% raw %}
 ENV_DIR="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/groundhog-envs/${{ENV_HASH}}-${{GROUNDHOG_VERSION}}"
 {% endraw %}

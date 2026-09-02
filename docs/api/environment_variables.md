@@ -69,7 +69,7 @@ GROUNDHOG_PROXYSTORE_DIR=/scratch/username/proxystore python script.py
 
 **Default:** Falls back to `$SCRATCH`, then `$TMPDIR`, then `/tmp`
 
-Directory where uv caches packages and Python installations on remote endpoints. This is used to set `UV_CACHE_DIR` and `UV_PYTHON_INSTALL_DIR` in the remote environment if they are not already set.
+Directory where uv caches packages and Python installations on remote endpoints. This is used to set `UV_CACHE_DIR` and `UV_PYTHON_INSTALL_DIR` in the remote environment if they are not already set. On hosts without uv, the per-user uv bootstrap directory (`uv-bootstrap-<arch>-<version>`) also lives under this directory.
 
 **Example:**
 ```bash
