@@ -76,7 +76,10 @@ class UvMetadata(BaseModel, extra="allow", serialize_by_alias=True):
     See uv documentation for full precedence hierarchy.
 
     Attributes:
-        exclude_newer: Limit packages to versions uploaded before cutoff (ISO 8601 timestamp)
+        exclude_newer: Limit packages to versions uploaded before cutoff (ISO 8601
+            timestamp). Defaults to None (unset); when unset, an effective default
+            (the build time) is injected at command-templating time rather than here,
+            so the volatile value never leaks into env hashes or file rewrites.
         python_preference: Control system vs managed Python ("managed" | "only-managed" | "system" | "only-system")
         index_url: Primary package index URL (default: PyPI)
         extra_index_url: Additional package indexes (searched after index_url)
@@ -84,9 +87,7 @@ class UvMetadata(BaseModel, extra="allow", serialize_by_alias=True):
         offline: Disable all network access (use only cache and local files)
     """
 
-    exclude_newer: str | None = Field(
-        default_factory=_default_exclude_newer, alias="exclude-newer"
-    )
+    exclude_newer: str | None = Field(default=None, alias="exclude-newer")
     python_preference: str | None = Field(
         default="only-managed", alias="python-preference"
     )

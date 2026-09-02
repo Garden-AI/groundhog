@@ -107,7 +107,9 @@ class TestPep723Metadata:
         assert metadata.dependencies == []
         assert metadata.tool is not None
         assert metadata.tool.uv is not None
-        assert metadata.tool.uv.exclude_newer is not None
+        # exclude-newer stays unset by default; the effective default (build
+        # time) is injected at command-templating time, not on the model
+        assert metadata.tool.uv.exclude_newer is None
 
     def test_create_with_explicit_values(self):
         """Test creating metadata with explicit values."""
