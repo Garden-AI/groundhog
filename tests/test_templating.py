@@ -531,32 +531,15 @@ class TestComputeEnvHash:
 
         assert hash1 == hash2
 
-    def test_defaulted_exclude_newer_does_not_affect_hash(self, monkeypatch):
+    def test_defaulted_exclude_newer_does_not_affect_hash(self):
         """Scripts that don't pin exclude-newer hash identically across parses.
 
-        exclude-newer defaults to the parse-time clock; if the defaulted
-        value were hashed, the env hash would change every second and defeat
-        environment caching.
+        An unset exclude-newer stays None on the model (the effective default
+        is injected at command-templating time instead), so it never appears
+        in the hash input and cannot churn the env hash.
         """
-        from groundhog_hpc.configuration import models
         from groundhog_hpc.configuration.pep723 import read_pep723
         from groundhog_hpc.templating import compute_env_hash
-
-        times = iter(["2025-01-01T00:00:00Z", "2025-06-01T00:00:00Z"])
-
-        class FrozenNow:
-            def __init__(self, stamp):
-                self._stamp = stamp
-
-            def strftime(self, fmt):
-                return self._stamp
-
-        class FakeDatetime:
-            @staticmethod
-            def now(tz=None):
-                return FrozenNow(next(times))
-
-        monkeypatch.setattr(models, "datetime", FakeDatetime)
 
         script = """# /// script
 # requires-python = ">=3.11"
@@ -567,10 +550,61 @@ class TestComputeEnvHash:
         metadata2 = read_pep723(script)
         assert metadata1 is not None and metadata2 is not None
 
-        # sanity check: the two parses defaulted to different timestamps
-        assert metadata1.tool.uv.exclude_newer != metadata2.tool.uv.exclude_newer
+        # unpinned exclude-newer stays unset on the model
+        assert metadata1.tool.uv.exclude_newer is None
+        assert metadata2.tool.uv.exclude_newer is None
 
         assert compute_env_hash(metadata1) == compute_env_hash(metadata2)
+
+    def test_underscore_typo_exclude_newer_does_not_churn_hash(self):
+        """An extra key spelled exclude_newer (underscore typo) is hash-stable.
+
+        UvMetadata has extra="allow", so a [tool.uv] key literally named
+        `exclude_newer` is stored as an extra field rather than the real
+        exclude-newer setting. It must not reintroduce per-parse hash churn.
+        """
+        from groundhog_hpc.configuration.pep723 import read_pep723
+        from groundhog_hpc.templating import compute_env_hash
+
+        script = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+#
+# [tool.uv]
+# exclude_newer = "2025-01-01T00:00:00Z"
+# ///
+"""
+        metadata1 = read_pep723(script)
+        metadata2 = read_pep723(script)
+        assert metadata1 is not None and metadata2 is not None
+
+        assert compute_env_hash(metadata1) == compute_env_hash(metadata2)
+
+    def test_rewrite_roundtrip_does_not_inject_exclude_newer(self):
+        """A read/write round-trip must not bake exclude-newer into the script.
+
+        CLI file rewrites (hog add, hog run metadata prompt) dump the parsed
+        metadata back to the script. If parsing defaulted exclude-newer to the
+        wall clock, the rewrite would permanently pin it (and change the env
+        hash); with default=None it must simply never appear.
+        """
+        from groundhog_hpc.configuration.pep723 import read_pep723, write_pep723
+        from groundhog_hpc.templating import compute_env_hash
+
+        script = """# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+"""
+        metadata = read_pep723(script)
+        assert metadata is not None
+
+        rewritten = write_pep723(metadata)
+        assert "exclude-newer" not in rewritten
+
+        reparsed = read_pep723(rewritten)
+        assert reparsed is not None
+        assert compute_env_hash(reparsed) == compute_env_hash(metadata)
 
     def test_user_pinned_exclude_newer_affects_hash(self):
         """An exclude-newer pinned in the script header still affects the hash."""
@@ -681,23 +715,56 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func")
 
-        # unique per-task build dir (hostname + pid)
-        assert 'ENV_TMP="$ENV_DIR.tmp.$(hostname).$$"' in shell_command
-        # venv is created at the temp path, relocatable so entry-point
-        # shebangs survive the rename
-        assert '"$UV_BIN" venv --relocatable "$ENV_TMP"' in shell_command
+        # unique per-task build dir (hostname + pid + $RANDOM, so tasks in
+        # separate PID namespaces sharing a hostname/scratch don't collide)
+        assert 'ENV_TMP="$ENV_DIR.tmp.$(hostname).$$.$RANDOM"' in shell_command
+        # venv is created at the temp path; --relocatable (probed, since old
+        # uv lacks it) keeps entry-point shebangs valid across the rename
+        assert '"$UV_BIN" venv $UV_VENV_RELOCATABLE "$ENV_TMP"' in shell_command
+        assert 'UV_VENV_RELOCATABLE="--relocatable"' in shell_command
         # dependencies are installed into the temp env, not the final path
         assert '--python "$ENV_TMP/bin/python"' in shell_command
         assert '--python "$ENV_DIR/bin/python"' not in shell_command
         # published by rename; the loser of a race discards its build
         assert 'mv "$ENV_TMP" "$ENV_DIR"' in shell_command
         assert 'rm -rf "$ENV_TMP"' in shell_command
-        # everything written into the env goes via the temp path; nothing in
-        # the create branch should touch $ENV_DIR/ directly before publish
-        create_branch = shell_command.split('if [ -d "$ENV_DIR" ]')[1].split(
-            'mv "$ENV_TMP" "$ENV_DIR"'
-        )[0]
+        # everything written into the env goes via the temp path; nothing
+        # between venv creation and publish should touch $ENV_DIR/ directly.
+        # Assert each slice marker is unique so future template edits fail
+        # loudly here instead of silently shifting the inspected window.
+        venv_marker = '"$UV_BIN" venv $UV_VENV_RELOCATABLE "$ENV_TMP"'
+        publish_marker = 'mv "$ENV_TMP" "$ENV_DIR"'
+        assert shell_command.count(venv_marker) == 1
+        assert shell_command.count(publish_marker) == 1
+        create_branch = shell_command.split(venv_marker)[1].split(publish_marker)[0]
         assert '"$ENV_DIR/' not in create_branch
+
+    def test_exit_trap_cleans_up_env_tmp(self, tmp_path):
+        """The EXIT trap removes a partially-built env if the build fails.
+
+        Under set -euo pipefail any failure between venv creation and publish
+        would otherwise leak $ENV_TMP (a full venv) and $ENV_TMP.uv.toml.
+        After a successful publish the mv has removed $ENV_TMP, so the trap
+        never touches the published env.
+        """
+        script_path = tmp_path / "script.py"
+        script_path.write_text(MINIMAL_SCRIPT)
+
+        shell_command = template_shell_command(str(script_path), "func")
+
+        # pre-.format(): braces are doubled for Globus Compute's .format() call
+        # (the trap also names UV_BOOT_TMP so the line stays identical across
+        # branches that harden the uv bootstrap the same way)
+        assert (
+            'trap \'rm -rf "$TASK_DIR" ${{ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"}} '
+            '${{UV_BOOT_TMP:+"$UV_BOOT_TMP"}}\' EXIT' in shell_command
+        )
+        # post-.format(): the shell sees single braces
+        formatted = shell_command.format(payload="test")
+        assert (
+            'trap \'rm -rf "$TASK_DIR" ${ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"} '
+            '${UV_BOOT_TMP:+"$UV_BOOT_TMP"}\' EXIT' in formatted
+        )
 
     def test_shell_command_runs_python_directly(self, tmp_path):
         """Shell command runs Python directly instead of uv run."""
@@ -779,7 +846,7 @@ class TestSerializeUvToml:
     def test_returns_empty_string_for_none_metadata(self):
         from groundhog_hpc.templating import _serialize_uv_toml
 
-        result = _serialize_uv_toml(None)
+        result = _serialize_uv_toml(None, "2099-01-01T00:00:00Z")
 
         assert result == ""
 
@@ -793,7 +860,7 @@ class TestSerializeUvToml:
             tool=None,
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert result == ""
 
@@ -819,7 +886,7 @@ class TestSerializeUvToml:
             ),
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert 'exclude-newer = "2025-01-01T00:00:00Z"' in result
         assert 'python-preference = "only-managed"' in result
@@ -848,7 +915,7 @@ class TestSerializeUvToml:
             ),
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert "extra-index-url" in result
         assert '"https://download.pytorch.org/whl/cpu"' in result
@@ -868,7 +935,7 @@ class TestSerializeUvToml:
             tool=ToolMetadata(uv=UvMetadata(**{"offline": True})),
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert "offline = true" in result
 
@@ -890,7 +957,7 @@ class TestSerializeUvToml:
             ),
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert "index-url" not in result
         assert "extra-index-url" not in result
@@ -914,7 +981,7 @@ class TestSerializeUvToml:
             ),
         )
 
-        result = _serialize_uv_toml(metadata)
+        result = _serialize_uv_toml(metadata, "2099-01-01T00:00:00Z")
 
         assert 'find-links = "https://example.com/wheels"' in result
 
@@ -1018,12 +1085,17 @@ def func():
 
         shell_command = template_shell_command(str(script_path), "func")
 
-        # uv venv line should carry --config-file
+        # the venv *creation* line (not the --relocatable --help probe)
+        # should carry --config-file
         venv_line = next(
-            (line for line in shell_command.splitlines() if '"$UV_BIN" venv' in line),
+            (
+                line
+                for line in shell_command.splitlines()
+                if '"$UV_BIN" venv $UV_VENV_RELOCATABLE "$ENV_TMP"' in line
+            ),
             None,
         )
-        assert venv_line is not None, "No uv venv line found"
+        assert venv_line is not None, "No uv venv creation line found"
         assert "--config-file" in venv_line
 
     def test_uv_toml_written_before_venv_creation(self, tmp_path):
@@ -1053,6 +1125,75 @@ def func():
         assert toml_write_pos < venv_pos, (
             "uv.toml must be written before uv venv creates the directory"
         )
+
+    def test_uv_toml_gets_build_time_exclude_newer_when_not_pinned(self, tmp_path):
+        """Unpinned scripts still get an exclude-newer cutoff in uv.toml.
+
+        The env hash ignores an unset exclude-newer, but the uv.toml handed to
+        uv venv / uv pip install carries the build-time default so fresh
+        builds resolve against a fixed cutoff.
+        """
+        import re
+
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy"]
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func")
+
+        # inspect only the uv.toml heredoc contents (opener + closing delimiter)
+        assert shell_command.count("UV_CONFIG_EOF") == 2
+        uv_toml_body = shell_command.split("UV_CONFIG_EOF")[1]
+        assert re.search(
+            r'exclude-newer = "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"', uv_toml_body
+        ), "uv.toml should contain an injected build-time exclude-newer"
+
+    def test_uv_toml_keeps_pinned_exclude_newer(self, tmp_path):
+        """A user-pinned exclude-newer appears verbatim in the uv.toml heredoc."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "2025-01-01T00:00:00Z"
+# ///
+
+import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func")
+
+        uv_toml_body = shell_command.split("UV_CONFIG_EOF")[1]
+        assert 'exclude-newer = "2025-01-01T00:00:00Z"' in uv_toml_body
+
+    def test_no_pep723_metadata_no_injected_exclude_newer(self, tmp_path):
+        """Scripts without metadata get no uv.toml and no injected exclude-newer."""
+        script_path = tmp_path / "script.py"
+        script_path.write_text("""import groundhog_hpc as hog
+
+@hog.function()
+def func():
+    return 1
+""")
+
+        shell_command = template_shell_command(str(script_path), "func")
+
+        assert "UV_CONFIG_EOF" not in shell_command
+        assert "exclude-newer =" not in shell_command
 
     def test_no_uv_toml_written_for_script_without_pep723_metadata(self, tmp_path):
         """Scripts without PEP 723 metadata don't write a uv.toml."""

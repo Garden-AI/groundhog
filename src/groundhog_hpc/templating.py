@@ -42,10 +42,11 @@ def compute_env_hash(metadata: Pep723Metadata) -> str:
     a script can have many endpoints and worker_init content is not
     always environment-affecting.
 
-    A defaulted (not user-set) exclude-newer is also excluded: the default
-    is the parse-time clock, so hashing it would change the env hash every
-    second and defeat environment caching entirely. Only an exclude-newer
-    the user actually pinned in the script header affects the hash.
+    An unset exclude-newer never affects the hash: the model defaults it to
+    None (excluded from the dump below), and the effective default — the
+    build-time clock — is injected only when templating the shell command.
+    Only an exclude-newer the user actually pinned in the script header
+    affects the hash.
 
     Args:
         metadata: PEP 723 metadata from the user script
@@ -60,8 +61,6 @@ def compute_env_hash(metadata: Pep723Metadata) -> str:
 
     if metadata.tool and metadata.tool.uv:
         uv_dict = metadata.tool.uv.model_dump(by_alias=True, exclude_none=True)
-        if "exclude_newer" not in metadata.tool.uv.model_fields_set:
-            uv_dict.pop("exclude-newer", None)
         if uv_dict:
             hash_data["tool_uv"] = uv_dict
 
@@ -141,7 +140,7 @@ def template_shell_command(script_path: str, function_name: str) -> str:
         local_log_level = local_log_level.upper()
         logger.debug(f"Propagating log level to remote: {local_log_level}")
 
-    uv_config_toml = _serialize_uv_toml(metadata)
+    uv_config_toml = _serialize_uv_toml(metadata, groundhog_timestamp)
 
     shell_template = jinja_env.get_template("shell_command.sh.jinja")
     shell_command_string = shell_template.render(
@@ -162,18 +161,25 @@ def template_shell_command(script_path: str, function_name: str) -> str:
     return shell_command_string
 
 
-def _serialize_uv_toml(metadata: Pep723Metadata | None) -> str:
+def _serialize_uv_toml(
+    metadata: Pep723Metadata | None, default_exclude_newer: str
+) -> str:
     """Serialize [tool.uv] settings to uv.toml format for uv pip install.
 
     Returns a TOML string containing all non-None settings from the user's
-    [tool.uv] block, or an empty string if there are no settings.
+    [tool.uv] block, or an empty string if there are no settings (or no
+    metadata at all).
+
+    If the user did not pin exclude-newer in their script, the provided
+    default (the build-time clock) is injected here so fresh environment
+    builds still resolve against a fixed cutoff — without the volatile
+    value ever entering the env hash or the user's script file.
     """
     if not metadata or not metadata.tool or not metadata.tool.uv:
         return ""
 
     uv_dict = metadata.tool.uv.model_dump(by_alias=True, exclude_none=True)
-    if not uv_dict:
-        return ""
+    uv_dict.setdefault("exclude-newer", default_exclude_newer)
 
     return tomlkit.dumps(uv_dict).strip()
 

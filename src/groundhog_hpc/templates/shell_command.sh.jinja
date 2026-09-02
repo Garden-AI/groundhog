@@ -1,7 +1,13 @@
 set -euo pipefail
 
 TASK_DIR=$(mktemp -d)
-trap 'rm -rf "$TASK_DIR"' EXIT
+# Clean up the task dir plus any in-progress temp build dirs if we exit
+# before publishing (the :+ expansions are no-ops while unset, and after a
+# successful publish the mv has renamed the temp path away, so the trap
+# never touches published state).
+{% raw %}
+trap 'rm -rf "$TASK_DIR" ${{ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"}} ${{UV_BOOT_TMP:+"$UV_BOOT_TMP"}}' EXIT
+{% endraw %}
 
 if command -v uv &> /dev/null; then
     UV_BIN=$(command -v uv)
@@ -82,9 +88,10 @@ else
     # Build into a unique temp dir next to the final location, then rename
     # into place at the end, so concurrent tasks that share an env hash
     # never see (or reuse) a half-built environment.
-    ENV_TMP="$ENV_DIR.tmp.$(hostname).$$"
+    # $RANDOM guards against pid collisions across PID namespaces (e.g.
+    # containerized tasks sharing a hostname and bind-mounted scratch).
+    ENV_TMP="$ENV_DIR.tmp.$(hostname).$$.$RANDOM"
     mkdir -p "$(dirname "$ENV_DIR")"
-    rm -rf "$ENV_TMP"
 
     {% if uv_config_toml %}
 
@@ -97,8 +104,18 @@ else
 UV_CONFIG_EOF
     {% endif %}
 
-    # --relocatable keeps entry-point shebangs valid after the rename below
-    "$UV_BIN" venv --relocatable "$ENV_TMP"{% if requires_python %} --python "{{ requires_python }}"{% endif %}{% if uv_config_toml %} --config-file "$UV_TOML"{% endif %}
+    # --relocatable keeps entry-point shebangs valid after the rename below,
+    # but only exists in uv >= 0.2.31; probe --help so older endpoint uv
+    # installs degrade gracefully instead of hard-failing on an unknown flag.
+    if "$UV_BIN" venv --help 2>/dev/null | grep -q -- --relocatable; then
+        UV_VENV_RELOCATABLE="--relocatable"
+    else
+        UV_VENV_RELOCATABLE=""
+    fi
+
+    # unquoted $UV_VENV_RELOCATABLE is intentional: it must expand to zero
+    # arguments when empty
+    "$UV_BIN" venv $UV_VENV_RELOCATABLE "$ENV_TMP"{% if requires_python %} --python "{{ requires_python }}"{% endif %}{% if uv_config_toml %} --config-file "$UV_TOML"{% endif %}
 
     {% if uv_config_toml %}
     mv "$UV_TOML" "$ENV_TMP/uv.toml"

@@ -15,6 +15,7 @@ from groundhog_hpc.configuration.endpoints import (
     get_endpoint_schema_comments,
     parse_endpoint_spec,
 )
+from groundhog_hpc.configuration.models import _default_exclude_newer
 from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
     add_endpoint_to_script,
@@ -81,8 +82,10 @@ def init(
     else:
         python = default_meta.requires_python
 
-    assert default_meta.tool and default_meta.tool.uv
-    exclude_newer = default_meta.tool.uv.exclude_newer
+    # exclude-newer is unset by default on the model (so it never churns env
+    # hashes or gets baked in by rewrites); new scripts still get an explicit
+    # timestamp for reproducibility.
+    exclude_newer = _default_exclude_newer()
 
     # Parse endpoint specs if provided
     endpoint_specs = []
