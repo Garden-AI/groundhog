@@ -9,6 +9,51 @@ TASK_DIR=$(mktemp -d)
 trap 'rm -rf "$TASK_DIR" ${{ENV_TMP:+"$ENV_TMP" "$ENV_TMP.uv.toml"}} ${{UV_BOOT_TMP:+"$UV_BOOT_TMP"}}' EXIT
 {% endraw %}
 
+# groundhog_publish TMP FINAL [VALIDATE_CMD...]: publish a finished build
+# atomically by renaming a private temp dir into its final shared path,
+# tolerating concurrent tasks racing to publish the same path. A validation
+# command, when given, is run with a candidate dir appended and decides
+# whether that copy is usable; without one, an existing dir counts as
+# usable. Subshell function bodies keep state local and avoid literal
+# braces (Globus Compute runs .format() on this whole command).
+groundhog_publish() (
+    tmp="$1"
+    final="$2"
+    shift 2
+
+    usable() (
+        dir="$1"
+        shift
+        if [ "$#" -eq 0 ]; then [ -d "$dir" ]; else "$@" "$dir"; fi
+    )
+
+    if ! usable "$tmp" "$@"; then
+        # build failed or produced an unusable result; discard
+        rm -rf "$tmp"
+    elif usable "$final" "$@"; then
+        # another task already published a usable copy; use theirs
+        rm -rf "$tmp"
+    else
+        if [ "$#" -gt 0 ]; then
+            # with a validation command, an existing final dir can be
+            # stale/broken (e.g. scratch purges can delete its contents but
+            # leave the dir, which would otherwise wedge publishing
+            # forever); clear leftovers before the rename. A racer's fresh
+            # publish could be cleared in this tiny window, but the racer
+            # that follows republishes a working copy either way.
+            rm -rf "$final"
+        fi
+        if ! mv "$tmp" "$final" 2>/dev/null; then
+            # lost the publish race; use the winner's copy
+            rm -rf "$tmp"
+        elif [ -d "$final/$(basename "$tmp")" ]; then
+            # mv raced with another publisher and nested our copy inside
+            # the winner's dir; remove the stray copy.
+            rm -rf "$final/$(basename "$tmp")"
+        fi
+    fi
+)
+
 # try SCRATCH -> TMPDIR -> /tmp for uv cache to avoid filesystem locking issues
 # GROUNDHOG_CACHE_DIR allows users to override if needed, UV_* vars also respected
 {% raw %}
@@ -50,36 +95,24 @@ else
     {% raw %}
     UV_BOOT="${{GROUNDHOG_CACHE_BASE}}/${{USER:-$(id -un)}}/uv-bootstrap-$(uname -m)-$GROUNDHOG_VERSION"
     {% endraw %}
-    if ! "$UV_BOOT/bin/uv" --version &> /dev/null; then
+
+    # uv_works DIR: the install at DIR is usable. Run the binary rather
+    # than trust mode bits: -x checks pass for wrong-libc, noexec-mounted,
+    # or truncated binaries.
+    uv_works() ( "$1/bin/uv" --version &> /dev/null )
+
+    if ! uv_works "$UV_BOOT"; then
         UV_BOOT_TMP="$UV_BOOT.tmp.$(hostname).$$.$RANDOM"
         mkdir -p "$(dirname "$UV_BOOT")"
         $PYTHON -m pip install --target "$UV_BOOT_TMP" uv &> /dev/null || true
         # Publish only a working install, atomically; if another task
-        # published a working install first, discard ours and use theirs.
-        if ! "$UV_BOOT_TMP/bin/uv" --version &> /dev/null; then
-            # install failed or binary unusable; discard
-            rm -rf "$UV_BOOT_TMP"
-        elif "$UV_BOOT/bin/uv" --version &> /dev/null; then
-            # another task already published a working install; use theirs
-            rm -rf "$UV_BOOT_TMP"
-        else
-            # clear stale/broken leftovers (scratch purges can delete bin/uv
-            # but leave the dir, which would otherwise wedge bootstrap
-            # forever), then publish. A racer's fresh publish could be
-            # cleared in the tiny window below, but the racer that follows
-            # republishes a working copy either way.
-            rm -rf "$UV_BOOT"
-            if ! mv "$UV_BOOT_TMP" "$UV_BOOT" 2>/dev/null; then
-                rm -rf "$UV_BOOT_TMP"
-            elif [ -d "$UV_BOOT/$(basename "$UV_BOOT_TMP")" ]; then
-                # mv raced with another publisher and nested our install
-                # inside the winner's dir; remove the stray copy.
-                rm -rf "$UV_BOOT/$(basename "$UV_BOOT_TMP")"
-            fi
-        fi
+        # published a working install first, ours is discarded and theirs
+        # used. uv_works also lets the helper clear a stale/broken $UV_BOOT
+        # before the rename.
+        groundhog_publish "$UV_BOOT_TMP" "$UV_BOOT" uv_works
     fi
 
-    if "$UV_BOOT/bin/uv" --version &> /dev/null; then
+    if uv_works "$UV_BOOT"; then
         UV_BIN="$UV_BOOT/bin/uv"
     else
         # fall back e.g. to a uv PyPI package installed some other way
@@ -184,15 +217,10 @@ UV_CONFIG_EOF
 {{ '}}' }}
 META_EOF
 
-    # Publish atomically; if another task published the same env first,
-    # discard our build and use theirs.
-    if [ -d "$ENV_DIR" ] || ! mv "$ENV_TMP" "$ENV_DIR" 2>/dev/null; then
-        rm -rf "$ENV_TMP"
-    elif [ -d "$ENV_DIR/$(basename "$ENV_TMP")" ]; then
-        # mv raced with another publisher and nested our build inside the
-        # winner's env dir; remove the stray copy.
-        rm -rf "$ENV_DIR/$(basename "$ENV_TMP")"
-    fi
+    # Publish atomically; if another task published the same env first, our
+    # build is discarded and theirs used. No validation command: an existing
+    # $ENV_DIR counts as usable, and is never cleared.
+    groundhog_publish "$ENV_TMP" "$ENV_DIR"
 fi
 
 # Run using the cached environment's Python directly (bypasses uv resolution)
