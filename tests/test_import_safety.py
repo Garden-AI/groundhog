@@ -417,3 +417,52 @@ if __name__ == "__main__":
         finally:
             # Cleanup
             sys.modules.pop("test_module6", None)
+
+
+class TestNoRewrap:
+    """A spec that comes back already wrapped must not be wrapped again."""
+
+    def test_find_spec_does_not_nest_loaders(self):
+        import importlib.util
+        import sys
+        from importlib.abc import MetaPathFinder
+
+        from groundhog_hpc.import_hook import GroundhogImportHook, GroundhogLoader
+
+        class ReentrantFinder(MetaPathFinder):
+            """Like ALCF's XALT RecorderRTM: re-enters the import system and
+            hands back whatever spec (already wrapped by our hook) it gets."""
+
+            def __init__(self):
+                self.busy = False
+                self.cache = {}
+
+            def find_spec(self, fullname, path, target=None):
+                if fullname != "colorsys" or self.busy:
+                    return None
+                if fullname not in self.cache:
+                    self.busy = True
+                    try:
+                        self.cache[fullname] = importlib.util.find_spec(fullname)
+                    finally:
+                        self.busy = False
+                return self.cache[fullname]
+
+        hook = GroundhogImportHook()
+        reentrant = ReentrantFinder()
+        saved = sys.meta_path[:]
+        sys.modules.pop("colorsys", None)
+        sys.meta_path[:] = [hook, reentrant] + [
+            f for f in saved if type(f).__name__ != "GroundhogImportHook"
+        ]
+        try:
+            for _ in range(5):
+                spec = hook.find_spec("colorsys", None)
+            depth = 0
+            loader = spec.loader
+            while isinstance(loader, GroundhogLoader):
+                depth += 1
+                loader = loader.original_loader
+            assert depth == 1
+        finally:
+            sys.meta_path[:] = saved
