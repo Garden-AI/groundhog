@@ -1,20 +1,25 @@
 """Shared utility functions for the Groundhog CLI."""
 
+import importlib.metadata
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import typer
 import uv
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 
+import groundhog_hpc
 from groundhog_hpc.configuration.pep723 import (
     Pep723Metadata,
     insert_or_update_metadata,
     read_pep723,
     write_pep723,
 )
+from groundhog_hpc.utils import get_groundhog_version_spec
 
 
 def normalize_python_version_with_uv(python: str) -> str:
@@ -78,6 +83,127 @@ def python_version_matches(current: str, spec: str) -> bool:
         True if current version matches the specifier, False otherwise
     """
     return Version(current) in SpecifierSet(spec)
+
+
+def current_python_version() -> str:
+    """Return the running interpreter's version as "X.Y.Z"."""
+    v = sys.version_info
+    return f"{v.major}.{v.minor}.{v.micro}"
+
+
+def missing_dependencies(dependencies: list[str]) -> list[str]:
+    """Return the entries of ``dependencies`` the current environment does not satisfy.
+
+    An entry is satisfied when a distribution with its name is installed and,
+    unless the entry points at a URL, the installed version is within its
+    specifier. Entries whose environment marker evaluates false are skipped.
+    Malformed entries are reported as missing so that uv gets to raise the
+    real error when the environment is built.
+
+    Args:
+        dependencies: PEP 508 requirement strings, e.g. from PEP 723 metadata
+
+    Returns:
+        The unsatisfied entries, verbatim, in their original order
+    """
+    missing: list[str] = []
+    for dep in dependencies:
+        try:
+            req = Requirement(dep)
+        except InvalidRequirement:
+            missing.append(dep)
+            continue
+        if req.marker is not None and not req.marker.evaluate():
+            continue
+        try:
+            installed = importlib.metadata.version(req.name)
+        except importlib.metadata.PackageNotFoundError:
+            missing.append(dep)
+            continue
+        if req.url is None and not req.specifier.contains(installed, prereleases=True):
+            missing.append(dep)
+    return missing
+
+
+def bootstrap_reasons(metadata: Pep723Metadata) -> list[str]:
+    """Explain why the current environment cannot host the script's harness.
+
+    Args:
+        metadata: The script's PEP 723 metadata
+
+    Returns:
+        Human-readable reasons; empty when the environment satisfies both
+        ``requires-python`` and ``dependencies``
+    """
+    reasons: list[str] = []
+    current = current_python_version()
+    if metadata.requires_python and not python_version_matches(
+        current, metadata.requires_python
+    ):
+        reasons.append(
+            f"Python {current} does not satisfy "
+            f"requires-python {metadata.requires_python!r}"
+        )
+    if missing := missing_dependencies(metadata.dependencies):
+        reasons.append("missing dependencies: " + ", ".join(missing))
+    return reasons
+
+
+def _groundhog_with_spec() -> str:
+    """The ``--with`` spec that installs this same groundhog into a bootstrapped env."""
+    if groundhog_hpc.__version__ == "0.0.0" and groundhog_hpc.__file__:
+        # No package metadata (e.g. a checkout without git tags): use the checkout.
+        return str(Path(groundhog_hpc.__file__).resolve().parents[2])
+    return get_groundhog_version_spec()
+
+
+def build_bootstrap_command(
+    script_path: Path,
+    harness: str,
+    harness_args: list[str],
+    metadata: Pep723Metadata,
+) -> list[str]:
+    """Compose the ``uv run ... hog run ...`` command that re-runs a harness in an
+    environment built from the script's PEP 723 metadata.
+
+    The ``[tool.uv]`` resolution settings a script can set (``exclude-newer``,
+    ``index-url``, ``extra-index-url``) are forwarded when present so the
+    driver resolves the same way the remote environment does.
+
+    Args:
+        script_path: Resolved path to the user script
+        harness: Name of the harness to run
+        harness_args: Arguments for the harness (placed after ``--``)
+        metadata: The script's parsed PEP 723 metadata
+
+    Returns:
+        The command as an argv list
+    """
+    cmd = [
+        uv.find_uv_bin(),
+        "run",
+        "--no-project",
+        "--python",
+        metadata.requires_python,
+        "--with",
+        _groundhog_with_spec(),
+    ]
+    for dep in metadata.dependencies:
+        cmd += ["--with", dep]
+
+    uv_settings = metadata.tool.uv if metadata.tool is not None else None
+    if uv_settings is not None:
+        if uv_settings.exclude_newer:
+            cmd += ["--exclude-newer", uv_settings.exclude_newer]
+        if uv_settings.index_url:
+            cmd += ["--index-url", uv_settings.index_url]
+        for url in uv_settings.extra_index_url or []:
+            cmd += ["--extra-index-url", url]
+
+    cmd += ["hog", "run", str(script_path), harness]
+    if harness_args:
+        cmd += ["--", *harness_args]
+    return cmd
 
 
 def check_and_update_metadata(script_path: Path, contents: str) -> str:

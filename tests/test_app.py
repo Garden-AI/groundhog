@@ -3,6 +3,7 @@
 import tempfile
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from groundhog_hpc.app.main import app
@@ -897,3 +898,232 @@ def main(dataset: str, epochs: int = 10):
         output = strip_ansi(result.output)
         assert "DATASET" in output or "dataset" in output.lower()
         assert "--epochs" in output
+
+
+class TestMissingDependencies:
+    """missing_dependencies() decides whether hog run must bootstrap an environment."""
+
+    def test_satisfied_requirements_are_not_reported(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        assert missing_dependencies(["typer>=0.1", "pydantic"]) == []
+
+    def test_missing_distribution_is_reported(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        assert missing_dependencies(["definitely-not-installed-xyz"]) == [
+            "definitely-not-installed-xyz"
+        ]
+
+    def test_version_outside_specifier_is_reported(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        assert missing_dependencies(["typer<0.0.1"]) == ["typer<0.0.1"]
+
+    def test_false_marker_is_skipped(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        dep = "definitely-not-installed-xyz; python_version < '3'"
+        assert missing_dependencies([dep]) == []
+
+    def test_url_requirement_checks_presence_only(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        assert missing_dependencies(["typer @ git+https://example.invalid/typer"]) == []
+        assert missing_dependencies(
+            ["definitely-not-installed-xyz @ git+https://example.invalid/x"]
+        ) == ["definitely-not-installed-xyz @ git+https://example.invalid/x"]
+
+    def test_malformed_requirement_is_reported(self):
+        from groundhog_hpc.app.utils import missing_dependencies
+
+        assert missing_dependencies(["not a requirement !!"]) == [
+            "not a requirement !!"
+        ]
+
+
+HARNESS_THAT_PRINTS = """
+import groundhog_hpc as hog
+
+@hog.harness()
+def main(count: int = 1):
+    print(f"ran in-process:{count}")
+"""
+
+
+class TestRunBootstrap:
+    """hog run re-executes itself in a uv env when the current one can't host the harness."""
+
+    @pytest.fixture
+    def fake_subprocess_run(self, monkeypatch):
+        import subprocess
+
+        calls = []
+
+        def _fake_run(cmd, env=None, **kwargs):
+            calls.append({"cmd": cmd, "env": env})
+            return subprocess.CompletedProcess(cmd, 7)
+
+        monkeypatch.setattr("groundhog_hpc.app.run.subprocess.run", _fake_run)
+        monkeypatch.delenv("GROUNDHOG_BOOTSTRAPPED", raising=False)
+        monkeypatch.delenv("GROUNDHOG_NO_BOOTSTRAP", raising=False)
+        return calls
+
+    def test_bootstraps_when_dependencies_missing(
+        self, pep723_script, fake_subprocess_run
+    ):
+        script = pep723_script(
+            dependencies=["definitely-not-installed-xyz"],
+            extra_content=HARNESS_THAT_PRINTS,
+        )
+        result = runner.invoke(app, ["run", str(script), "main", "--", "--count=5"])
+
+        assert result.exit_code == 7, result.output  # child's return code propagates
+        assert "ran in-process" not in result.output
+        assert "Bootstrapping an environment" in result.output
+        assert "definitely-not-installed-xyz" in result.output
+
+        (call,) = fake_subprocess_run
+        cmd = call["cmd"]
+        assert cmd[1:3] == ["run", "--no-project"]
+        assert cmd[cmd.index("--python") + 1] == ">=3.10"
+        assert "definitely-not-installed-xyz" in cmd
+        assert cmd[cmd.index("definitely-not-installed-xyz") - 1] == "--with"
+        assert cmd[-6:] == [
+            "hog",
+            "run",
+            str(script.resolve()),
+            "main",
+            "--",
+            "--count=5",
+        ]
+        assert call["env"]["GROUNDHOG_BOOTSTRAPPED"] == "1"
+
+    def test_bootstraps_on_python_mismatch(self, pep723_script, fake_subprocess_run):
+        script = pep723_script(
+            requires_python="==2.7.*", extra_content=HARNESS_THAT_PRINTS
+        )
+        result = runner.invoke(app, ["run", str(script)])
+
+        assert result.exit_code == 7, result.output
+        assert "requires-python" in result.output
+        (call,) = fake_subprocess_run
+        cmd = call["cmd"]
+        assert cmd[cmd.index("--python") + 1] == "==2.7.*"
+        assert cmd[-4:] == ["hog", "run", str(script.resolve()), "main"]
+        assert "--" not in cmd  # no harness args, no separator
+
+    def test_runs_in_process_when_environment_satisfies(
+        self, pep723_script, fake_subprocess_run
+    ):
+        script = pep723_script(
+            dependencies=["typer"], extra_content=HARNESS_THAT_PRINTS
+        )
+        result = runner.invoke(app, ["run", str(script), "--", "--count=3"])
+
+        assert result.exit_code == 0, result.output
+        assert "ran in-process:3" in result.output
+        assert fake_subprocess_run == []
+
+    def test_no_recursion_when_already_bootstrapped(
+        self, pep723_script, fake_subprocess_run, monkeypatch
+    ):
+        monkeypatch.setenv("GROUNDHOG_BOOTSTRAPPED", "1")
+        script = pep723_script(
+            dependencies=["definitely-not-installed-xyz"],
+            extra_content=HARNESS_THAT_PRINTS,
+        )
+        result = runner.invoke(app, ["run", str(script)])
+
+        assert result.exit_code == 0, result.output
+        assert "ran in-process:1" in result.output
+        assert "Warning: running in the current environment" in result.output
+        assert fake_subprocess_run == []
+
+    def test_no_bootstrap_flag_runs_in_process(
+        self, pep723_script, fake_subprocess_run
+    ):
+        script = pep723_script(
+            dependencies=["definitely-not-installed-xyz"],
+            extra_content=HARNESS_THAT_PRINTS,
+        )
+        result = runner.invoke(app, ["run", "--no-bootstrap", str(script)])
+
+        assert result.exit_code == 0, result.output
+        assert "ran in-process:1" in result.output
+        assert "Warning: running in the current environment" in result.output
+        assert fake_subprocess_run == []
+
+    def test_no_bootstrap_env_var_runs_in_process(
+        self, pep723_script, fake_subprocess_run, monkeypatch
+    ):
+        monkeypatch.setenv("GROUNDHOG_NO_BOOTSTRAP", "1")
+        script = pep723_script(
+            dependencies=["definitely-not-installed-xyz"],
+            extra_content=HARNESS_THAT_PRINTS,
+        )
+        result = runner.invoke(app, ["run", str(script)])
+
+        assert result.exit_code == 0, result.output
+        assert "ran in-process:1" in result.output
+        assert fake_subprocess_run == []
+
+
+class TestBuildBootstrapCommand:
+    """Only user-set [tool.uv] settings are forwarded to the bootstrap command."""
+
+    def test_forwards_user_set_uv_settings(self, tmp_path):
+        from groundhog_hpc.app.utils import build_bootstrap_command
+
+        contents = """# /// script
+# requires-python = ">=3.12,<3.13"
+# dependencies = ["numpy", "pandas>=2"]
+#
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
+# index-url = "https://mirror.example/simple"
+# extra-index-url = ["https://download.pytorch.org/whl/cpu"]
+# ///
+"""
+        script = tmp_path / "s.py"
+        script.write_text(contents)
+        cmd = build_bootstrap_command(
+            script, "train", ["data", "--epochs=2"], read_pep723(contents)
+        )
+
+        assert cmd[1:5] == ["run", "--no-project", "--python", ">=3.12,<3.13"]
+        assert cmd[5] == "--with"
+        assert cmd[6].startswith("groundhog-hpc") or Path(cmd[6]).exists()
+        assert cmd[7:11] == ["--with", "numpy", "--with", "pandas>=2"]
+        assert cmd[11:13] == ["--exclude-newer", "2026-01-01T00:00:00Z"]
+        assert cmd[13:15] == ["--index-url", "https://mirror.example/simple"]
+        assert cmd[15:17] == [
+            "--extra-index-url",
+            "https://download.pytorch.org/whl/cpu",
+        ]
+        assert cmd[17:] == [
+            "hog",
+            "run",
+            str(script),
+            "train",
+            "--",
+            "data",
+            "--epochs=2",
+        ]
+
+    def test_absent_uv_settings_are_not_forwarded(self, tmp_path):
+        from groundhog_hpc.app.utils import build_bootstrap_command
+
+        contents = """# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""
+        script = tmp_path / "s.py"
+        script.write_text(contents)
+
+        cmd = build_bootstrap_command(script, "main", [], read_pep723(contents))
+        assert "--exclude-newer" not in cmd
+        assert "--index-url" not in cmd
+        assert "--extra-index-url" not in cmd
+        assert cmd[-4:] == ["hog", "run", str(script), "main"]

@@ -2,6 +2,7 @@
 
 import inspect
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,15 +10,15 @@ from typing import Any
 import typer
 
 from groundhog_hpc.app.utils import (
+    bootstrap_reasons,
+    build_bootstrap_command,
     check_and_update_metadata,
-    python_version_matches,
 )
 from groundhog_hpc.configuration.pep723 import read_pep723
 from groundhog_hpc.errors import RemoteExecutionError
 from groundhog_hpc.harness import Harness
 from groundhog_hpc.logging import setup_logging
 from groundhog_hpc.utils import (
-    get_groundhog_version_spec,
     import_user_script,
     path_to_module_name,
 )
@@ -71,11 +72,24 @@ def run(
         "--log-level",
         help="Set logging level (DEBUG, INFO, WARNING, ERROR)\n\n[env: GROUNDHOG_LOG_LEVEL=]",
     ),
+    no_bootstrap: bool = typer.Option(
+        False,
+        "--no-bootstrap",
+        help=(
+            "Run the harness in the current environment even if it does not "
+            "satisfy the script's requires-python / dependencies"
+            "\n\n[env: GROUNDHOG_NO_BOOTSTRAP=]"
+        ),
+    ),
 ) -> None:
     """Run a Python script on a Globus Compute endpoint.
 
     Use -- to pass arguments to parameterized harnesses:
         hog run script.py harness -- arg1 --option=value
+
+    If the current environment does not satisfy the script's PEP 723
+    requires-python / dependencies, hog run re-executes itself inside a uv
+    environment built from that metadata (disable with --no-bootstrap).
     """
     # Handle the -- separator for harness arguments
     # ctx.args may contain ['--', 'arg1', 'arg2'] - strip the '--' if present
@@ -108,28 +122,33 @@ def run(
     contents = check_and_update_metadata(script_path, contents)
 
     metadata = read_pep723(contents)
-    if metadata and metadata.requires_python:
-        requires_python = metadata.requires_python
-        current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-
-        if not python_version_matches(current_version, requires_python):
-            groundhog_spec = get_groundhog_version_spec()
-            uv_cmd = (
-                f"uv run --with {groundhog_spec} "
-                f"--python {requires_python} "
-                f"hog run {script_path} {harness}"
-            )
-
+    if metadata is not None and (reasons := bootstrap_reasons(metadata)):
+        skip_bootstrap = (
+            no_bootstrap
+            or bool(os.environ.get("GROUNDHOG_NO_BOOTSTRAP"))
+            or bool(os.environ.get("GROUNDHOG_BOOTSTRAPPED"))
+        )
+        if not skip_bootstrap:
+            # Re-run this same invocation inside a uv environment built from the
+            # script's metadata; the child sees GROUNDHOG_BOOTSTRAPPED and runs
+            # in-process, so a child that still fails the checks cannot loop.
+            cmd = build_bootstrap_command(script_path, harness, harness_args, metadata)
             typer.echo(
-                f"Warning: Script requires Python {requires_python}, "
-                f"but current version is {current_version}. This may "
-                "cause issues with serialization.",
+                f"Bootstrapping an environment from {script_path.name}'s "
+                f"metadata ({'; '.join(reasons)})",
                 err=True,
             )
-            typer.echo(
-                f"\nTo run with matching Python version, use:\n  {uv_cmd}",
-                err=True,
+            completed = subprocess.run(
+                cmd, env={**os.environ, "GROUNDHOG_BOOTSTRAPPED": "1"}
             )
+            raise typer.Exit(completed.returncode)
+
+        typer.echo(
+            "Warning: running in the current environment although "
+            f"{'; '.join(reasons)}. Imports may fail and remote results may "
+            "not deserialize.",
+            err=True,
+        )
 
     try:
         module_name = path_to_module_name(script_path)

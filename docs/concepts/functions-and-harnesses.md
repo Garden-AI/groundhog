@@ -47,6 +47,20 @@ hog run script.py           # Runs the 'main' harness
 hog run script.py my_harness  # Runs a specific harness
 ```
 
+### The driver environment
+
+`hog run` imports your script in the process it runs in, so the harness (and anything defined at module level, such as classes that subclass a third-party base) needs its imports available *locally* as well as on the endpoint. The PEP 723 header already lists them, so `hog run` uses it: when the current interpreter does not satisfy `requires-python`, or any entry in `dependencies` is not installed, `hog run` re-executes itself inside a uv environment built from that metadata:
+
+```bash
+uv run --no-project --python "<requires-python>" \
+       --with groundhog-hpc==<this version> --with <dependency>... \
+       hog run script.py harness -- args
+```
+
+The `[tool.uv]` settings `exclude-newer`, `index-url` and `extra-index-url` are forwarded when the script sets them, so the driver resolves the same way the endpoint does. If the current environment already satisfies the header, nothing changes and the harness runs in-process.
+
+To keep the old in-process behavior, pass `--no-bootstrap` (before the script path) or set `GROUNDHOG_NO_BOOTSTRAP=1`; `hog run` then warns about the mismatch and continues.
+
 ### Parameterized harnesses
 
 Harnesses can accept parameters that map to CLI arguments. This makes harnesses reusable without editing code:

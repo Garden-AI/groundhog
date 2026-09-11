@@ -27,6 +27,10 @@ Run a Python script on a Globus Compute endpoint.
 Use -- to pass arguments to parameterized harnesses:
     hog run script.py harness -- arg1 --option=value
 
+If the current environment does not satisfy the script&#x27;s PEP 723
+requires-python / dependencies, hog run re-executes itself inside a uv
+environment built from that metadata (disable with --no-bootstrap).
+
 **Usage**:
 
 ```console
@@ -42,6 +46,7 @@ $ hog run [OPTIONS] SCRIPT [HARNESS]
 
 * `--no-fun-allowed`: Suppress emoji output
 * `--log-level TEXT`: Set logging level (DEBUG, INFO, WARNING, ERROR)
+* `--no-bootstrap`: Run the harness in the current environment even if it does not satisfy the script&#x27;s requires-python / dependencies
 * `--help`: Show this message and exit.
 
 ## `hog init`
