@@ -36,8 +36,12 @@ class GroundhogImportHook(MetaPathFinder):
                 if spec is not None:
                     break
 
-        # Wrap the loader to set the flag after execution
-        if spec and spec.loader:
+        # Wrap the loader to set the flag after execution. Never wrap twice:
+        # another finder on sys.meta_path may re-enter the import system
+        # (ALCF's XALT sitecustomize finder does) and hand back a spec this
+        # hook already wrapped; re-wrapping on every re-entry nests loaders
+        # hundreds deep and overflows the stack at import time.
+        if spec and spec.loader and not isinstance(spec.loader, GroundhogLoader):
             spec.loader = GroundhogLoader(spec.loader)
         return spec
 
