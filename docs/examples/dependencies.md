@@ -41,7 +41,7 @@ def main():
 
 1. Dependencies are declared in the PEP 723 metadata block. These will be installed automatically by uv when the function runs on the remote endpoint. See also: [uv script dependencies](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies)
 
-2. Import remote dependencies **inside** the function, not at module level. This ensures imports happen after uv installs the packages in the remote environment.
+2. Import dependencies that only the remote side needs **inside** the function. The environment `hog run` starts from need not have them installed, and importing lazily keeps startup fast.
 
 ## Adding Dependencies
 
@@ -76,7 +76,9 @@ def process_data(data: list[float]) -> float:
     return np.std(data)
 ```
 
-**Why?** Module-level imports fail when the script loads locally (before uv installs packages on the remote endpoint). Function-level imports ensure the import happens after uv sets up the remote environment.
+**Why?** A module-level import runs wherever the script is loaded, including on your laptop when `hog run` imports it. If a package is missing there, `hog run` will bootstrap a driver environment from the PEP 723 header (see [the driver environment](../concepts/functions-and-harnesses.md#the-driver-environment)), which works but costs a resolve on every run. Importing inside the function keeps the driver light and lets the harness run in-process whenever it can.
+
+Module-level imports are the right call when the harness itself needs the package, for example a class defined in the script that subclasses a third-party base. Declare the package in `dependencies` and `hog run` takes care of the driver side.
 
 ## Running the Example
 

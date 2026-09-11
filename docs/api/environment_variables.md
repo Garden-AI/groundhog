@@ -84,6 +84,27 @@ export GROUNDHOG_CACHE_DIR=/gpfs/shared/uv-cache
 3. `$TMPDIR` (temporary directory)
 4. `/tmp` (system temp)
 
+## GROUNDHOG_NO_BOOTSTRAP
+
+**Type:** boolean (any truthy value)
+
+**Default:** not set
+
+Keeps `hog run` in the current environment even when that environment does not satisfy the script's PEP 723 `requires-python` / `dependencies`. Normally `hog run` re-executes itself inside a uv environment built from the script metadata in that case (see [Functions and Harnesses](../concepts/functions-and-harnesses.md#the-driver-environment)). Equivalent to the `--no-bootstrap` flag.
+
+**Example:**
+```bash
+GROUNDHOG_NO_BOOTSTRAP=1 hog run script.py
+```
+
+## GROUNDHOG_BOOTSTRAPPED
+
+**Type:** boolean (any truthy value)
+
+**Default:** not set
+
+Set automatically by `hog run` in the environment of the child process it bootstraps. A child that still finds the environment unsuitable warns and runs in-process instead of bootstrapping again. You should not need to set this yourself.
+
 ## `uv` Environment Variables
 
 Groundhog uses `uv` to manage Python environments on remote endpoints. Any `UV_*` environment variable can be used to override `[tool.uv]` configuration in your script.
